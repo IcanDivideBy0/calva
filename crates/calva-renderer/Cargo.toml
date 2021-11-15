@@ -1,0 +1,15 @@
+[package]
+name = "calva-renderer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+bytemuck = { version = "1.7", features = [ "derive" ] }
+epi = "0.15.0"
+egui = "0.15.0"
+egui_wgpu_backend = "0.14.0"
+egui_winit_platform = "0.11.0"
+glam = { version = "0.20.0", features = ["bytemuck"] }
+wgpu = "0.11.0"
+winit = "0.25.0"
