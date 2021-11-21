@@ -1,4 +1,4 @@
-use calva::prelude::Camera;
+use calva::renderer::Renderer;
 use std::time::Duration;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
@@ -15,7 +15,7 @@ pub struct MyCamera {
 impl MyCamera {
     pub fn new(window: &Window) -> Self {
         let controller = FlyingCamera::default();
-        let projection = Perspective::new(window.inner_size(), 45.0, 0.1, 2000.0);
+        let projection = Perspective::new(window.inner_size(), 45.0, 0.1, 100.0);
 
         Self {
             controller,
@@ -27,21 +27,14 @@ impl MyCamera {
         self.controller.process_event(event)
     }
 
-    pub fn update(&mut self, dt: Duration) {
-        self.controller.update(dt)
-    }
-
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
         self.projection.resize(size)
     }
-}
 
-impl Camera for MyCamera {
-    fn view(&self) -> glam::Mat4 {
-        glam::Mat4::inverse(&self.controller.transform)
-    }
+    pub fn update(&mut self, renderer: &mut Renderer, dt: Duration) {
+        self.controller.update(dt);
 
-    fn proj(&self) -> glam::Mat4 {
-        self.projection.into()
+        renderer.camera.view = self.controller.transform.inverse();
+        renderer.camera.proj = self.projection.into();
     }
 }

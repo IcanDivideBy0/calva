@@ -1,26 +1,29 @@
 use wgpu::util::DeviceExt;
 
-pub trait Camera {
-    fn view(&self) -> glam::Mat4;
-    fn proj(&self) -> glam::Mat4;
-}
+pub struct Camera {
+    pub view: glam::Mat4,
+    pub proj: glam::Mat4,
+    pub view_proj: glam::Mat4,
 
-pub(crate) struct CameraUniforms {
-    pub buffer: wgpu::Buffer,
+    buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
-impl CameraUniforms {
+impl Camera {
     pub fn new(device: &wgpu::Device) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[glam::Mat4::default()]),
+            label: Some("Camera uniform buffer"),
+            contents: bytemuck::cast_slice(&[
+                glam::Mat4::default(), // view
+                glam::Mat4::default(), // proj
+                glam::Mat4::default(), // view_proj
+            ]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Camera Uniform Bind Group Layout"),
+            label: Some("Camera uniform bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
@@ -34,7 +37,7 @@ impl CameraUniforms {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Camera Uniform Bind Group"),
+            label: Some("Camera uniform bind group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -43,14 +46,21 @@ impl CameraUniforms {
         });
 
         Self {
+            view: glam::Mat4::default(),
+            proj: glam::Mat4::default(),
+            view_proj: glam::Mat4::default(),
+
             buffer,
             bind_group_layout,
             bind_group,
         }
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue, camera: &dyn Camera) {
-        let view_proj = camera.proj() * camera.view();
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[view_proj]));
+    pub(crate) fn update_buffer(&self, queue: &wgpu::Queue) {
+        queue.write_buffer(
+            &self.buffer,
+            0,
+            bytemuck::cast_slice(&[self.view, self.proj, self.proj * self.view]),
+        );
     }
 }

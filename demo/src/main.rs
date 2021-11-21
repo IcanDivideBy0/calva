@@ -23,26 +23,24 @@ async fn main() -> Result<()> {
 
     let mut camera = MyCamera::new(&window);
     camera.controller.transform = glam::Mat4::inverse(&glam::Mat4::look_at_rh(
-        (10.0, 10.0, 10.0).into(), // eye
-        (0.0, 0.0, 0.0).into(),    // target
-        (0.0, 1.0, 0.0).into(),    // up
+        (2.0, 2.0, 2.0).into(), // eye
+        (0.0, 0.0, 0.0).into(), // target
+        (0.0, 1.0, 0.0).into(), // up
     ));
 
     let mut renderer = Renderer::new(&window).await?;
     let mut last_render_time = Instant::now();
 
-    let mut file = std::fs::File::open("./assets/zombie.glb")?;
-    let zombie = calva::gltf::loader::load(&mut file, &renderer)?;
-
-    // let mut file = std::fs::File::open("./assets/dungeon.glb")?;
-    // let dungeon = calva::gltf::loader::load(&mut file, &renderer)?;
-
-    // let plane = shapes::plane::build_model(&renderer, "Plane");
-
-    let models = vec![
-        // plane,
-        zombie,
-        // dungeon
+    let models: Vec<Box<dyn Renderable>> = vec![
+        // Box::new(shapes::SimpleMesh::new(&renderer, SimpleShape::Cube, "Plane")),
+        Box::new(calva::gltf::loader::load(
+            &mut std::fs::File::open("./assets/zombie.glb")?,
+            &renderer,
+        )?),
+        // Box::new(calva::gltf::loader::load(
+        //     &mut std::fs::File::open("./assets/plane.glb")?,
+        //     &renderer,
+        // )?),
     ];
 
     let mut my_app = MyApp::default();
@@ -60,8 +58,8 @@ async fn main() -> Result<()> {
                 let dt = now - last_render_time;
                 last_render_time = now;
 
-                camera.update(dt);
-                renderer.update_camera(&camera);
+                camera.update(&mut renderer, dt);
+                renderer.globals.value = my_app.value;
 
                 match renderer.render(&window, &models, &mut my_app) {
                     Ok(_) => {}
