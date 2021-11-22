@@ -1,11 +1,3 @@
-[[block]]
-struct Globals {
-    value: f32;
-};
-
-[[group(0), binding(0)]]
-var<uniform> globals: Globals;
-
 // Vertex shader
 
 [[block]]
@@ -15,7 +7,7 @@ struct CameraUniforms {
     view_proj: mat4x4<f32>;
 };
 
-[[group(1), binding(0)]]
+[[group(0), binding(0)]]
 var<uniform> camera: CameraUniforms;
 
 struct InstanceInput {
@@ -54,9 +46,9 @@ fn main(
 
 // Fragment shader
 
-[[group(2), binding(0)]] var gBufferAlbedo: texture_2d<f32>;
-[[group(2), binding(1)]] var gBufferPosition: texture_2d<f32>;
-[[group(2), binding(2)]] var gBufferNormal: texture_2d<f32>;
+[[group(1), binding(0)]] var gbuffer_albedo: texture_2d<f32>;
+[[group(1), binding(1)]] var gbuffer_position: texture_2d<f32>;
+[[group(1), binding(2)]] var gbuffer_normal: texture_2d<f32>;
 
 fn compute_attenuation(light_range: f32, light_dist: f32) -> f32 {
     // TODO: maybe use this https://learnopengl.com/Lighting/Light-casters
@@ -87,9 +79,9 @@ fn main(in: VertexOutput) ->  [[location(0)]] vec4<f32> {
 
     let c = vec2<i32>(floor(in.clip_position.xy));
 
-    let albedo = textureLoad(gBufferAlbedo, c, 0).rgb;
-    let position = textureLoad(gBufferPosition, c, 0).rgb;
-    let normal = textureLoad(gBufferNormal, c, 0).rgb;
+    let albedo = textureLoad(gbuffer_albedo, c, 0).rgb;
+    let position = textureLoad(gbuffer_position, c, 0).rgb;
+    let normal = textureLoad(gbuffer_normal, c, 0).rgb;
 
     let ambient_strength = 0.1;
     let ambient_color = in.color * ambient_strength;

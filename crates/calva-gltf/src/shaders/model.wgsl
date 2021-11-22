@@ -1,11 +1,3 @@
-[[block]]
-struct Globals {
-    value: f32;
-};
-
-[[group(0), binding(0)]]
-var<uniform> globals: Globals;
-
 // Vertex shader
 
 [[block]]
@@ -15,7 +7,7 @@ struct CameraUniforms {
     view_proj: mat4x4<f32>;
 };
 
-[[group(1), binding(0)]]
+[[group(0), binding(0)]]
 var<uniform> camera: CameraUniforms;
 
 struct InstanceInput {
@@ -86,10 +78,10 @@ struct FragmentOutput {
     [[location(2)]] normal: vec4<f32>;
 };
 
-[[group(2), binding(0)]] var t_albedo: texture_2d<f32>;
-[[group(2), binding(1)]] var s_albedo: sampler;
-[[group(2), binding(2)]] var t_normal: texture_2d<f32>;
-[[group(2), binding(3)]] var s_normal: sampler;
+[[group(1), binding(0)]] var t_albedo: texture_2d<f32>;
+[[group(1), binding(1)]] var s_albedo: sampler;
+[[group(1), binding(2)]] var t_normal: texture_2d<f32>;
+[[group(1), binding(3)]] var s_normal: sampler;
 
 fn compute_tbn(in: VertexOutput) -> mat3x3<f32> {
     let pos_dx = dpdx(in.position);

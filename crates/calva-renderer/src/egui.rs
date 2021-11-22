@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use winit::{event::Event, window::Window};
 
+use crate::RenderContext;
+
 struct RepaintSignal;
 
 impl epi::RepaintSignal for RepaintSignal {
@@ -12,14 +14,14 @@ impl epi::RepaintSignal for RepaintSignal {
     }
 }
 
-pub struct EguiRenderer {
+pub struct EguiPass {
     platform: Platform,
     rpass: RenderPass,
     previous_frame_time: Option<f32>,
     repaint_signal: Arc<RepaintSignal>,
 }
 
-impl EguiRenderer {
+impl EguiPass {
     pub fn new(window: &Window, device: &wgpu::Device) -> Self {
         let size = window.inner_size();
 
@@ -51,12 +53,7 @@ impl EguiRenderer {
     pub fn render(
         &mut self,
         window: &Window,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        surface_config: &wgpu::SurfaceConfiguration,
-        output_view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-
+        ctx: &mut RenderContext,
         app: &mut dyn epi::App,
     ) -> Result<(), BackendError> {
         let scale_factor = window.scale_factor() as f32;
@@ -87,17 +84,33 @@ impl EguiRenderer {
         self.previous_frame_time = Some(frame_time);
 
         let screen_descriptor = ScreenDescriptor {
-            physical_width: surface_config.width,
-            physical_height: surface_config.height,
+            physical_width: ctx.renderer.surface_config.width,
+            physical_height: ctx.renderer.surface_config.height,
             scale_factor,
         };
-        self.rpass
-            .update_texture(&device, &queue, &self.platform.context().texture());
-        self.rpass.update_user_textures(&device, &queue);
-        self.rpass
-            .update_buffers(&device, &queue, &paint_jobs, &screen_descriptor);
+
+        self.rpass.update_texture(
+            &ctx.renderer.device,
+            &ctx.renderer.queue,
+            &self.platform.context().texture(),
+        );
 
         self.rpass
-            .execute(encoder, &output_view, &paint_jobs, &screen_descriptor, None)
+            .update_user_textures(&ctx.renderer.device, &ctx.renderer.queue);
+
+        self.rpass.update_buffers(
+            &ctx.renderer.device,
+            &ctx.renderer.queue,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+
+        self.rpass.execute(
+            &mut ctx.encoder,
+            &ctx.view,
+            &paint_jobs,
+            &screen_descriptor,
+            None,
+        )
     }
 }

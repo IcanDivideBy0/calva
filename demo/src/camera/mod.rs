@@ -34,7 +34,6 @@ impl MyCamera {
     pub fn update(&mut self, renderer: &mut Renderer, dt: Duration) {
         self.controller.update(dt);
 
-        renderer.camera.view = self.controller.transform.inverse();
-        renderer.camera.proj = self.projection.into();
+        renderer.update_camera(self.controller.transform.inverse(), self.projection.into())
     }
 }

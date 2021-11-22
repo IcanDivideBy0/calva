@@ -1,5 +1,7 @@
 use anyhow::Result;
-use calva::prelude::*;
+use calva::renderer::{
+    AmbientPass, DrawModel, EguiPass, GeometryBuffer, LightsPass, PointLight, Renderer, SsaoPass,
+};
 use std::time::Instant;
 use winit::{
     event::*,
@@ -29,26 +31,37 @@ async fn main() -> Result<()> {
     ));
 
     let mut renderer = Renderer::new(&window).await?;
+    let mut gbuffer = GeometryBuffer::new(&renderer);
+    let ssao = SsaoPass::new(&renderer, &gbuffer);
+    let ambient = AmbientPass::new(&renderer, &gbuffer);
+    let lights = LightsPass::new(&renderer, &gbuffer);
+
+    let start_time = Instant::now();
     let mut last_render_time = Instant::now();
 
-    let models: Vec<Box<dyn Renderable>> = vec![
-        // Box::new(shapes::SimpleMesh::new(&renderer, SimpleShape::Cube, "Plane")),
+    let models: Vec<Box<dyn DrawModel>> = vec![
+        // Box::new(shapes::SimpleMesh::new(
+        //     &renderer,
+        //     shapes::SimpleShape::Cube,
+        //     "Plane",
+        // )),
         Box::new(calva::gltf::loader::load(
-            &mut std::fs::File::open("./assets/zombie.glb")?,
             &renderer,
+            &mut std::fs::File::open("./assets/zombie.glb")?,
         )?),
         // Box::new(calva::gltf::loader::load(
-        //     &mut std::fs::File::open("./assets/plane.glb")?,
         //     &renderer,
+        //     &mut std::fs::File::open("./assets/plane.glb")?,
         // )?),
     ];
 
+    let mut egui = EguiPass::new(&window, &renderer.device);
     let mut my_app = MyApp::default();
 
     event_loop.run(move |event, _, control_flow| {
-        renderer.egui.handle_event(&event);
+        egui.handle_event(&event);
 
-        if renderer.egui.captures_event(&event) {
+        if egui.captures_event(&event) {
             return;
         }
 
@@ -59,16 +72,49 @@ async fn main() -> Result<()> {
                 last_render_time = now;
 
                 camera.update(&mut renderer, dt);
-                renderer.globals.value = my_app.value;
 
-                match renderer.render(&window, &models, &mut my_app) {
-                    Ok(_) => {}
+                let t = Instant::now() - start_time;
+                let lights_data = [
+                    PointLight {
+                        position: (
+                            1.0,
+                            3.0 + t.as_secs_f32().cos() / 2.0,
+                            1.0 + t.as_secs_f32().sin() / 2.0,
+                        )
+                            .into(),
+                        radius: 1.0,
+                        color: (1.0, 0.0, 0.0).into(),
+                    },
+                    PointLight {
+                        position: (
+                            1.0,
+                            2.0 + t.as_secs_f32().sin() / 2.0,
+                            1.0 + t.as_secs_f32().cos() / 2.0,
+                        )
+                            .into(),
+                        radius: 1.0,
+                        color: (0.0, 1.0, 0.0).into(),
+                    },
+                ];
+
+                match renderer.begin_render_frame() {
+                    Ok(mut ctx) => {
+                        gbuffer.render(&mut ctx, &models);
+                        ssao.render(&mut ctx);
+                        ambient.render(&mut ctx, &gbuffer);
+                        lights.render(&mut ctx, &gbuffer, &lights_data);
+
+                        egui.render(&window, &mut ctx, &mut my_app).expect("egui");
+
+                        renderer.finish_render_frame(ctx);
+                    }
                     // Reconfigure the surface if lost
                     Err(wgpu::SurfaceError::Lost) => {
                         renderer.resize(winit::dpi::PhysicalSize::new(
                             renderer.surface_config.width,
                             renderer.surface_config.height,
-                        ))
+                        ));
+                        gbuffer = GeometryBuffer::new(&renderer);
                     }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
@@ -104,10 +150,12 @@ async fn main() -> Result<()> {
 
                     WindowEvent::Resized(physical_size) => {
                         renderer.resize(*physical_size);
-                        camera.resize(*physical_size)
+                        gbuffer = GeometryBuffer::new(&renderer);
+                        camera.resize(*physical_size);
                     }
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         renderer.resize(**new_inner_size);
+                        gbuffer = GeometryBuffer::new(&renderer);
                         camera.resize(**new_inner_size);
                     }
 

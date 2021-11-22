@@ -14,3 +14,4 @@ egui_winit_platform = "0.11.0"
 glam = { version = "0.20.0", features = ["bytemuck"] }
 wgpu = "0.11.0"
 winit = "0.25.0"
+rand = "0.8.3"

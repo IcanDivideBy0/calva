@@ -1,11 +1,3 @@
-[[block]]
-struct Globals {
-    value: f32;
-};
-
-[[group(0), binding(0)]]
-var<uniform> globals: Globals;
-
 // Vertex shader
 
 [[block]]
@@ -15,7 +7,7 @@ struct CameraUniforms {
     view_proj: mat4x4<f32>;
 };
 
-[[group(1), binding(0)]]
+[[group(0), binding(0)]]
 var<uniform> camera: CameraUniforms;
 
 struct InstanceInput {

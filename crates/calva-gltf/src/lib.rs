@@ -1,10 +1,8 @@
 pub mod loader;
 
-pub mod prelude {}
-
 use calva_renderer::{
     wgpu::{self, util::DeviceExt},
-    Renderable, Renderer,
+    DrawModel, Renderer,
 };
 
 pub struct RenderPrimitive {
@@ -18,7 +16,6 @@ pub struct RenderPrimitive {
 }
 
 pub struct RenderInstances {
-    // pub transforms: Vec<glam::Mat4>,
     pub transforms: Vec<(glam::Vec3, glam::Quat)>,
     pub buffer: wgpu::Buffer,
 }
@@ -53,7 +50,7 @@ impl RenderInstances {
         Self { transforms, buffer }
     }
 
-    pub fn update_buffer(&self, queue: &wgpu::Queue) {
+    pub fn update_buffers(&self, queue: &wgpu::Queue) {
         #[repr(C)]
         #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
         pub struct InstanceRaw {
@@ -101,19 +98,22 @@ pub struct RenderModel {
     pub materials: Vec<RenderMaterial>,
 }
 
-impl Renderable for RenderModel {
-    fn render<'a: 'r, 'r>(&'a self, renderer: &'a Renderer, rpass: &mut wgpu::RenderPass<'r>) {
+impl DrawModel for RenderModel {
+    fn draw<'ctx: 'pass, 'pass>(
+        &'ctx self,
+        renderer: &'ctx Renderer,
+        rpass: &mut wgpu::RenderPass<'pass>,
+    ) {
         for mesh in &self.meshes {
-            mesh.instances.update_buffer(&renderer.queue);
+            mesh.instances.update_buffers(&renderer.queue);
 
             for primitive in &mesh.primitives {
                 let material = &self.materials[primitive.material];
 
                 rpass.set_pipeline(&material.pipeline);
 
-                rpass.set_bind_group(0, &renderer.globals.bind_group, &[]);
-                rpass.set_bind_group(1, &renderer.camera.bind_group, &[]);
-                rpass.set_bind_group(2, &material.bind_group, &[]);
+                rpass.set_bind_group(0, &renderer.camera.bind_group, &[]);
+                rpass.set_bind_group(1, &material.bind_group, &[]);
 
                 rpass.set_vertex_buffer(0, mesh.instances.buffer.slice(..));
                 rpass.set_vertex_buffer(1, primitive.positions_buffer.slice(..));

@@ -1,31 +1,28 @@
 use wgpu::util::DeviceExt;
 
-pub struct Camera {
-    pub(crate) view: glam::Mat4,
-    pub(crate) proj: glam::Mat4,
+pub struct ShaderGlobals {
+    pub value: f32,
 
     buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
-impl Camera {
+impl ShaderGlobals {
     pub fn new(device: &wgpu::Device) -> Self {
+        let value = 0.0;
+
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera uniform buffer"),
-            contents: bytemuck::cast_slice(&[
-                glam::Mat4::default(), // view
-                glam::Mat4::default(), // proj
-                glam::Mat4::default(), // view_proj
-            ]),
+            label: Some("Shader globals uniform buffer"),
+            contents: bytemuck::cast_slice(&[value]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Camera uniform bind group layout"),
+            label: Some("Shader globals uniform bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -36,7 +33,7 @@ impl Camera {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Camera uniform bind group"),
+            label: Some("Shader globals uniform bind group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -45,8 +42,7 @@ impl Camera {
         });
 
         Self {
-            view: glam::Mat4::default(),
-            proj: glam::Mat4::default(),
+            value,
 
             buffer,
             bind_group_layout,
@@ -54,11 +50,7 @@ impl Camera {
         }
     }
 
-    pub(crate) fn update_buffers(&self, queue: &wgpu::Queue) {
-        queue.write_buffer(
-            &self.buffer,
-            0,
-            bytemuck::cast_slice(&[self.view, self.proj, self.proj * self.view]),
-        );
+    pub fn update_buffers(&self, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.value]));
     }
 }

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use calva_renderer::{
-    prelude::*,
     wgpu::{self, util::DeviceExt},
+    Renderer, Texture,
 };
 use std::io::Read;
 
@@ -16,7 +16,7 @@ macro_rules! label {
     };
 }
 
-pub fn load(reader: &mut dyn Read, renderer: &Renderer) -> Result<RenderModel> {
+pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
     let mut gltf_buffer = Vec::new();
     reader.read_to_end(&mut gltf_buffer)?;
     let (doc, buffers, images) = gltf::import_slice(gltf_buffer.as_slice())?;
@@ -160,7 +160,8 @@ pub fn load(reader: &mut dyn Read, renderer: &Renderer) -> Result<RenderModel> {
                     .get(image_index)
                     .ok_or(anyhow!("Missing image data"))?;
 
-                // TODO: How to create a 24 bits texture ???
+                // 3 chanels texture formats not supported
+                // https://github.com/gpuweb/gpuweb/issues/66
                 let pixels = if image_data.format == gltf::image::Format::R8G8B8 {
                     let mut v =
                         Vec::with_capacity((image_data.width * image_data.height * 4) as usize);
@@ -282,11 +283,7 @@ pub fn load(reader: &mut dyn Read, renderer: &Renderer) -> Result<RenderModel> {
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: label!("Material render pipeline layout", material),
-                bind_group_layouts: &[
-                    &renderer.globals.bind_group_layout,
-                    &renderer.camera.bind_group_layout,
-                    &bind_group_layout,
-                ],
+                bind_group_layouts: &[&renderer.camera.bind_group_layout, &bind_group_layout],
                 push_constant_ranges: &[],
             });
 

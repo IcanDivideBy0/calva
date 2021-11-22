@@ -1,6 +1,6 @@
-use calva::{
-    prelude::*,
-    renderer::wgpu::{self, util::DeviceExt},
+use calva::renderer::{
+    wgpu::{self, util::DeviceExt},
+    DrawModel, Renderer,
 };
 
 mod plane {
@@ -148,8 +148,12 @@ impl SimpleMesh {
     }
 }
 
-impl Renderable for SimpleMesh {
-    fn render<'a: 'r, 'r>(&'a self, renderer: &'a Renderer, rpass: &mut wgpu::RenderPass<'r>) {
+impl DrawModel for SimpleMesh {
+    fn draw<'ctx: 'pass, 'pass>(
+        &'ctx self,
+        renderer: &'ctx Renderer,
+        rpass: &mut wgpu::RenderPass<'pass>,
+    ) {
         rpass.set_pipeline(&self.pipeline);
 
         rpass.set_bind_group(0, &renderer.camera.bind_group, &[]);

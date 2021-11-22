@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-calva-gltf = { path = "../calva-gltf" }
-calva-renderer = { path = "../calva-renderer" }
+gltf = { package = "calva-gltf", path = "../calva-gltf" }
+renderer = { package = "calva-renderer", path = "../calva-renderer" }
