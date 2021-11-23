@@ -1,11 +1,14 @@
 use anyhow::{anyhow, Result};
-use calva_renderer::{
+use renderer::{
     wgpu::{self, util::DeviceExt},
     Renderer, Texture,
 };
+use std::collections::HashMap;
 use std::io::Read;
 
-use crate::{RenderInstances, RenderMaterial, RenderMesh, RenderModel, RenderPrimitive};
+use crate::{
+    InstanceTransform, RenderInstances, RenderMaterial, RenderMesh, RenderModel, RenderPrimitive,
+};
 
 macro_rules! label {
     ($s: expr, $obj: expr) => {
@@ -16,12 +19,30 @@ macro_rules! label {
     };
 }
 
+fn traverse_nodes<'a>(
+    nodes: impl Iterator<Item = gltf::Node<'a>>,
+    parent: &InstanceTransform,
+    store: &mut HashMap<usize, InstanceTransform>,
+) {
+    for node in nodes {
+        let (t, r, s) = node.transform().decomposed();
+
+        let transform = InstanceTransform {
+            translation: parent.translation + glam::Vec3::from_slice(&t),
+            rotation: parent.rotation * glam::Quat::from_slice(&r),
+            scale: parent.scale * glam::Vec3::from_slice(&s),
+        };
+
+        store.insert(node.index(), transform);
+
+        traverse_nodes(node.children(), &transform, store);
+    }
+}
+
 pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
     let mut gltf_buffer = Vec::new();
     reader.read_to_end(&mut gltf_buffer)?;
     let (doc, buffers, images) = gltf::import_slice(gltf_buffer.as_slice())?;
-
-    // let doc = gltf::Gltf::from_reader(reader)?;
 
     let get_buffer_data = |accessor: gltf::Accessor| -> Option<&[u8]> {
         let view = accessor.view()?;
@@ -36,7 +57,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
 
     let device = &renderer.device;
 
-    let meshes = doc
+    let mut meshes: Vec<_> = doc
         .meshes()
         .map(|mesh| {
             let primitives = mesh
@@ -90,13 +111,13 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     let tex_coords_0_buffer = {
                         let accessor = primitive
                             .get(&gltf::Semantic::TexCoords(0))
-                            .ok_or(anyhow!("Missing texcoords0 accessor"))?;
+                            .ok_or(anyhow!("Missing texCoords0 accessor"))?;
 
                         let contents = get_buffer_data(accessor)
-                            .ok_or(anyhow!("Missing texcoords0 buffer"))?;
+                            .ok_or(anyhow!("Missing texCoords0 buffer"))?;
 
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: label!("Texcoords0 buffer", mesh),
+                            label: label!("TexCoords0 buffer", mesh),
                             contents,
                             usage: wgpu::BufferUsages::VERTEX,
                         })
@@ -135,17 +156,30 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 })
                 .collect::<Result<_>>()?;
 
-            let instances = RenderInstances::new(
-                &device,
-                vec![(glam::Vec3::default(), glam::Quat::default())],
-            );
-
             Ok(RenderMesh {
                 primitives,
-                instances,
+                instances: RenderInstances::new(&device),
             })
         })
         .collect::<Result<_>>()?;
+
+    let mut transforms = HashMap::new();
+    for scene in doc.scenes() {
+        traverse_nodes(
+            scene.nodes(),
+            &InstanceTransform::default(),
+            &mut transforms,
+        );
+    }
+
+    for node in doc.nodes() {
+        if let Some(mesh) = node.mesh() {
+            meshes[mesh.index()]
+                .instances
+                .transforms
+                .push(transforms[&node.index()])
+        }
+    }
 
     let materials = doc
         .materials()
@@ -297,25 +331,25 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                         RenderInstances::DESC,
                         // Positions
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 3) as wgpu::BufferAddress,
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![7 => Float32x3],
                         },
                         // Normals
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 3) as wgpu::BufferAddress,
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![8 => Float32x3],
                         },
                         // Tangents
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 4) as wgpu::BufferAddress,
+                            array_stride: (std::mem::size_of::<f32>() * 4) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![9 => Float32x4],
                         },
                         // UV
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 2) as wgpu::BufferAddress,
+                            array_stride: (std::mem::size_of::<f32>() * 2) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![10 => Float32x2],
                         },

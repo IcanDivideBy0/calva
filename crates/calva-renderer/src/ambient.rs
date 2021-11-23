@@ -1,8 +1,14 @@
+use wgpu::util::DeviceExt;
+
 use crate::GeometryBuffer;
 use crate::RenderContext;
 use crate::Renderer;
 
 pub struct AmbientPass {
+    pub factor: f32,
+
+    buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
@@ -14,15 +20,46 @@ impl AmbientPass {
             ..
         } = renderer;
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("Ambient shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ambient.wgsl").into()),
+        let factor = 0.1;
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Ambient buffer"),
+            contents: bytemuck::cast_slice(&[factor]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Ambient bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Ambient bind group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Ambient pipeline layout"),
-            bind_group_layouts: &[&gbuffer.bind_group_layout],
+            bind_group_layouts: &[&gbuffer.bind_group_layout, &bind_group_layout],
             push_constant_ranges: &[],
+        });
+
+        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Ambient shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ambient.wgsl").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -60,10 +97,19 @@ impl AmbientPass {
             },
         });
 
-        Self { pipeline }
+        Self {
+            factor,
+            buffer,
+            bind_group,
+            pipeline,
+        }
     }
 
     pub fn render(&self, ctx: &mut RenderContext, gbuffer: &GeometryBuffer) {
+        ctx.renderer
+            .queue
+            .write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.factor]));
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ambient pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
@@ -79,6 +125,7 @@ impl AmbientPass {
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &gbuffer.bind_group, &[]);
+        rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..6, 0..1);
     }

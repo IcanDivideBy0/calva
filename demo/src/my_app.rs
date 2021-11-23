@@ -1,6 +1,13 @@
-#[derive(Default)]
 pub struct MyApp {
-    pub value: f32,
+    pub ambient_factor: f32,
+}
+
+impl Default for MyApp {
+    fn default() -> Self {
+        Self {
+            ambient_factor: 0.1,
+        }
+    }
 }
 
 impl epi::App for MyApp {
@@ -16,12 +23,16 @@ impl epi::App for MyApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                ui.heading("Side Panel");
                 ui.add(
-                    egui::DragValue::new(&mut self.value)
-                        .clamp_range(-1.0..=1.0)
-                        .speed(0.01),
+                    egui::Slider::new(&mut self.ambient_factor, 0.0..=1.0).text("Ambient factor"),
                 );
+
+                // ui.heading("Side Panel");
+                // ui.add(
+                //     egui::DragValue::new(&mut self.value)
+                //         .clamp_range(0.0..=1.0)
+                //         .speed(0.01).text("value"),
+                // );
             });
 
         // egui::SidePanel::left("side_panel_left")

@@ -87,7 +87,7 @@ impl LightsPass {
                     entry_point: "main",
                     buffers: &[
                         wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<PointLight>() as wgpu::BufferAddress,
+                            array_stride: std::mem::size_of::<PointLight>() as _,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array![
                                 0 => Float32x3, // Position
@@ -96,7 +96,7 @@ impl LightsPass {
                             ],
                         },
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 3) as wgpu::BufferAddress,
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![3 => Float32x3],
                         },
@@ -167,7 +167,7 @@ impl LightsPass {
                     entry_point: "main",
                     buffers: &[
                         wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<PointLight>() as wgpu::BufferAddress,
+                            array_stride: std::mem::size_of::<PointLight>() as _,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array![
                                 0 => Float32x3, // Position
@@ -176,7 +176,7 @@ impl LightsPass {
                             ],
                         },
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 3) as wgpu::BufferAddress,
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![3 => Float32x3],
                         },

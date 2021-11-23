@@ -1,14 +1,14 @@
 // Vertex shader
 
 [[block]]
-struct CameraUniforms {
+struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
     view_proj: mat4x4<f32>;
 };
 
 [[group(0), binding(0)]]
-var<uniform> camera: CameraUniforms;
+var<uniform> camera: Camera;
 
 struct InstanceInput {
     [[location(0)]] model_matrix_0: vec4<f32>;
@@ -54,12 +54,12 @@ fn main(
         instance.normal_matrix_2,
     );
 
-    let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
+    let view_pos = camera.view * model_matrix * vec4<f32>(in.position, 1.0);
 
     var out: VertexOutput;
 
-    out.clip_position = camera.view_proj * world_pos;
-    out.position = world_pos.xyz / world_pos.w;
+    out.clip_position = camera.proj * view_pos;
+    out.position = view_pos.xyz / view_pos.w;
 
     out.normal = normalize(normal_matrix * in.normal);
     out.tangent = normalize(normal_matrix * in.tangent.xyz);
@@ -119,6 +119,8 @@ fn main(in: VertexOutput) ->  FragmentOutput {
     out.albedo = textureSample(t_albedo, s_albedo, in.uv);
     out.position = vec4<f32>(in.position, 1.0);
     out.normal = vec4<f32>(compute_normal(in), 1.0);
+
+    // out.albedo = out.normal;
 
     return out;
 }

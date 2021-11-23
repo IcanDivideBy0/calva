@@ -1,8 +1,8 @@
 pub mod loader;
 
-use calva_renderer::{
+use renderer::{
     wgpu::{self, util::DeviceExt},
-    DrawModel, Renderer,
+    Camera, DrawModel, Renderer,
 };
 
 pub struct RenderPrimitive {
@@ -15,14 +15,50 @@ pub struct RenderPrimitive {
     pub material: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct InstanceTransform {
+    translation: glam::Vec3,
+    rotation: glam::Quat,
+    scale: glam::Vec3,
+}
+
+impl Default for InstanceTransform {
+    fn default() -> Self {
+        Self {
+            translation: glam::Vec3::ZERO,
+            rotation: glam::Quat::IDENTITY,
+            scale: glam::Vec3::ONE,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceRaw {
+    model: [f32; 16],
+    normal: [f32; 9],
+}
+
+impl InstanceRaw {
+    fn from_transform_camera(t: &InstanceTransform, camera: &Camera) -> Self {
+        let model = glam::Mat4::from_scale_rotation_translation(t.scale, t.rotation, t.translation);
+
+        let normal = (camera.view * model).inverse().transpose();
+
+        Self {
+            model: model.to_cols_array(),
+            normal: glam::Mat3::from_mat4(normal).to_cols_array(),
+        }
+    }
+}
+
 pub struct RenderInstances {
-    pub transforms: Vec<(glam::Vec3, glam::Quat)>,
+    pub transforms: Vec<InstanceTransform>,
     pub buffer: wgpu::Buffer,
 }
 
 impl RenderInstances {
-    pub const SIZE: wgpu::BufferAddress =
-        (std::mem::size_of::<f32>() * (16 + 9)) as wgpu::BufferAddress;
+    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<InstanceRaw>() as _;
     pub const DESC: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
         array_stride: Self::SIZE,
         step_mode: wgpu::VertexStepMode::Instance,
@@ -40,39 +76,30 @@ impl RenderInstances {
         ],
     };
 
-    pub fn new(device: &wgpu::Device, transforms: Vec<(glam::Vec3, glam::Quat)>) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
+        // TODO: use more dynamic sized buffer?
+        let data = [0u8; std::mem::size_of::<InstanceRaw>() * 10];
+
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instances Buffer"),
-            contents: bytemuck::cast_slice(&[0.0f32; 16 + 9]),
+            contents: bytemuck::cast_slice(&data),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
-        Self { transforms, buffer }
+        Self {
+            transforms: vec![
+                // TODO: remove me once animations are properly loaded
+                InstanceTransform::default(),
+            ],
+            buffer,
+        }
     }
 
-    pub fn update_buffers(&self, queue: &wgpu::Queue) {
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-        pub struct InstanceRaw {
-            model: [f32; 16],
-            normal: [f32; 9],
-        }
-
+    pub fn update_buffers(&self, queue: &wgpu::Queue, camera: &Camera) {
         let data = self
             .transforms
             .iter()
-            .map(|(t, r)| {
-                let translation = glam::Mat4::from_translation(*t);
-                let rotation = glam::Mat4::from_quat(*r);
-
-                let model = translation * rotation;
-                let normal = glam::Mat3::from_quat(*r);
-
-                InstanceRaw {
-                    model: *model.as_ref(),
-                    normal: *normal.as_ref(),
-                }
-            })
+            .map(|t| InstanceRaw::from_transform_camera(t, camera))
             .collect::<Vec<_>>();
 
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&data));
@@ -105,7 +132,8 @@ impl DrawModel for RenderModel {
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         for mesh in &self.meshes {
-            mesh.instances.update_buffers(&renderer.queue);
+            mesh.instances
+                .update_buffers(&renderer.queue, &renderer.camera);
 
             for primitive in &mesh.primitives {
                 let material = &self.materials[primitive.material];

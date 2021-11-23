@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-calva-renderer = { path = "../calva-renderer" }
+renderer = { package = "calva-renderer", path = "../calva-renderer" }
 anyhow = "1.0"
 glam = { version = "0.20", features = ["serde"] }
 gltf = "0.15.2"

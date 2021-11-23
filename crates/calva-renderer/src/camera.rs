@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 pub struct Camera {
-    pub(crate) view: glam::Mat4,
-    pub(crate) proj: glam::Mat4,
+    pub view: glam::Mat4,
+    pub proj: glam::Mat4,
 
     buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
@@ -12,7 +12,7 @@ pub struct Camera {
 impl Camera {
     pub fn new(device: &wgpu::Device) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera uniform buffer"),
+            label: Some("Camera buffer"),
             contents: bytemuck::cast_slice(&[
                 glam::Mat4::default(), // view
                 glam::Mat4::default(), // proj
@@ -22,10 +22,10 @@ impl Camera {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Camera uniform bind group layout"),
+            label: Some("Camera bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -36,7 +36,7 @@ impl Camera {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Camera uniform bind group"),
+            label: Some("Camera bind group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,

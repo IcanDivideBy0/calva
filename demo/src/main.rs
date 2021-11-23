@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
     let mut renderer = Renderer::new(&window).await?;
     let mut gbuffer = GeometryBuffer::new(&renderer);
     let ssao = SsaoPass::new(&renderer, &gbuffer);
-    let ambient = AmbientPass::new(&renderer, &gbuffer);
+    let mut ambient = AmbientPass::new(&renderer, &gbuffer);
     let lights = LightsPass::new(&renderer, &gbuffer);
 
     let start_time = Instant::now();
@@ -49,6 +49,10 @@ async fn main() -> Result<()> {
             &renderer,
             &mut std::fs::File::open("./assets/zombie.glb")?,
         )?),
+        // Box::new(calva::gltf::loader::load(
+        //     &renderer,
+        //     &mut std::fs::File::open("./assets/dungeon.glb")?,
+        // )?),
         // Box::new(calva::gltf::loader::load(
         //     &renderer,
         //     &mut std::fs::File::open("./assets/plane.glb")?,
@@ -72,6 +76,7 @@ async fn main() -> Result<()> {
                 last_render_time = now;
 
                 camera.update(&mut renderer, dt);
+                ambient.factor = my_app.ambient_factor;
 
                 let t = Instant::now() - start_time;
                 let lights_data = [
@@ -103,7 +108,6 @@ async fn main() -> Result<()> {
                         ssao.render(&mut ctx);
                         ambient.render(&mut ctx, &gbuffer);
                         lights.render(&mut ctx, &gbuffer, &lights_data);
-
                         egui.render(&window, &mut ctx, &mut my_app).expect("egui");
 
                         renderer.finish_render_frame(ctx);
