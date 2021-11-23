@@ -89,7 +89,7 @@ impl Renderer {
                 compatible_surface: Some(&surface),
             })
             .await
-            .ok_or(anyhow!("Cannot request WebGPU adapter"))?;
+            .ok_or_else(|| anyhow!("Cannot request WebGPU adapter"))?;
 
         let (device, queue) = adapter
             .request_device(
@@ -106,7 +106,7 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface
                 .get_preferred_format(&adapter)
-                .ok_or(anyhow!("Unable to get surface preferred format"))?,
+                .ok_or_else(|| anyhow!("Unable to get surface preferred format"))?,
             width: size.width as u32,
             height: size.height as u32,
             // present_mode: wgpu::PresentMode::Immediate,
@@ -153,7 +153,7 @@ impl Renderer {
             });
 
         Ok(RenderContext {
-            renderer: &self,
+            renderer: self,
             frame,
             view,
             encoder,

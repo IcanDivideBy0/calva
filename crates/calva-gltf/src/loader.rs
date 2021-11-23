@@ -66,10 +66,10 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     let positions_buffer = {
                         let accessor = primitive
                             .get(&gltf::Semantic::Positions)
-                            .ok_or(anyhow!("Missing positions accessor"))?;
+                            .ok_or_else(|| anyhow!("Missing positions accessor"))?;
 
-                        let contents =
-                            get_buffer_data(accessor).ok_or(anyhow!("Missing positions buffer"))?;
+                        let contents = get_buffer_data(accessor)
+                            .ok_or_else(|| anyhow!("Missing positions buffer"))?;
 
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Positions buffer", mesh),
@@ -81,10 +81,10 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     let normals_buffer = {
                         let accessor = primitive
                             .get(&gltf::Semantic::Normals)
-                            .ok_or(anyhow!("Missing normals accessor"))?;
+                            .ok_or_else(|| anyhow!("Missing normals accessor"))?;
 
-                        let contents =
-                            get_buffer_data(accessor).ok_or(anyhow!("Missing normals buffer"))?;
+                        let contents = get_buffer_data(accessor)
+                            .ok_or_else(|| anyhow!("Missing normals buffer"))?;
 
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Normals buffer", mesh),
@@ -96,10 +96,10 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     let tangents_buffer = {
                         let accessor = primitive
                             .get(&gltf::Semantic::Tangents)
-                            .ok_or(anyhow!("Missing tangents accessor"))?;
+                            .ok_or_else(|| anyhow!("Missing tangents accessor"))?;
 
-                        let contents =
-                            get_buffer_data(accessor).ok_or(anyhow!("Missing tangents buffer"))?;
+                        let contents = get_buffer_data(accessor)
+                            .ok_or_else(|| anyhow!("Missing tangents buffer"))?;
 
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Tangents buffer", mesh),
@@ -111,10 +111,10 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     let tex_coords_0_buffer = {
                         let accessor = primitive
                             .get(&gltf::Semantic::TexCoords(0))
-                            .ok_or(anyhow!("Missing texCoords0 accessor"))?;
+                            .ok_or_else(|| anyhow!("Missing texCoords0 accessor"))?;
 
                         let contents = get_buffer_data(accessor)
-                            .ok_or(anyhow!("Missing texCoords0 buffer"))?;
+                            .ok_or_else(|| anyhow!("Missing texCoords0 buffer"))?;
 
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("TexCoords0 buffer", mesh),
@@ -126,11 +126,11 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     let (indices_buffer, num_elements) = {
                         let accessor = primitive
                             .indices()
-                            .ok_or(anyhow!("Missing indices accessor"))?;
+                            .ok_or_else(|| anyhow!("Missing indices accessor"))?;
                         let num_elements = accessor.count() as u32;
 
-                        let contents =
-                            get_buffer_data(accessor).ok_or(anyhow!("Missing indices buffer"))?;
+                        let contents = get_buffer_data(accessor)
+                            .ok_or_else(|| anyhow!("Missing indices buffer"))?;
 
                         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Indices buffer", mesh),
@@ -151,14 +151,14 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                         material: primitive
                             .material()
                             .index()
-                            .ok_or(anyhow!("Missing material"))?,
+                            .ok_or_else(|| anyhow!("Missing material"))?,
                     })
                 })
                 .collect::<Result<_>>()?;
 
             Ok(RenderMesh {
                 primitives,
-                instances: RenderInstances::new(&device),
+                instances: RenderInstances::new(device),
             })
         })
         .collect::<Result<_>>()?;
@@ -192,7 +192,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
 
                 let image_data = images
                     .get(image_index)
-                    .ok_or(anyhow!("Missing image data"))?;
+                    .ok_or_else(|| anyhow!("Missing image data"))?;
 
                 // 3 chanels texture formats not supported
                 // https://github.com/gpuweb/gpuweb/issues/66
@@ -227,7 +227,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 material
                     .pbr_metallic_roughness()
                     .base_color_texture()
-                    .ok_or(anyhow!("Missing base color texture"))?
+                    .ok_or_else(|| anyhow!("Missing base color texture"))?
                     .texture(),
                 wgpu::TextureFormat::Rgba8UnormSrgb,
                 label!("Base color texture", material),
@@ -236,7 +236,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
             let normal_texture = make_texture(
                 material
                     .normal_texture()
-                    .ok_or(anyhow!("Missing normal texture"))?
+                    .ok_or_else(|| anyhow!("Missing normal texture"))?
                     .texture(),
                 wgpu::TextureFormat::Rgba8Unorm,
                 label!("Normal texture", material),
@@ -358,7 +358,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "main",
-                    targets: &Renderer::RENDER_TARGETS,
+                    targets: Renderer::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,

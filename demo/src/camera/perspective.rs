@@ -30,8 +30,8 @@ impl Perspective {
     }
 }
 
-impl Into<glam::Mat4> for Perspective {
-    fn into(self) -> glam::Mat4 {
-        glam::Mat4::perspective_rh(self.fovy, self.aspect, self.znear, self.zfar)
+impl From<Perspective> for glam::Mat4 {
+    fn from(p: Perspective) -> glam::Mat4 {
+        glam::Mat4::perspective_rh(p.fovy, p.aspect, p.znear, p.zfar)
     }
 }
