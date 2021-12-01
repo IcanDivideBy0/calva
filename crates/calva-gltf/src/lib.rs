@@ -140,8 +140,9 @@ impl DrawModel for RenderModel {
 
                 rpass.set_pipeline(&material.pipeline);
 
-                rpass.set_bind_group(0, &renderer.camera.bind_group, &[]);
-                rpass.set_bind_group(1, &material.bind_group, &[]);
+                rpass.set_bind_group(0, &renderer.config.bind_group, &[]);
+                rpass.set_bind_group(1, &renderer.camera.bind_group, &[]);
+                rpass.set_bind_group(2, &material.bind_group, &[]);
 
                 rpass.set_vertex_buffer(0, mesh.instances.buffer.slice(..));
                 rpass.set_vertex_buffer(1, primitive.positions_buffer.slice(..));

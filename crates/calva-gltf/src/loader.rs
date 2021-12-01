@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu::{self, util::DeviceExt},
-    Renderer, Texture,
+    GeometryBuffer, Renderer, Texture,
 };
 use std::collections::HashMap;
 use std::io::Read;
@@ -42,6 +42,7 @@ fn traverse_nodes<'a>(
 pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
     let mut gltf_buffer = Vec::new();
     reader.read_to_end(&mut gltf_buffer)?;
+
     let (doc, buffers, images) = gltf::import_slice(gltf_buffer.as_slice())?;
 
     let get_buffer_data = |accessor: gltf::Accessor| -> Option<&[u8]> {
@@ -194,17 +195,17 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     .get(image_index)
                     .ok_or_else(|| anyhow!("Missing image data"))?;
 
-                // 3 chanels texture formats not supported
+                // 3 chanels texture formats are not supported by WebGPU
                 // https://github.com/gpuweb/gpuweb/issues/66
                 let pixels = if image_data.format == gltf::image::Format::R8G8B8 {
-                    let mut v =
-                        Vec::with_capacity((image_data.width * image_data.height * 4) as usize);
-                    for pixel in image_data.pixels.chunks_exact(3) {
-                        v.extend_from_slice(pixel);
-                        v.push(0);
-                    }
+                    let buf = image::ImageBuffer::from_raw(
+                        image_data.width,
+                        image_data.height,
+                        image_data.pixels.clone(),
+                    )
+                    .ok_or_else(|| anyhow!("Invalid image data"))?;
 
-                    v
+                    image::DynamicImage::ImageRgb8(buf).to_rgba8().to_vec()
                 } else {
                     image_data.pixels.clone()
                 };
@@ -233,14 +234,58 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 label!("Base color texture", material),
             )?;
 
-            let normal_texture = make_texture(
-                material
-                    .normal_texture()
-                    .ok_or_else(|| anyhow!("Missing normal texture"))?
-                    .texture(),
-                wgpu::TextureFormat::Rgba8Unorm,
-                label!("Normal texture", material),
-            )?;
+            // let normal_texture = make_texture(
+            //     material
+            //         .normal_texture()
+            //         .ok_or_else(|| anyhow!("Missing normal texture"))?
+            //         .texture(),
+            //     wgpu::TextureFormat::Rgba8Unorm,
+            //     label!("Normal texture", material),
+            // )?;
+            let normal_texture = if let Some(normal_texture) = material.normal_texture() {
+                make_texture(
+                    normal_texture.texture(),
+                    wgpu::TextureFormat::Rgba8Unorm,
+                    label!("Normal texture", material),
+                )?
+            } else {
+                Texture::new(
+                    &renderer.device,
+                    &renderer.queue,
+                    wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    wgpu::TextureFormat::Rgba8Unorm,
+                    &[0, 0, 255, 0],
+                    label!("Normal texture", material),
+                )
+            };
+
+            let metallic_roughness_texture = if let Some(metallic_roughness_texture) = material
+                .pbr_metallic_roughness()
+                .metallic_roughness_texture()
+            {
+                make_texture(
+                    metallic_roughness_texture.texture(),
+                    wgpu::TextureFormat::Rgba8Unorm,
+                    label!("Metallic roughness texture", material),
+                )?
+            } else {
+                Texture::new(
+                    &renderer.device,
+                    &renderer.queue,
+                    wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    wgpu::TextureFormat::Rgba8Unorm,
+                    &[0, 255, 0, 0],
+                    label!("Metallic roughness texture", material),
+                )
+            };
 
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -258,10 +303,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler {
-                                comparison: false,
-                                filtering: true,
-                            },
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
@@ -277,14 +319,27 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                         wgpu::BindGroupLayoutEntry {
                             binding: 3,
                             visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler {
-                                comparison: false,
-                                filtering: true,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 5,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
                     ],
-                    label: label!("Bind group layout", material),
+                    label: label!("Material bind group layout", material),
                 });
 
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -306,8 +361,20 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                         binding: 3,
                         resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(
+                            &metallic_roughness_texture.view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(
+                            &metallic_roughness_texture.sampler,
+                        ),
+                    },
                 ],
-                label: label!("Bind group", material),
+                label: label!("Material bind group", material),
             });
 
             let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -317,13 +384,18 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: label!("Material render pipeline layout", material),
-                bind_group_layouts: &[&renderer.camera.bind_group_layout, &bind_group_layout],
+                bind_group_layouts: &[
+                    &renderer.config.bind_group_layout,
+                    &renderer.camera.bind_group_layout,
+                    &bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: label!("Material render pipeline", material),
                 layout: Some(&pipeline_layout),
+                multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "main",
@@ -358,20 +430,14 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "main",
-                    targets: Renderer::RENDER_TARGETS,
+                    targets: GeometryBuffer::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
                     cull_mode: Some(wgpu::Face::Back),
-                    clamp_depth: false,
-                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    conservative: false,
+                    ..Default::default()
                 },
-                depth_stencil: Some(Renderer::DEPTH_STENCIL),
-                multisample: Renderer::MULTISAMPLE,
+                depth_stencil: Some(GeometryBuffer::DEPTH_STENCIL),
+                multisample: GeometryBuffer::MULTISAMPLE,
             });
 
             Ok(RenderMaterial {

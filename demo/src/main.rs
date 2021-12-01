@@ -1,7 +1,5 @@
 use anyhow::Result;
-use calva::renderer::{
-    AmbientPass, DrawModel, EguiPass, GeometryBuffer, LightsPass, PointLight, Renderer, SsaoPass,
-};
+use calva::renderer::{DrawModel, PointLight, Renderer};
 use std::time::Instant;
 use winit::{
     event::*,
@@ -10,105 +8,145 @@ use winit::{
 };
 
 mod camera;
-mod my_app;
+mod debug_lights;
+// mod my_app;
 mod shapes;
 
 use camera::MyCamera;
-use my_app::*;
+use debug_lights::DebugLights;
+// use my_app::*;
 
 #[async_std::main]
 async fn main() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
-    // window.set_outer_position(winit::dpi::PhysicalPosition::new(1920 * 2, 0));
 
     let mut camera = MyCamera::new(&window);
     camera.controller.transform = glam::Mat4::inverse(&glam::Mat4::look_at_rh(
-        (2.0, 2.0, 2.0).into(), // eye
-        (0.0, 0.0, 0.0).into(), // target
-        (0.0, 1.0, 0.0).into(), // up
+        glam::Vec3::Y + glam::Vec3::ZERO, // eye
+        glam::Vec3::Y + glam::Vec3::X,    // target
+        glam::Vec3::Y,                    // up
     ));
 
     let mut renderer = Renderer::new(&window).await?;
-    let mut gbuffer = GeometryBuffer::new(&renderer);
-    let ssao = SsaoPass::new(&renderer, &gbuffer);
-    let mut ambient = AmbientPass::new(&renderer, &gbuffer);
-    let lights = LightsPass::new(&renderer, &gbuffer);
+    let mut debug_lights =
+        DebugLights::new(&renderer.device, &renderer.surface_config, &renderer.camera);
 
-    let start_time = Instant::now();
-    let mut last_render_time = Instant::now();
+    // let mut egui = EguiPass::new(&window, &renderer.device);
+    // let mut my_app = MyApp::from(&*renderer.config);
 
     let models: Vec<Box<dyn DrawModel>> = vec![
         // Box::new(shapes::SimpleMesh::new(
         //     &renderer,
         //     shapes::SimpleShape::Cube,
-        //     "Plane",
+        //     "Cube",
         // )),
         Box::new(calva::gltf::loader::load(
             &renderer,
-            &mut std::fs::File::open("./assets/zombie.glb")?,
+            &mut std::fs::File::open("./assets/sponza.glb")?,
+            // &mut std::fs::File::open("./assets/zombie.glb")?,
+            // &mut std::fs::File::open("./assets/dungeon.glb")?,
+            // &mut std::fs::File::open("./assets/plane.glb")?,
         )?),
-        // Box::new(calva::gltf::loader::load(
-        //     &renderer,
-        //     &mut std::fs::File::open("./assets/dungeon.glb")?,
-        // )?),
-        // Box::new(calva::gltf::loader::load(
-        //     &renderer,
-        //     &mut std::fs::File::open("./assets/plane.glb")?,
-        // )?),
     ];
 
-    let mut egui = EguiPass::new(&window, &renderer.device);
-    let mut my_app = MyApp::default();
+    let get_random_vec3 = || glam::vec3(rand::random(), rand::random(), rand::random());
+
+    let num_lights = calva::renderer::PointLightsPass::MAX_LIGHTS;
+    let mut lights = (0..num_lights)
+        .map(|_| PointLight {
+            position: (get_random_vec3() * 2.0 - 1.0) * 15.0,
+            radius: 1.0,
+            color: get_random_vec3(),
+            // color: glam::Vec3::ONE,
+        })
+        .collect::<Vec<_>>();
+
+    let lights_vel = (0..lights.len())
+        .map(|_| (get_random_vec3() * 2.0 - 1.0) * 2.0 * glam::vec3(0.0, 1.0, 0.0))
+        .collect::<Vec<_>>();
+
+    // let num_lights = 1;
+    // let mut lights = (0..num_lights)
+    //     .map(|_| PointLight {
+    //         // position: 5.0 * glam::Vec3::X + glam::Vec3::Y * 0.1,
+    //         position: glam::Vec3::Y,
+    //         radius: 5.0,
+    //         color: glam::Vec3::ONE,
+    //     })
+    //     .collect::<Vec<_>>();
+    // let lights_vel = (0..lights.len())
+    //     .map(|_| glam::vec3(0.0, 0.0, 0.0))
+    //     .collect::<Vec<_>>();
+
+    // let start_time = Instant::now();
+    let mut last_render_time = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
-        egui.handle_event(&event);
+        // egui.handle_event(&event);
 
-        if egui.captures_event(&event) {
-            return;
-        }
+        // if egui.captures_event(&event) {
+        //     return;
+        // }
 
         match event {
             Event::RedrawRequested(_) => {
-                let now = std::time::Instant::now();
-                let dt = now - last_render_time;
-                last_render_time = now;
+                let dt = last_render_time.elapsed();
+                last_render_time = Instant::now();
 
+                // renderer.config.data = my_app.into();
                 camera.update(&mut renderer, dt);
-                ambient.factor = my_app.ambient_factor;
 
-                let t = Instant::now() - start_time;
-                let lights_data = [
-                    PointLight {
-                        position: (
-                            1.0,
-                            3.0 + t.as_secs_f32().cos() / 2.0,
-                            1.0 + t.as_secs_f32().sin() / 2.0,
-                        )
-                            .into(),
-                        radius: 1.0,
-                        color: (1.0, 0.0, 0.0).into(),
-                    },
-                    PointLight {
-                        position: (
-                            1.0,
-                            2.0 + t.as_secs_f32().sin() / 2.0,
-                            1.0 + t.as_secs_f32().cos() / 2.0,
-                        )
-                            .into(),
-                        radius: 1.0,
-                        color: (0.0, 1.0, 0.0).into(),
-                    },
-                ];
+                // lights[0].position = my_app.light_pos;
+
+                // for (light, idx) in lights.iter_mut().zip(0..) {
+                //     light.position = glam::vec3(
+                //         (start_time.elapsed().as_secs_f32() + (idx as f32 / num_lights)).sin()
+                //             * 1.0,
+                //         2.0,
+                //         (start_time.elapsed().as_secs_f32() + (idx as f32 / num_lights)).cos()
+                //             * 1.0,
+                //     );
+                // }
+
+                let limit = 15.0;
+                for (light, vel) in lights.iter_mut().zip(&lights_vel) {
+                    light.position += *vel * dt.as_secs_f32();
+
+                    if light.position.x > limit {
+                        light.position.x = -limit;
+                    }
+                    if light.position.x < -limit {
+                        light.position.x = limit;
+                    }
+
+                    if light.position.y > limit {
+                        light.position.y = -limit;
+                    }
+                    if light.position.y < -limit {
+                        light.position.y = limit;
+                    }
+
+                    if light.position.z > limit {
+                        light.position.z = -limit;
+                    }
+                    if light.position.z < -limit {
+                        light.position.z = limit;
+                    }
+                }
 
                 match renderer.begin_render_frame() {
                     Ok(mut ctx) => {
-                        gbuffer.render(&mut ctx, &models);
-                        ssao.render(&mut ctx);
-                        ambient.render(&mut ctx, &gbuffer);
-                        lights.render(&mut ctx, &gbuffer, &lights_data);
-                        egui.render(&window, &mut ctx, &mut my_app).expect("egui");
+                        renderer.gbuffer.render(&mut ctx, &models);
+
+                        renderer.ssao.render(&mut ctx);
+                        renderer.ambient.render(&mut ctx);
+                        renderer.lights.render(&mut ctx, &lights);
+
+                        debug_lights.render(&mut ctx, &lights);
+
+                        // egui.render(&window, &mut ctx, &mut my_app).expect("egui");
 
                         renderer.finish_render_frame(ctx);
                     }
@@ -118,7 +156,11 @@ async fn main() -> Result<()> {
                             renderer.surface_config.width,
                             renderer.surface_config.height,
                         ));
-                        gbuffer = GeometryBuffer::new(&renderer);
+                        debug_lights = DebugLights::new(
+                            &renderer.device,
+                            &renderer.surface_config,
+                            &renderer.camera,
+                        );
                     }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
@@ -154,13 +196,21 @@ async fn main() -> Result<()> {
 
                     WindowEvent::Resized(physical_size) => {
                         renderer.resize(*physical_size);
-                        gbuffer = GeometryBuffer::new(&renderer);
                         camera.resize(*physical_size);
+                        debug_lights = DebugLights::new(
+                            &renderer.device,
+                            &renderer.surface_config,
+                            &renderer.camera,
+                        );
                     }
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         renderer.resize(**new_inner_size);
-                        gbuffer = GeometryBuffer::new(&renderer);
                         camera.resize(**new_inner_size);
+                        debug_lights = DebugLights::new(
+                            &renderer.device,
+                            &renderer.surface_config,
+                            &renderer.camera,
+                        );
                     }
 
                     _ => {}

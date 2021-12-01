@@ -8,6 +8,11 @@ edition = "2021"
 [dependencies]
 calva = { path = "../crates/calva" }
 
+# epi = "0.15.0"
+# egui = "0.15.0"
+# egui_wgpu_backend = "0.14.0"
+# egui_winit_platform = "0.11.0"
+
 anyhow = "1.0.40"
 async-std = { version = "1.10.0", features = ["attributes"] }
 bytemuck = "1.7"
@@ -17,3 +22,5 @@ env_logger = "0.9.0"
 glam = { version = "0.20.0", features = ["bytemuck"] }
 wgpu = "0.11.0"
 winit = "0.25.0"
+rand = "0.8.3"
+gltf = "0.15.2"

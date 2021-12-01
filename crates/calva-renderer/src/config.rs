@@ -1,25 +1,45 @@
 use wgpu::util::DeviceExt;
 
-pub struct ShaderGlobals {
-    pub value: f32,
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RendererConfigData {
+    pub ssao_radius: f32,
+    pub ssao_bias: f32,
+    pub ssao_power: f32,
+    pub ambient_factor: f32,
+}
 
-    buffer: wgpu::Buffer,
+impl RendererConfigData {
+    fn default() -> Self {
+        Self {
+            ssao_radius: 0.3,
+            ssao_bias: 0.025,
+            ssao_power: 2.0,
+            ambient_factor: 0.1,
+        }
+    }
+}
+
+pub struct RendererConfig {
+    pub data: RendererConfigData,
+
+    pub buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
-impl ShaderGlobals {
+impl RendererConfig {
     pub fn new(device: &wgpu::Device) -> Self {
-        let value = 0.0;
+        let data = RendererConfigData::default();
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Shader globals uniform buffer"),
-            contents: bytemuck::cast_slice(&[value]),
+            label: Some("Renderer config buffer"),
+            contents: bytemuck::cast_slice(&[data]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Shader globals uniform bind group layout"),
+            label: Some("Renderer config bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -33,7 +53,7 @@ impl ShaderGlobals {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Shader globals uniform bind group"),
+            label: Some("Renderer config bind group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -42,7 +62,7 @@ impl ShaderGlobals {
         });
 
         Self {
-            value,
+            data,
 
             buffer,
             bind_group_layout,
@@ -50,7 +70,15 @@ impl ShaderGlobals {
         }
     }
 
-    pub fn update_buffers(&self, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.value]));
+    pub(crate) fn update_buffer(&self, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.data]));
+    }
+}
+
+impl std::ops::Deref for RendererConfig {
+    type Target = RendererConfigData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }

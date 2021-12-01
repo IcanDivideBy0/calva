@@ -17,12 +17,10 @@ struct VertexOutput {
 
 [[stage(vertex)]]
 fn main([[location(0)]] position: vec3<f32>) -> VertexOutput {
-    var out: VertexOutput;
-    out.color = vec3<f32>(1.0, 0.0, 0.0);
-
-    out.clip_position = camera.view_proj * vec4<f32>(position, 1.0);
-
-    return out;
+    return VertexOutput (
+        camera.view_proj * vec4<f32>(position, 1.0),
+        vec3<f32>(1.0, 0.0, 0.0),
+    );
 }
 
 // Fragment shader
@@ -35,11 +33,9 @@ struct FragmentOutput {
 
 [[stage(fragment)]]
 fn main(in: VertexOutput) ->  FragmentOutput {
-    var out: FragmentOutput;
-    
-    out.albedo = vec4<f32>(in.color, 1.0);
-    out.position = vec4<f32>(0.1, 0.1, 0.1, 1.0);
-    out.normal = vec4<f32>(0.1, 0.1, 0.1, 1.0);
-
-    return out;
+    return FragmentOutput (
+        vec4<f32>(in.color, 1.0),
+        vec4<f32>(0.1, 0.1, 0.1, 1.0),
+        vec4<f32>(0.1, 0.1, 0.1, 1.0),
+    );
 }

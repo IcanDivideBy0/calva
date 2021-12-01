@@ -1,13 +1,12 @@
-pub struct MyApp {
-    pub ambient_factor: f32,
-}
+use calva::renderer::RendererConfigData;
 
-impl Default for MyApp {
-    fn default() -> Self {
-        Self {
-            ambient_factor: 0.1,
-        }
-    }
+#[derive(Clone, Copy)]
+pub struct MyApp {
+    pub light_pos: glam::Vec3,
+    pub ssao_radius: f32,
+    pub ssao_bias: f32,
+    pub ssao_power: f32,
+    pub ambient_factor: f32,
 }
 
 impl epi::App for MyApp {
@@ -16,34 +15,61 @@ impl epi::App for MyApp {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
-        egui::SidePanel::right("side_panel_right")
+        egui::SidePanel::right("config_panel")
             .frame(egui::containers::Frame {
                 margin: (10.0, 10.0).into(),
                 fill: egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                ui.add(
-                    egui::Slider::new(&mut self.ambient_factor, 0.0..=1.0).text("Ambient factor"),
-                );
+                egui::CollapsingHeader::new("Light")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(egui::DragValue::new(&mut self.light_pos.x).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut self.light_pos.y).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut self.light_pos.z).speed(0.01));
+                    });
 
-                // ui.heading("Side Panel");
-                // ui.add(
-                //     egui::DragValue::new(&mut self.value)
-                //         .clamp_range(0.0..=1.0)
-                //         .speed(0.01).text("value"),
-                // );
+                egui::CollapsingHeader::new("SSAO")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(egui::Slider::new(&mut self.ssao_radius, 0.0..=4.0).text("Radius"));
+                        ui.add(egui::Slider::new(&mut self.ssao_bias, 0.0..=0.1).text("Bias"));
+                        ui.add(egui::Slider::new(&mut self.ssao_power, 0.0..=8.0).text("Power"));
+                    });
+
+                egui::CollapsingHeader::new("Ambient")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut self.ambient_factor, 0.0..=1.0).text("Factor"),
+                        );
+                    });
             });
+    }
+}
 
-        // egui::SidePanel::left("side_panel_left")
-        //     .frame(egui::containers::Frame {
-        //         margin: (10.0, 10.0).into(),
-        //         fill: egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
-        //         ..Default::default()
-        //     })
-        //     .show(ctx, |ui| {
-        //         ui.heading("Side Panel");
-        //         ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-        //     });
+impl From<&RendererConfigData> for MyApp {
+    fn from(data: &RendererConfigData) -> Self {
+        Self {
+            // light_pos: glam::Vec3::Y * -0.05,
+            light_pos: glam::vec3(5.0, -0.5, 0.0),
+
+            ssao_radius: data.ssao_radius,
+            ssao_bias: data.ssao_bias,
+            ssao_power: data.ssao_power,
+            ambient_factor: data.ambient_factor,
+        }
+    }
+}
+
+impl From<MyApp> for RendererConfigData {
+    fn from(my_app: MyApp) -> Self {
+        Self {
+            ssao_radius: my_app.ssao_radius,
+            ssao_bias: my_app.ssao_bias,
+            ssao_power: my_app.ssao_power,
+            ambient_factor: my_app.ambient_factor,
+        }
     }
 }

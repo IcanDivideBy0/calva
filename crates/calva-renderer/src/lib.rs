@@ -2,24 +2,20 @@ pub use wgpu;
 
 mod ambient;
 mod camera;
-mod egui;
+mod config;
 mod gbuffer;
-mod globals;
 mod icosphere;
-mod light;
+mod point_light;
 mod renderer;
 mod ssao;
 mod texture;
 
-pub use crate::ambient::AmbientPass;
-pub use crate::camera::Camera;
-pub use crate::gbuffer::{DrawModel, GeometryBuffer};
-pub use crate::globals::ShaderGlobals;
-pub use crate::light::LightsPass;
-pub use crate::light::PointLight;
-pub use crate::renderer::{RenderContext, Renderer};
-pub use crate::ssao::SsaoPass;
-pub use crate::texture::Texture;
-
-// TODO: add feature flag
-pub use crate::egui::EguiPass;
+pub use ambient::AmbientPass;
+pub use camera::Camera;
+pub use config::{RendererConfig, RendererConfigData};
+pub use gbuffer::{DrawModel, GeometryBuffer};
+pub use point_light::PointLight;
+pub use point_light::PointLightsPass;
+pub use renderer::{RenderContext, Renderer};
+pub use ssao::SsaoPass;
+pub use texture::Texture;

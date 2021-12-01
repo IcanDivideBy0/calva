@@ -13,11 +13,7 @@ impl Camera {
     pub fn new(device: &wgpu::Device) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&[
-                glam::Mat4::default(), // view
-                glam::Mat4::default(), // proj
-                glam::Mat4::default(), // view_proj
-            ]),
+            contents: bytemuck::cast_slice(&[glam::Mat4::default(); 4]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -58,7 +54,12 @@ impl Camera {
         queue.write_buffer(
             &self.buffer,
             0,
-            bytemuck::cast_slice(&[self.view, self.proj, self.proj * self.view]),
+            bytemuck::cast_slice(&[
+                self.view,
+                self.proj,
+                self.proj * self.view,
+                self.proj.inverse(),
+            ]),
         );
     }
 }

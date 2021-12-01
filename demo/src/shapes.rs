@@ -1,6 +1,6 @@
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    DrawModel, Renderer,
+    DrawModel, GeometryBuffer, Renderer,
 };
 
 mod plane {
@@ -110,6 +110,7 @@ impl SimpleMesh {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&format!("Render Pipeline: {}", name)),
                 layout: Some(&pipeline_layout),
+                multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "main",
@@ -122,20 +123,20 @@ impl SimpleMesh {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "main",
-                    targets: Renderer::RENDER_TARGETS,
+                    targets: GeometryBuffer::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Ccw,
                     cull_mode: Some(wgpu::Face::Back),
-                    clamp_depth: false,
+                    unclipped_depth: false,
                     // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                     polygon_mode: wgpu::PolygonMode::Fill,
                     conservative: false,
                 },
-                depth_stencil: Some(Renderer::DEPTH_STENCIL),
-                multisample: Renderer::MULTISAMPLE,
+                depth_stencil: Some(GeometryBuffer::DEPTH_STENCIL),
+                multisample: GeometryBuffer::MULTISAMPLE,
             })
         };
 

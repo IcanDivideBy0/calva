@@ -1,14 +1,15 @@
 use std::collections::HashMap;
+use wgpu::util::DeviceExt;
 
-#[derive(Clone)]
 pub struct Icosphere {
-    pub vertices: Vec<f32>,
-    pub indices: Vec<u16>,
+    pub vertices: wgpu::Buffer,
+    pub indices: wgpu::Buffer,
+    pub count: u32,
 }
 
 impl Icosphere {
     #[allow(clippy::many_single_char_names)]
-    pub fn new(order: u32) -> Self {
+    pub fn new(device: &wgpu::Device, order: u32) -> Self {
         // set up a 20-triangle icosahedron
         let f = (1.0 + 5.0_f32.powf(0.5)) / 2.0;
 
@@ -31,7 +32,7 @@ impl Icosphere {
         ];
 
         #[rustfmt::skip]
-        let mut triangles = vec![
+        let mut indices = vec![
              0, 11,  5,
              0,  5,  1,
              0,  1,  7,
@@ -73,50 +74,66 @@ impl Icosphere {
             }
         };
 
-        let mut triangles_prev = triangles.clone();
+        let mut indices_prev = indices.clone();
         for _ in 0..order {
             // Subdivide each triangle into 4 triangles
-            triangles = vec![0; triangles_prev.len() * 4];
+            indices = vec![0; indices_prev.len() * 4];
 
-            for k in (0..triangles_prev.len()).step_by(3) {
-                let v1 = triangles_prev[k];
-                let v2 = triangles_prev[k + 1];
-                let v3 = triangles_prev[k + 2];
+            for k in (0..indices_prev.len()).step_by(3) {
+                let v1 = indices_prev[k];
+                let v2 = indices_prev[k + 1];
+                let v3 = indices_prev[k + 2];
                 let a = add_mid_point(&mut vertices, v1, v2);
                 let b = add_mid_point(&mut vertices, v2, v3);
                 let c = add_mid_point(&mut vertices, v3, v1);
 
                 let mut t = (k * 4)..;
-                triangles[t.next().unwrap()] = v1;
-                triangles[t.next().unwrap()] = a;
-                triangles[t.next().unwrap()] = c;
-                triangles[t.next().unwrap()] = v2;
-                triangles[t.next().unwrap()] = b;
-                triangles[t.next().unwrap()] = a;
-                triangles[t.next().unwrap()] = v3;
-                triangles[t.next().unwrap()] = c;
-                triangles[t.next().unwrap()] = b;
-                triangles[t.next().unwrap()] = a;
-                triangles[t.next().unwrap()] = b;
-                triangles[t.next().unwrap()] = c;
+                indices[t.next().unwrap()] = v1;
+                indices[t.next().unwrap()] = a;
+                indices[t.next().unwrap()] = c;
+                indices[t.next().unwrap()] = v2;
+                indices[t.next().unwrap()] = b;
+                indices[t.next().unwrap()] = a;
+                indices[t.next().unwrap()] = v3;
+                indices[t.next().unwrap()] = c;
+                indices[t.next().unwrap()] = b;
+                indices[t.next().unwrap()] = a;
+                indices[t.next().unwrap()] = b;
+                indices[t.next().unwrap()] = c;
             }
 
-            triangles_prev = triangles.clone();
+            indices_prev = indices.clone();
         }
 
         // Normalize vertices
         for i in (0..vertices.len()).step_by(3) {
             let n = (vertices[i].powf(2.0) + vertices[i + 1].powf(2.0) + vertices[i + 2].powf(2.0))
-                .sqrt();
+                .sqrt()
+                * 0.9;
 
             vertices[i] /= n;
             vertices[i + 1] /= n;
             vertices[i + 2] /= n;
         }
 
+        let count = indices.len() as u32;
+
+        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("LightsPass positions buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("LightsPass indices buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         Icosphere {
             vertices,
-            indices: triangles,
+            indices,
+            count,
         }
     }
 }
