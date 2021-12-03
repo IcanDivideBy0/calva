@@ -135,8 +135,8 @@ impl SimpleMesh {
                     polygon_mode: wgpu::PolygonMode::Fill,
                     conservative: false,
                 },
-                depth_stencil: Some(GeometryBuffer::DEPTH_STENCIL),
-                multisample: GeometryBuffer::MULTISAMPLE,
+                depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
+                multisample: Renderer::MULTISAMPLE_STATE,
             })
         };
 

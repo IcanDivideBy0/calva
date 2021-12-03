@@ -3,6 +3,7 @@ use wgpu::util::DeviceExt;
 use crate::Camera;
 use crate::GeometryBuffer;
 use crate::RenderContext;
+use crate::Renderer;
 use crate::RendererConfig;
 
 pub struct SsaoPass {
@@ -46,22 +47,6 @@ impl SsaoPass {
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
-        let depth_view = gbuffer
-            .depth_texture
-            .create_view(&wgpu::TextureViewDescriptor {
-                aspect: wgpu::TextureAspect::DepthOnly,
-                ..Default::default()
-            });
-
-        let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("SsaoPass bind group layout"),
             entries: &[
@@ -79,16 +64,10 @@ impl SsaoPass {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        multisampled: false,
+                        multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         sample_type: wgpu::TextureSampleType::Depth,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
             ],
@@ -104,11 +83,7 @@ impl SsaoPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&depth_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&depth_sampler),
+                    resource: wgpu::BindingResource::TextureView(&gbuffer.depth),
                 },
             ],
         });

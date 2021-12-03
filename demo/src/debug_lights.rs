@@ -125,8 +125,8 @@ impl DebugLights {
                 }],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(Renderer::DEPTH_STENCIL),
-            multisample: wgpu::MultisampleState::default(),
+            depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
+            multisample: Renderer::MULTISAMPLE_STATE,
         });
 
         Self {
@@ -144,8 +144,8 @@ impl DebugLights {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("DebugLights pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: &ctx.view,
-                resolve_target: None,
+                view: &ctx.renderer.msaa,
+                resolve_target: Some(&ctx.view),
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,

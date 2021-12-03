@@ -436,8 +436,8 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },
-                depth_stencil: Some(GeometryBuffer::DEPTH_STENCIL),
-                multisample: GeometryBuffer::MULTISAMPLE,
+                depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
+                multisample: Renderer::MULTISAMPLE_STATE,
             });
 
             Ok(RenderMaterial {

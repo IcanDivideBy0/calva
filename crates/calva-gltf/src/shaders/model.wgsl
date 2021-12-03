@@ -126,20 +126,15 @@ fn compute_normal(in: VertexOutput) -> vec3<f32> {
 [[stage(fragment)]]
 fn main(in: VertexOutput) ->  FragmentOutput {
     let albedo = textureSample(t_albedo, s_albedo, in.uv);
-    let metallic_roughness = textureSample(t_metallic_roughness, s_metallic_roughness, in.uv).bg;
 
-    if (albedo.a < 0.5) {
-        discard;
-    }
+    let metallic_roughness = textureSample(t_metallic_roughness, s_metallic_roughness, in.uv).bg;
+    let metallic = metallic_roughness.x;
+    let roughness = metallic_roughness.y;
+
+    if (albedo.a < 0.5) { discard; }
 
     return FragmentOutput (
-        vec4<f32>(
-            albedo.rgb, 
-            metallic_roughness.x
-        ),
-        vec4<f32>(
-            compute_normal(in), 
-            metallic_roughness.y
-        ),
+        vec4<f32>(albedo.rgb, metallic),
+        vec4<f32>(compute_normal(in), roughness),
     );
 }

@@ -14,12 +14,11 @@ pub struct GeometryBuffer {
 impl GeometryBuffer {
     pub const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
     pub const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
     pub const RENDER_TARGETS: &'static [wgpu::ColorTargetState] = &[
         wgpu::ColorTargetState {
             format: Self::ALBEDO_METALLIC_FORMAT,
-            blend: Some(wgpu::BlendState::REPLACE),
+            blend: None,
             write_mask: wgpu::ColorWrites::ALL,
         },
         wgpu::ColorTargetState {
@@ -29,33 +28,10 @@ impl GeometryBuffer {
         },
     ];
 
-    pub const DEPTH_STENCIL: wgpu::DepthStencilState = wgpu::DepthStencilState {
-        format: Self::DEPTH_FORMAT,
-        depth_write_enabled: true,
-        depth_compare: wgpu::CompareFunction::Less,
-        stencil: wgpu::StencilState {
-            front: wgpu::StencilFaceState::IGNORE,
-            back: wgpu::StencilFaceState::IGNORE,
-            read_mask: 0,
-            write_mask: 0,
-        },
-        bias: wgpu::DepthBiasState {
-            constant: 0,
-            slope_scale: 0.0,
-            clamp: 0.0,
-        },
-    };
-
-    pub const MULTISAMPLE: wgpu::MultisampleState = wgpu::MultisampleState {
-        count: 1,
-        mask: !0,
-        alpha_to_coverage_enabled: false,
-    };
-
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        macro_rules! make_view {
-            ($format: expr, $label: expr) => {{
-                let texture = device.create_texture(&wgpu::TextureDescriptor {
+        macro_rules! texture {
+            ($label: expr, $format: expr $(, $usages: expr)?) => {
+                device.create_texture(&wgpu::TextureDescriptor {
                     label: Some($label),
                     size: wgpu::Extent3d {
                         width: surface_config.width,
@@ -63,66 +39,59 @@ impl GeometryBuffer {
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: 1,
-                    sample_count: 1,
+                    sample_count: Renderer::MULTISAMPLE_STATE.count,
                     dimension: wgpu::TextureDimension::D2,
                     format: $format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                });
-
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-                (texture, view)
-            }};
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        $(| $usages)?
+                })
+            };
         }
 
-        let (_, albedo_metallic) = make_view!(
-            Self::ALBEDO_METALLIC_FORMAT,
-            "GBuffer albedo/metallic texture"
-        );
-        let (_, normal_roughness) = make_view!(
-            Self::NORMAL_ROUGHNESS_FORMAT,
-            "GBuffer normal/roughness texture"
+        let albedo_metallic = texture!(
+            "GBuffer albedo/metallic texture",
+            Self::ALBEDO_METALLIC_FORMAT
+        )
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let normal_roughness = texture!(
+            "GBuffer normal/roughness texture",
+            Self::NORMAL_ROUGHNESS_FORMAT
+        )
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let depth_texture = texture!(
+            "GBuffer depth texture",
+            Renderer::DEPTH_FORMAT,
+            wgpu::TextureUsages::COPY_SRC
         );
 
-        // let (depth_texture, depth) = make_view!(Self::DEPTH_FORMAT, "GBuffer depth texture");
-
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("GBuffer depth texture"),
-            size: wgpu::Extent3d {
-                width: surface_config.width,
-                height: surface_config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::TEXTURE_BINDING,
+        let depth = depth_texture.create_view(&wgpu::TextureViewDescriptor {
+            aspect: wgpu::TextureAspect::DepthOnly,
+            ..Default::default()
         });
-
-        let depth = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("GBuffer bind group layout"),
             entries: &[
+                // albedo + metallic
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        multisampled: false,
+                        multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     },
                     count: None,
                 },
+                // normal + roughness
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        multisampled: false,
+                        multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     },
@@ -200,6 +169,18 @@ impl GeometryBuffer {
                 model.draw(ctx.renderer, &mut rpass);
             }
         }
+    }
+
+    pub fn blit_depth(&self, ctx: &mut RenderContext, dst: &wgpu::Texture) {
+        ctx.encoder.copy_texture_to_texture(
+            self.depth_texture.as_image_copy(),
+            dst.as_image_copy(),
+            wgpu::Extent3d {
+                width: ctx.renderer.surface_config.width,
+                height: ctx.renderer.surface_config.height,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 }
 

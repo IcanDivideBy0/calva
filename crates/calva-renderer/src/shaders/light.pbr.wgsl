@@ -58,10 +58,10 @@ fn main(
 
 // Fragment shader
 
-[[group(2), binding(0)]] var albedo_metallic: texture_2d<f32>;
-[[group(2), binding(1)]] var normal_roughness: texture_2d<f32>;
+[[group(2), binding(0)]] var albedo_metallic: texture_multisampled_2d<f32>;
+[[group(2), binding(1)]] var normal_roughness: texture_multisampled_2d<f32>;
 
-[[group(3), binding(0)]] var t_depth: texture_depth_2d;
+[[group(3), binding(0)]] var t_depth: texture_depth_multisampled_2d;
 [[group(3), binding(1)]] var t_ao: texture_2d<f32>;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
@@ -99,18 +99,21 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
 }
 
 [[stage(fragment)]]
-fn main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+fn main(
+    [[builtin(sample_index)]] msaa_sample: u32,
+    in: VertexOutput,
+) -> [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(in.clip_position.xy));
 
-    let albedo_metallic = textureLoad(albedo_metallic, c, 0);
-    let normal_roughness = textureLoad(normal_roughness, c, 0);
+    let albedo_metallic = textureLoad(albedo_metallic, c, i32(msaa_sample));
+    let normal_roughness = textureLoad(normal_roughness, c, i32(msaa_sample));
 
     let albedo = albedo_metallic.rgb;
     let normal = normal_roughness.xyz;
     let metallic = albedo_metallic.a;
     let roughness = normal_roughness.a;
 
-    let z = textureLoad(t_depth, c, 0);
+    let z = textureLoad(t_depth, c, i32(msaa_sample));
     let frag_pos = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
     let frag_pos = frag_pos.xyz / frag_pos.w;
 

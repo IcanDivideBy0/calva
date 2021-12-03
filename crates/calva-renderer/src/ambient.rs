@@ -1,5 +1,6 @@
 use crate::GeometryBuffer;
 use crate::RenderContext;
+use crate::Renderer;
 use crate::RendererConfig;
 use crate::SsaoPass;
 
@@ -82,11 +83,7 @@ impl AmbientPass {
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
+            multisample: Renderer::MULTISAMPLE_STATE,
         });
 
         Self {
@@ -99,8 +96,8 @@ impl AmbientPass {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientPass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: &ctx.view,
-                resolve_target: None,
+                view: &ctx.renderer.msaa,
+                resolve_target: Some(&ctx.view),
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: true,

@@ -121,7 +121,7 @@ impl PointLightsPass {
                     },
                     bias: wgpu::DepthBiasState::default(),
                 }),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: Renderer::MULTISAMPLE_STATE,
             })
         };
 
@@ -131,27 +131,22 @@ impl PointLightsPass {
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/light.pbr.wgsl").into()),
             });
 
-            let depth_view = gbuffer
-                .depth_texture
-                .create_view(&wgpu::TextureViewDescriptor {
-                    aspect: wgpu::TextureAspect::DepthOnly,
-                    ..Default::default()
-                });
-
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("PointLights lighting bind group layout"),
                     entries: &[
+                        // depth
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: false,
+                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 sample_type: wgpu::TextureSampleType::Depth,
                             },
                             count: None,
                         },
+                        // ssao
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -171,7 +166,7 @@ impl PointLightsPass {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&depth_view),
+                        resource: wgpu::BindingResource::TextureView(&gbuffer.depth),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -246,7 +241,7 @@ impl PointLightsPass {
                     },
                     bias: wgpu::DepthBiasState::default(),
                 }),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: Renderer::MULTISAMPLE_STATE,
             });
 
             (bind_group, pipeline)
@@ -264,15 +259,9 @@ impl PointLightsPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
-        ctx.encoder.copy_texture_to_texture(
-            ctx.renderer.gbuffer.depth_texture.as_image_copy(),
-            ctx.renderer.depth_stencil_texture.as_image_copy(),
-            wgpu::Extent3d {
-                width: ctx.renderer.surface_config.width,
-                height: ctx.renderer.surface_config.height,
-                depth_or_array_layers: 1,
-            },
-        );
+        ctx.renderer
+            .gbuffer
+            .blit_depth(ctx, &ctx.renderer.depth_stencil_texture);
 
         ctx.renderer
             .queue
@@ -309,8 +298,8 @@ impl PointLightsPass {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights lighting pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &ctx.view,
-                    resolve_target: None,
+                    view: &ctx.renderer.msaa,
+                    resolve_target: Some(&ctx.view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,

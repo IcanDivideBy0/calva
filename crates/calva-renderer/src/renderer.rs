@@ -21,6 +21,7 @@ pub struct Renderer {
     pub queue: wgpu::Queue,
     pub surface: wgpu::Surface,
     pub surface_config: wgpu::SurfaceConfiguration,
+    pub msaa: wgpu::TextureView,
 
     pub config: RendererConfig,
     pub camera: Camera,
@@ -37,7 +38,7 @@ pub struct Renderer {
 impl Renderer {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
-    pub const DEPTH_STENCIL: wgpu::DepthStencilState = wgpu::DepthStencilState {
+    pub const DEPTH_STENCIL_STATE: wgpu::DepthStencilState = wgpu::DepthStencilState {
         format: Self::DEPTH_FORMAT,
         depth_write_enabled: true,
         depth_compare: wgpu::CompareFunction::Less,
@@ -52,6 +53,12 @@ impl Renderer {
             slope_scale: 0.0,
             clamp: 0.0,
         },
+    };
+
+    pub const MULTISAMPLE_STATE: wgpu::MultisampleState = wgpu::MultisampleState {
+        count: 4,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
     };
 
     pub async fn new(window: &Window) -> Result<Self> {
@@ -105,13 +112,30 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: Self::MULTISAMPLE_STATE.count,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
         });
         let depth_stencil =
             depth_stencil_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let msaa = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Renderer msaa texture"),
+                format: surface_config.format,
+                size: wgpu::Extent3d {
+                    width: surface_config.width,
+                    height: surface_config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: Self::MULTISAMPLE_STATE.count,
+                dimension: wgpu::TextureDimension::D2,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let gbuffer = GeometryBuffer::new(&device, &surface_config);
         let ssao = SsaoPass::new(&device, &surface_config, &config, &camera, &gbuffer);
@@ -131,6 +155,7 @@ impl Renderer {
             depth_stencil_texture,
             depth_stencil,
 
+            msaa,
             gbuffer,
             ssao,
             ambient,
@@ -151,13 +176,31 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: Self::MULTISAMPLE_STATE.count,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
         });
         self.depth_stencil = self
             .depth_stencil_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        self.msaa = self
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Renderer msaa texture"),
+                format: self.surface_config.format,
+                size: wgpu::Extent3d {
+                    width: self.surface_config.width,
+                    height: self.surface_config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: Self::MULTISAMPLE_STATE.count,
+                dimension: wgpu::TextureDimension::D2,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+            })
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         self.gbuffer = GeometryBuffer::new(&self.device, &self.surface_config);
