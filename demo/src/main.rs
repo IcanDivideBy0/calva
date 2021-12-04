@@ -9,12 +9,13 @@ use winit::{
 
 mod camera;
 mod debug_lights;
-// mod my_app;
+mod egui;
+mod my_app;
 mod shapes;
 
 use camera::MyCamera;
 use debug_lights::DebugLights;
-// use my_app::*;
+use my_app::*;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -33,8 +34,8 @@ async fn main() -> Result<()> {
     let mut debug_lights =
         DebugLights::new(&renderer.device, &renderer.surface_config, &renderer.camera);
 
-    // let mut egui = EguiPass::new(&window, &renderer.device);
-    // let mut my_app = MyApp::from(&*renderer.config);
+    let mut egui = crate::egui::EguiPass::new(&window, &renderer.device);
+    let mut my_app: MyApp = renderer.config.data.into();
 
     let models: Vec<Box<dyn DrawModel>> = vec![
         // Box::new(shapes::SimpleMesh::new(
@@ -53,7 +54,7 @@ async fn main() -> Result<()> {
 
     let get_random_vec3 = || glam::vec3(rand::random(), rand::random(), rand::random());
 
-    let num_lights = calva::renderer::PointLightsPass::MAX_LIGHTS;
+    let num_lights = 10; // calva::renderer::PointLightsPass::MAX_LIGHTS;
     let mut lights = (0..num_lights)
         .map(|_| PointLight {
             position: (get_random_vec3() * 2.0 - 1.0) * 15.0,
@@ -84,18 +85,18 @@ async fn main() -> Result<()> {
     let mut last_render_time = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
-        // egui.handle_event(&event);
+        egui.handle_event(&event);
 
-        // if egui.captures_event(&event) {
-        //     return;
-        // }
+        if egui.captures_event(&event) {
+            return;
+        }
 
         match event {
             Event::RedrawRequested(_) => {
                 let dt = last_render_time.elapsed();
                 last_render_time = Instant::now();
 
-                // renderer.config.data = my_app.into();
+                renderer.config.data = my_app.into();
                 camera.update(&mut renderer, dt);
 
                 // lights[0].position = my_app.light_pos;
@@ -146,7 +147,7 @@ async fn main() -> Result<()> {
 
                         debug_lights.render(&mut ctx, &lights);
 
-                        // egui.render(&window, &mut ctx, &mut my_app).expect("egui");
+                        egui.render(&window, &mut ctx, &mut my_app).expect("egui");
 
                         renderer.finish_render_frame(ctx);
                     }

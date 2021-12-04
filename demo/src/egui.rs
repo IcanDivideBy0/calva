@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use winit::{event::Event, window::Window};
 
-use crate::RenderContext;
+use calva::renderer::RenderContext;
 
 struct RepaintSignal;
 

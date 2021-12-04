@@ -74,13 +74,9 @@ impl AmbientPass {
                 }],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: Some(wgpu::IndexFormat::Uint16),
+                ..Default::default()
             },
             depth_stencil: None,
             multisample: Renderer::MULTISAMPLE_STATE,
@@ -111,6 +107,6 @@ impl AmbientPass {
         rpass.set_bind_group(1, &ctx.renderer.gbuffer.bind_group, &[]);
         rpass.set_bind_group(2, &self.bind_group, &[]);
 
-        rpass.draw(0..6, 0..1);
+        rpass.draw(0..4, 0..1);
     }
 }

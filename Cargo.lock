@@ -334,6 +334,8 @@ dependencies = [
  "bytemuck",
  "calva",
  "egui",
+ "egui_wgpu_backend",
+ "egui_winit_platform",
  "env_logger",
  "epi",
  "glam",
@@ -705,6 +707,23 @@ dependencies = [
  "ahash",
  "epaint",
  "nohash-hasher",
+]
+
+[[package]]
+name = "egui_wgpu_backend"
+version = "0.14.0"
+dependencies = [
+ "bytemuck",
+ "epi",
+ "wgpu",
+]
+
+[[package]]
+name = "egui_winit_platform"
+version = "0.11.0"
+dependencies = [
+ "egui",
+ "winit",
 ]
 
 [[package]]

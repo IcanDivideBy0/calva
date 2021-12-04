@@ -2,7 +2,6 @@ use calva::renderer::RendererConfigData;
 
 #[derive(Clone, Copy)]
 pub struct MyApp {
-    pub light_pos: glam::Vec3,
     pub ssao_radius: f32,
     pub ssao_bias: f32,
     pub ssao_power: f32,
@@ -22,13 +21,13 @@ impl epi::App for MyApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                egui::CollapsingHeader::new("Light")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.add(egui::DragValue::new(&mut self.light_pos.x).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut self.light_pos.y).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut self.light_pos.z).speed(0.01));
-                    });
+                // egui::CollapsingHeader::new("Light")
+                //     .default_open(true)
+                //     .show(ui, |ui| {
+                //         ui.add(egui::DragValue::new(&mut self.light_pos.x).speed(0.01));
+                //         ui.add(egui::DragValue::new(&mut self.light_pos.y).speed(0.01));
+                //         ui.add(egui::DragValue::new(&mut self.light_pos.z).speed(0.01));
+                //     });
 
                 egui::CollapsingHeader::new("SSAO")
                     .default_open(true)
@@ -49,12 +48,9 @@ impl epi::App for MyApp {
     }
 }
 
-impl From<&RendererConfigData> for MyApp {
-    fn from(data: &RendererConfigData) -> Self {
+impl From<RendererConfigData> for MyApp {
+    fn from(data: RendererConfigData) -> Self {
         Self {
-            // light_pos: glam::Vec3::Y * -0.05,
-            light_pos: glam::vec3(5.0, -0.5, 0.0),
-
             ssao_radius: data.ssao_radius,
             ssao_bias: data.ssao_bias,
             ssao_power: data.ssao_power,

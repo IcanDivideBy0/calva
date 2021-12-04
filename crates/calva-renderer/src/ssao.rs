@@ -123,14 +123,9 @@ impl SsaoPass {
                 }],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: Some(wgpu::IndexFormat::Uint16),
+                ..Default::default()
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState {
@@ -172,7 +167,7 @@ impl SsaoPass {
             rpass.set_bind_group(2, &ctx.renderer.gbuffer.bind_group, &[]);
             rpass.set_bind_group(3, &self.bind_group, &[]);
 
-            rpass.draw(0..6, 0..1);
+            rpass.draw(0..4, 0..1);
         }
 
         self.blur.render(ctx, &self.output)
@@ -331,7 +326,8 @@ impl SsaoBlur {
                     }],
                 }),
                 primitive: wgpu::PrimitiveState {
-                    cull_mode: Some(wgpu::Face::Back),
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    strip_index_format: Some(wgpu::IndexFormat::Uint16),
                     ..Default::default()
                 },
                 depth_stencil: None,
@@ -454,7 +450,7 @@ impl SsaoBlur {
             rpass.set_pipeline(&self.h_pipeline);
             rpass.set_bind_group(0, &self.h_bind_group, &[]);
 
-            rpass.draw(0..6, 0..1);
+            rpass.draw(0..4, 0..1);
         }
 
         {
@@ -474,7 +470,7 @@ impl SsaoBlur {
             rpass.set_pipeline(&self.v_pipeline);
             rpass.set_bind_group(0, &self.v_bind_group, &[]);
 
-            rpass.draw(0..6, 0..1);
+            rpass.draw(0..4, 0..1);
         }
     }
 }
