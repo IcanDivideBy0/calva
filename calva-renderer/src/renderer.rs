@@ -1,18 +1,13 @@
 use anyhow::{anyhow, Result};
 use winit::window::Window;
 
-use crate::AmbientPass;
 use crate::Camera;
-use crate::GeometryBuffer;
-use crate::PointLightsPass;
 use crate::RendererConfig;
-use crate::SsaoPass;
 
 pub struct RenderContext<'a> {
     pub renderer: &'a Renderer,
-
-    pub frame: wgpu::SurfaceTexture,
-    pub view: wgpu::TextureView,
+    pub view: &'a wgpu::TextureView,
+    pub resolve_target: Option<&'a wgpu::TextureView>,
     pub encoder: wgpu::CommandEncoder,
 }
 
@@ -21,7 +16,6 @@ pub struct Renderer {
     pub queue: wgpu::Queue,
     pub surface: wgpu::Surface,
     pub surface_config: wgpu::SurfaceConfiguration,
-    pub msaa: wgpu::TextureView,
 
     pub config: RendererConfig,
     pub camera: Camera,
@@ -29,10 +23,7 @@ pub struct Renderer {
     pub depth_stencil_texture: wgpu::Texture,
     pub depth_stencil: wgpu::TextureView,
 
-    pub gbuffer: GeometryBuffer,
-    pub ssao: SsaoPass,
-    pub ambient: AmbientPass,
-    pub lights: PointLightsPass,
+    msaa: wgpu::TextureView,
 }
 
 impl Renderer {
@@ -81,6 +72,7 @@ impl Renderer {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     features: wgpu::Features::empty(),
+                    // features: wgpu::Features::TIMESTAMP_QUERY,
                     limits: wgpu::Limits::default(),
                     label: None,
                 },
@@ -115,7 +107,9 @@ impl Renderer {
             sample_count: Self::MULTISAMPLE_STATE.count,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING,
         });
         let depth_stencil =
             depth_stencil_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -137,12 +131,6 @@ impl Renderer {
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let gbuffer = GeometryBuffer::new(&device, &surface_config);
-        let ssao = SsaoPass::new(&device, &surface_config, &config, &camera, &gbuffer);
-        let ambient = AmbientPass::new(&device, &surface_config, &config, &gbuffer, &ssao);
-        let lights =
-            PointLightsPass::new(&device, &surface_config, &config, &camera, &gbuffer, &ssao);
-
         Ok(Self {
             device,
             queue,
@@ -156,10 +144,6 @@ impl Renderer {
             depth_stencil,
 
             msaa,
-            gbuffer,
-            ssao,
-            ambient,
-            lights,
         })
     }
 
@@ -179,7 +163,9 @@ impl Renderer {
             sample_count: Self::MULTISAMPLE_STATE.count,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING,
         });
         self.depth_stencil = self
             .depth_stencil_texture
@@ -202,30 +188,6 @@ impl Renderer {
                     | wgpu::TextureUsages::TEXTURE_BINDING,
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
-
-        self.gbuffer = GeometryBuffer::new(&self.device, &self.surface_config);
-        self.ssao = SsaoPass::new(
-            &self.device,
-            &self.surface_config,
-            &self.config,
-            &self.camera,
-            &self.gbuffer,
-        );
-        self.ambient = AmbientPass::new(
-            &self.device,
-            &self.surface_config,
-            &self.config,
-            &self.gbuffer,
-            &self.ssao,
-        );
-        self.lights = PointLightsPass::new(
-            &self.device,
-            &self.surface_config,
-            &self.config,
-            &self.camera,
-            &self.gbuffer,
-            &self.ssao,
-        );
     }
 
     pub fn update_camera(&mut self, view: glam::Mat4, proj: glam::Mat4) {
@@ -235,30 +197,32 @@ impl Renderer {
         self.camera.update_buffers(&self.queue);
     }
 
-    pub fn begin_render_frame(&self) -> Result<RenderContext, wgpu::SurfaceError> {
+    pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<(), wgpu::SurfaceError> {
         self.config.update_buffer(&self.queue);
 
         let frame = self.surface.get_current_texture()?;
-        let view = frame
+        let frame_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render command encoder"),
+                label: Some("Renderer command encoder"),
             });
 
-        Ok(RenderContext {
+        let mut ctx = RenderContext {
             renderer: self,
-            frame,
-            view,
+            view: &self.msaa,
+            resolve_target: Some(&frame_view),
             encoder,
-        })
-    }
+        };
 
-    pub fn finish_render_frame(&self, ctx: RenderContext) {
+        cb(&mut ctx);
+
         self.queue.submit(std::iter::once(ctx.encoder.finish()));
-        ctx.frame.present();
+        frame.present();
+
+        Ok(())
     }
 }

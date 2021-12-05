@@ -1,5 +1,5 @@
 use calva::renderer::{
-    wgpu::util::DeviceExt, Camera, PointLight, PointLightsPass, RenderContext, Renderer,
+    wgpu::util::DeviceExt, PointLight, PointLightsPass, RenderContext, Renderer,
 };
 
 #[allow(dead_code)]
@@ -67,67 +67,75 @@ pub struct DebugLights {
 }
 
 impl DebugLights {
-    pub fn new(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
-        camera: &Camera,
-    ) -> Self {
-        let cube = Cube::new(device);
+    pub fn new(renderer: &Renderer) -> Self {
+        let cube = Cube::new(&renderer.device);
 
-        let instances_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("DebugLights:Cube instances buffer"),
-            contents: bytemuck::cast_slice(&[PointLight::default(); PointLightsPass::MAX_LIGHTS]),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
+        let instances_buffer =
+            renderer
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("DebugLights:Cube instances buffer"),
+                    contents: bytemuck::cast_slice(
+                        &[PointLight::default(); PointLightsPass::MAX_LIGHTS],
+                    ),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("DebugLights shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/debug_lights.wgsl").into()),
-        });
+        let shader = renderer
+            .device
+            .create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("DebugLights shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/debug_lights.wgsl").into()),
+            });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("DebugLights lighting pipeline layout"),
-            bind_group_layouts: &[&camera.bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout =
+            renderer
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("DebugLights lighting pipeline layout"),
+                    bind_group_layouts: &[&renderer.camera.bind_group_layout],
+                    push_constant_ranges: &[],
+                });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("DebugLights lighting pipeline"),
-            layout: Some(&pipeline_layout),
-            multiview: None,
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "main",
-                buffers: &[
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<PointLight>() as _,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &wgpu::vertex_attr_array![
-                            0 => Float32x3, // Position
-                            1 => Float32, // Radius
-                            2 => Float32x3, // Color
-                        ],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: (std::mem::size_of::<f32>() * 3) as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![3 => Float32x3],
-                    },
-                ],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "main",
-                targets: &[wgpu::ColorTargetState {
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                }],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
-            multisample: Renderer::MULTISAMPLE_STATE,
-        });
+        let pipeline = renderer
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("DebugLights lighting pipeline"),
+                layout: Some(&pipeline_layout),
+                multiview: None,
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "main",
+                    buffers: &[
+                        wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<PointLight>() as _,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &wgpu::vertex_attr_array![
+                                0 => Float32x3, // Position
+                                1 => Float32, // Radius
+                                2 => Float32x3, // Color
+                            ],
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![3 => Float32x3],
+                        },
+                    ],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "main",
+                    targets: &[wgpu::ColorTargetState {
+                        format: renderer.surface_config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }],
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
+                multisample: Renderer::MULTISAMPLE_STATE,
+            });
 
         Self {
             cube,
@@ -144,8 +152,8 @@ impl DebugLights {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("DebugLights pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: &ctx.renderer.msaa,
-                resolve_target: Some(&ctx.view),
+                view: ctx.view,
+                resolve_target: ctx.resolve_target,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,

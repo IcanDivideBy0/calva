@@ -1,0 +1,10 @@
+{
+	"settings": {
+		// "rust.clippy_preference": "on",
+	},
+	"folders": [
+		{
+			"path": "."
+		}
+	]
+}

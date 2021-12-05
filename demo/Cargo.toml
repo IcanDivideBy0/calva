@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-calva = { path = "../crates/calva" }
+calva = { path = "../calva" }
 
 epi = "0.15.0"
 egui = "0.15.0"

@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/calva",
-    "crates/calva-gltf",
-    "crates/calva-renderer",
+    "calva",
+    "calva-gltf",
+    "calva-renderer",
     "demo",
 ]
 

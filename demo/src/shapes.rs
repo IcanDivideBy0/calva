@@ -150,10 +150,10 @@ impl SimpleMesh {
 }
 
 impl DrawModel for SimpleMesh {
-    fn draw<'ctx: 'pass, 'pass>(
-        &'ctx self,
-        renderer: &'ctx Renderer,
-        rpass: &mut wgpu::RenderPass<'pass>,
+    fn draw<'s: 'p, 'r: 'p, 'p>(
+        &'s self,
+        renderer: &'r Renderer,
+        rpass: &mut wgpu::RenderPass<'p>,
     ) {
         rpass.set_pipeline(&self.pipeline);
 

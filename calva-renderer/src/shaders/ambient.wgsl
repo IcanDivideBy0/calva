@@ -27,9 +27,8 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] v
 
 // Fragment shader
 
-[[group(1), binding(0)]] var albedo_metallic: texture_multisampled_2d<f32>;
-
-[[group(2), binding(0)]] var ao: texture_2d<f32>;
+[[group(1), binding(0)]] var albedo: texture_multisampled_2d<f32>;
+[[group(1), binding(1)]] var ao: texture_2d<f32>;
 
 [[stage(fragment)]]
 fn main(
@@ -38,7 +37,7 @@ fn main(
 ) ->  [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(coord.xy));
 
-    let diffuse = textureLoad(albedo_metallic, c, i32(msaa_sample)).rgb;
+    let diffuse = textureLoad(albedo, c, i32(msaa_sample)).rgb;
     let ao = textureLoad(ao, c, 0).r;
 
     return vec4<f32>(vec3<f32>(config.ambient_factor * diffuse * ao), 1.0);

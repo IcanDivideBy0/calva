@@ -126,10 +126,10 @@ pub struct RenderModel {
 }
 
 impl DrawModel for RenderModel {
-    fn draw<'ctx: 'pass, 'pass>(
-        &'ctx self,
-        renderer: &'ctx Renderer,
-        rpass: &mut wgpu::RenderPass<'pass>,
+    fn draw<'s: 'p, 'r: 'p, 'p>(
+        &'s self,
+        renderer: &'r Renderer,
+        rpass: &mut wgpu::RenderPass<'p>,
     ) {
         for mesh in &self.meshes {
             mesh.instances

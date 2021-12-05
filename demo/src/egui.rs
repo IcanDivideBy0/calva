@@ -32,6 +32,7 @@ impl EguiPass {
             font_definitions: Default::default(),
             style: Default::default(),
         });
+
         let rpass = RenderPass::new(device, wgpu::TextureFormat::Bgra8UnormSrgb, 1);
 
         Self {
@@ -42,19 +43,19 @@ impl EguiPass {
         }
     }
 
-    pub fn handle_event<T>(&mut self, event: &Event<'_, T>) {
+    pub fn handle_event<E>(&mut self, event: &Event<'_, E>) {
         self.platform.handle_event(event)
     }
 
-    pub fn captures_event<T>(&mut self, event: &Event<'_, T>) -> bool {
+    pub fn captures_event<E>(&mut self, event: &Event<'_, E>) -> bool {
         self.platform.captures_event(event)
     }
 
     pub fn render(
         &mut self,
-        window: &Window,
         ctx: &mut RenderContext,
-        app: &mut dyn epi::App,
+        window: &Window,
+        app: &mut impl epi::App,
     ) -> Result<(), BackendError> {
         let scale_factor = window.scale_factor() as f32;
 
@@ -107,7 +108,7 @@ impl EguiPass {
 
         self.rpass.execute(
             &mut ctx.encoder,
-            &ctx.view,
+            ctx.resolve_target.as_ref().unwrap_or(&ctx.view),
             &paint_jobs,
             &screen_descriptor,
             None,

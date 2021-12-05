@@ -51,10 +51,6 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 
 // Fragment shader
 
-[[group(2), binding(0)]] var albedo_metallic: texture_multisampled_2d<f32>;
-[[group(2), binding(1)]] var normal_roughness: texture_multisampled_2d<f32>;
-
-
 let SAMPLES_COUNT: i32 = 32;
 
 [[block]]
@@ -63,8 +59,9 @@ struct RandomData {
     noise: array<array<vec2<f32>, 4>, 4>;
 };
 
-[[group(3), binding(0)]] var<uniform> random_data: RandomData;
-[[group(3), binding(1)]] var t_depth: texture_depth_multisampled_2d;
+[[group(2), binding(0)]] var<uniform> random_data: RandomData;
+[[group(2), binding(1)]] var t_depth: texture_depth_multisampled_2d;
+[[group(2), binding(2)]] var t_normal: texture_multisampled_2d<f32>;
 
 [[stage(fragment)]]
 fn main(
@@ -77,7 +74,7 @@ fn main(
     let frag_position = camera.inv_proj * vec4<f32>(in.ndc, frag_depth, 1.0);
     let frag_position = frag_position.xyz / frag_position.w;
 
-    let frag_normal = textureLoad(normal_roughness, c, 0).xyz;
+    let frag_normal = textureLoad(t_normal, c, 0).xyz;
     let random = vec3<f32>(random_data.noise[c.x%4][c.y%4], 0.0);
 
     let tangent = normalize(random - frag_normal * dot(random, frag_normal));
