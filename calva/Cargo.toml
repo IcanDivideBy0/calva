@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+egui = { package = "calva-egui", path = "../calva-egui" }
 gltf = { package = "calva-gltf", path = "../calva-gltf" }
 renderer = { package = "calva-renderer", path = "../calva-renderer" }

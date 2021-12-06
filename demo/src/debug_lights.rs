@@ -1,5 +1,6 @@
 use calva::renderer::{
-    wgpu::util::DeviceExt, PointLight, PointLightsPass, RenderContext, Renderer,
+    wgpu::{self, util::DeviceExt},
+    PointLight, PointLightsPass, RenderContext, Renderer,
 };
 
 #[allow(dead_code)]

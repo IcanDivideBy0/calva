@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::time::Instant;
 use winit::{event::Event, window::Window};
 
-use calva::renderer::RenderContext;
+use renderer::{wgpu, RenderContext, Renderer};
+
+pub use egui;
+pub use epi;
 
 struct RepaintSignal;
 
@@ -22,18 +25,16 @@ pub struct EguiPass {
 }
 
 impl EguiPass {
-    pub fn new(window: &Window, device: &wgpu::Device) -> Self {
-        let size = window.inner_size();
-
+    pub fn new(renderer: &Renderer, window: &Window) -> Self {
         let platform = Platform::new(PlatformDescriptor {
-            physical_width: size.width as u32,
-            physical_height: size.height as u32,
+            physical_width: renderer.surface_config.width as u32,
+            physical_height: renderer.surface_config.height as u32,
             scale_factor: window.scale_factor(),
             font_definitions: Default::default(),
             style: Default::default(),
         });
 
-        let rpass = RenderPass::new(device, wgpu::TextureFormat::Bgra8UnormSrgb, 1);
+        let rpass = RenderPass::new(&renderer.device, wgpu::TextureFormat::Bgra8UnormSrgb, 1);
 
         Self {
             platform,
@@ -84,12 +85,6 @@ impl EguiPass {
         let frame_time = (Instant::now() - egui_start).as_secs_f64() as f32;
         self.previous_frame_time = Some(frame_time);
 
-        let screen_descriptor = ScreenDescriptor {
-            physical_width: ctx.renderer.surface_config.width,
-            physical_height: ctx.renderer.surface_config.height,
-            scale_factor,
-        };
-
         self.rpass.update_texture(
             &ctx.renderer.device,
             &ctx.renderer.queue,
@@ -98,6 +93,12 @@ impl EguiPass {
 
         self.rpass
             .update_user_textures(&ctx.renderer.device, &ctx.renderer.queue);
+
+        let screen_descriptor = ScreenDescriptor {
+            physical_width: ctx.renderer.surface_config.width,
+            physical_height: ctx.renderer.surface_config.height,
+            scale_factor,
+        };
 
         self.rpass.update_buffers(
             &ctx.renderer.device,

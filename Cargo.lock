@@ -321,6 +321,7 @@ dependencies = [
 name = "calva"
 version = "0.1.0"
 dependencies = [
+ "calva-egui",
  "calva-gltf",
  "calva-renderer",
 ]
@@ -333,15 +334,21 @@ dependencies = [
  "async-std",
  "bytemuck",
  "calva",
+ "env_logger",
+ "glam",
+ "rand",
+ "winit",
+]
+
+[[package]]
+name = "calva-egui"
+version = "0.1.0"
+dependencies = [
+ "calva-renderer",
  "egui",
  "egui_wgpu_backend",
  "egui_winit_platform",
- "env_logger",
  "epi",
- "glam",
- "gltf",
- "rand",
- "wgpu",
  "winit",
 ]
 

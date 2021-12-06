@@ -1,6 +1,10 @@
 use anyhow::Result;
-use calva::renderer::{
-    AmbientPass, DrawModel, GeometryBuffer, PointLight, PointLightsPass, Renderer, SsaoPass,
+use calva::{
+    egui::EguiPass,
+    renderer::{
+        wgpu, AmbientPass, DrawModel, GeometryBuffer, PointLight, PointLightsPass, Renderer,
+        SsaoPass,
+    },
 };
 use std::time::{Duration, Instant};
 use winit::{
@@ -11,11 +15,9 @@ use winit::{
 
 mod camera;
 mod debug_lights;
-mod egui;
 mod my_app;
 mod shapes;
 
-use crate::egui::EguiPass;
 use camera::MyCamera;
 use debug_lights::DebugLights;
 use my_app::*;
@@ -141,7 +143,7 @@ async fn main() -> Result<()> {
     let mut debug_lights = DebugLights::new(&renderer);
 
     let mut my_app: MyApp = renderer.config.data.into();
-    let mut egui = EguiPass::new(&window, &renderer.device);
+    let mut egui = EguiPass::new(&renderer, &window);
 
     let mut scene = Scene::new(&renderer)?;
 
