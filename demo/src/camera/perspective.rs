@@ -30,8 +30,15 @@ impl Perspective {
     }
 }
 
+const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::const_mat4!(
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 0.5, 0.0],
+    [0.0, 0.0, 0.5, 1.0]
+);
+
 impl From<Perspective> for glam::Mat4 {
     fn from(p: Perspective) -> glam::Mat4 {
-        glam::Mat4::perspective_rh(p.fovy, p.aspect, p.znear, p.zfar)
+        OPENGL_TO_WGPU_MATRIX * glam::Mat4::perspective_rh(p.fovy, p.aspect, p.znear, p.zfar)
     }
 }

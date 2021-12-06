@@ -336,6 +336,7 @@ dependencies = [
  "calva",
  "env_logger",
  "glam",
+ "image",
  "rand",
  "winit",
 ]

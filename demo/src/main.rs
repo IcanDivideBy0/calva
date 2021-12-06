@@ -3,7 +3,7 @@ use calva::{
     egui::EguiPass,
     renderer::{
         wgpu, AmbientPass, DrawModel, GeometryBuffer, PointLight, PointLightsPass, Renderer,
-        SsaoPass,
+        SkyboxPass, SsaoPass,
     },
 };
 use std::time::{Duration, Instant};
@@ -30,7 +30,7 @@ struct Scene {
 
 impl Scene {
     // const NUM_LIGHTS: usize = calva::renderer::PointLightsPass::MAX_LIGHTS;
-    const NUM_LIGHTS: usize = 1000;
+    const NUM_LIGHTS: usize = 1;
 
     pub fn new(renderer: &Renderer) -> Result<Self> {
         let get_random_vec3 = || glam::vec3(rand::random(), rand::random(), rand::random());
@@ -52,20 +52,21 @@ impl Scene {
 
         let lights = (0..Self::NUM_LIGHTS)
             .map(|_| PointLight {
-                position: (get_random_vec3() * 2.0 - 1.0) * 15.0,
-                radius: 1.0,
-                color: get_random_vec3(),
-                // color: glam::Vec3::ONE,
+                // position: (get_random_vec3() * 2.0 - 1.0) * 5.0,
+                position: glam::vec3(0.0, 0.0, 1.0),
+                radius: 2.0,
+                // color: get_random_vec3(),
+                color: glam::Vec3::ONE,
             })
             .collect::<Vec<_>>();
 
-        let lights_vel = (0..lights.len())
+        let _lights_vel = (0..lights.len())
             .map(|_| (get_random_vec3() * 2.0 - 1.0) * 2.0 * glam::vec3(0.0, 1.0, 0.0))
             .collect::<Vec<_>>();
 
-        // let lights_vel = (0..Self::NUM_LIGHTS)
-        //     .map(|_| glam::vec3(0.0, 0.0, 0.0))
-        //     .collect::<Vec<_>>();
+        let lights_vel = (0..Self::NUM_LIGHTS)
+            .map(|_| glam::vec3(0.0, 2.0, 0.0))
+            .collect::<Vec<_>>();
 
         Ok(Self {
             models,
@@ -75,8 +76,6 @@ impl Scene {
     }
 
     pub fn update(&mut self, dt: Duration) {
-        // lights[0].position = my_app.light_pos;
-
         // for (light, idx) in lights.iter_mut().zip(0..) {
         //     light.position = glam::vec3(
         //         (start_time.elapsed().as_secs_f32() + (idx as f32 / num_lights)).sin()
@@ -87,7 +86,7 @@ impl Scene {
         //     );
         // }
 
-        let limit = 15.0;
+        let limit = 5.0;
         for (light, vel) in self.lights.iter_mut().zip(&self.lights_vel) {
             light.position += *vel * dt.as_secs_f32();
 
@@ -123,16 +122,39 @@ async fn main() -> Result<()> {
 
     let mut camera = MyCamera::new(&window);
     camera.controller.transform = glam::Mat4::inverse(&glam::Mat4::look_at_rh(
-        glam::Vec3::Y + glam::Vec3::ZERO, // eye
-        glam::Vec3::Y + glam::Vec3::X,    // target
-        glam::Vec3::Y,                    // up
+        glam::Vec3::Y,                 // eye
+        glam::Vec3::Y + glam::Vec3::X, // target
+        glam::Vec3::Y,                 // up
     ));
 
     let mut renderer = Renderer::new(&window).await?;
 
+    let skybox_data = {
+        let mut size = 0;
+        let mut bytes = vec![];
+
+        let images = [
+            image::open("./demo/assets/sky/right.jpg")?,
+            image::open("./demo/assets/sky/left.jpg")?,
+            image::open("./demo/assets/sky/top.jpg")?,
+            image::open("./demo/assets/sky/bottom.jpg")?,
+            image::open("./demo/assets/sky/front.jpg")?,
+            image::open("./demo/assets/sky/back.jpg")?,
+        ];
+
+        for image in images {
+            let image = image.to_rgba8();
+            size = image.width();
+            bytes.append(&mut image.to_vec());
+        }
+
+        (size, bytes)
+    };
+
     let mut gbuffer = GeometryBuffer::new(&renderer);
     let mut ssao = SsaoPass::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
     let mut ambient = AmbientPass::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
+    let mut skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
     let mut point_lights = PointLightsPass::new(
         &renderer,
         &gbuffer.albedo_metallic,
@@ -158,6 +180,7 @@ async fn main() -> Result<()> {
                 gbuffer = GeometryBuffer::new(&renderer);
                 ssao = SsaoPass::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
                 ambient = AmbientPass::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
+                skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
                 point_lights = PointLightsPass::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
@@ -183,13 +206,14 @@ async fn main() -> Result<()> {
 
                 renderer.config.data = my_app.into();
                 camera.update(&mut renderer, dt);
-
                 scene.update(dt);
+                scene.lights[0].position = my_app.light_pos;
 
                 match renderer.render(|ctx| {
                     gbuffer.render(ctx, &scene.models);
                     ssao.render(ctx);
                     ambient.render(ctx);
+                    skybox.render(ctx);
                     point_lights.render(ctx, &scene.lights);
                     debug_lights.render(ctx, &scene.lights);
                     egui.render(ctx, &window, &mut my_app).unwrap();

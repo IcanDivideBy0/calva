@@ -7,6 +7,7 @@ mod gbuffer;
 mod icosphere;
 mod point_light;
 mod renderer;
+mod skybox;
 mod ssao;
 mod texture;
 
@@ -17,5 +18,6 @@ pub use gbuffer::{DrawModel, GeometryBuffer};
 pub use point_light::PointLight;
 pub use point_light::PointLightsPass;
 pub use renderer::{RenderContext, Renderer};
+pub use skybox::SkyboxPass;
 pub use ssao::SsaoPass;
 pub use texture::Texture;

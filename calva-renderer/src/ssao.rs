@@ -145,11 +145,7 @@ impl SsaoPass {
                         write_mask: wgpu::ColorWrites::ALL,
                     }],
                 }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleStrip,
-                    strip_index_format: Some(wgpu::IndexFormat::Uint16),
-                    ..Default::default()
-                },
+                primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
             });
@@ -185,7 +181,7 @@ impl SsaoPass {
             rpass.set_bind_group(1, &ctx.renderer.camera.bind_group, &[]);
             rpass.set_bind_group(2, &self.bind_group, &[]);
 
-            rpass.draw(0..4, 0..1);
+            rpass.draw(0..3, 0..1);
         }
 
         self.blur.render(ctx, &self.output)
@@ -356,11 +352,7 @@ impl SsaoBlur {
                                 write_mask: wgpu::ColorWrites::ALL,
                             }],
                         }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleStrip,
-                            strip_index_format: Some(wgpu::IndexFormat::Uint16),
-                            ..Default::default()
-                        },
+                        primitive: wgpu::PrimitiveState::default(),
                         depth_stencil: None,
                         multisample: wgpu::MultisampleState::default(),
                     });
@@ -455,10 +447,7 @@ impl SsaoBlur {
                                 write_mask: wgpu::ColorWrites::ALL,
                             }],
                         }),
-                        primitive: wgpu::PrimitiveState {
-                            cull_mode: Some(wgpu::Face::Back),
-                            ..Default::default()
-                        },
+                        primitive: wgpu::PrimitiveState::default(),
                         depth_stencil: None,
                         multisample: wgpu::MultisampleState::default(),
                     });
@@ -495,7 +484,7 @@ impl SsaoBlur {
             rpass.set_pipeline(&self.h_pipeline);
             rpass.set_bind_group(0, &self.h_bind_group, &[]);
 
-            rpass.draw(0..4, 0..1);
+            rpass.draw(0..3, 0..1);
         }
 
         {
@@ -515,7 +504,7 @@ impl SsaoBlur {
             rpass.set_pipeline(&self.v_pipeline);
             rpass.set_bind_group(0, &self.v_bind_group, &[]);
 
-            rpass.draw(0..4, 0..1);
+            rpass.draw(0..3, 0..1);
         }
     }
 }

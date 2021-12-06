@@ -19,39 +19,25 @@ struct Camera {
 
 // Vertex shader
 
-var<private> positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
-    vec2<f32>(-1.0, -1.0),
-    vec2<f32>( 1.0, -1.0),
-    vec2<f32>(-1.0,  1.0),
-    vec2<f32>(-1.0,  1.0),
-    vec2<f32>( 1.0, -1.0),
-    vec2<f32>( 1.0,  1.0)
-);
-
 struct VertexOutput {
     [[builtin(position)]] position: vec4<f32>;
     [[location(0)]] ndc: vec2<f32>;
 };
 
-
 [[stage(vertex)]]
 fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
-    let x = i32(vertex_index) / 2;
-    let y = i32(vertex_index) & 1;
-    let tc = vec2<f32>(f32(x) * 2.0, f32(y) * 2.0);
-
-    let clip = vec4<f32>(
-        tc.x * 2.0 - 1.0,
-        1.0 - tc.y * 2.0,
-        0.0, 1.0
+    let tc = vec2<f32>(
+        f32(vertex_index >> 1u),
+        f32(vertex_index &  1u),
     );
+    let clip = vec4<f32>(tc * 4.0 - 1.0, 0.0, 1.0);
 
     return VertexOutput (clip, clip.xy);
 }
 
 // Fragment shader
 
-let SAMPLES_COUNT: i32 = 32;
+let SAMPLES_COUNT: u32 = 32u;
 
 [[block]]
 struct RandomData {
@@ -75,14 +61,14 @@ fn main(
     let frag_position = frag_position.xyz / frag_position.w;
 
     let frag_normal = textureLoad(t_normal, c, 0).xyz;
-    let random = vec3<f32>(random_data.noise[c.x%4][c.y%4], 0.0);
+    let random = vec3<f32>(random_data.noise[c.x & 3][c.y & 3], 0.0);
 
     let tangent = normalize(random - frag_normal * dot(random, frag_normal));
     let bitangent = cross(frag_normal, tangent);
     let tbn = mat3x3<f32>(tangent, bitangent, frag_normal);
 
     var occlusion: f32 = 0.0;
-    for (var i: i32 = 0; i < SAMPLES_COUNT; i = i + 1) {
+    for (var i: u32 = 0u; i < SAMPLES_COUNT; i = i + 1u) {
         // Reorient sample vector in view space ...
         var sample_pos = tbn * vec3<f32>(random_data.samples[i], 0.0);
 

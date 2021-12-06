@@ -92,11 +92,7 @@ impl AmbientPass {
                         write_mask: wgpu::ColorWrites::ALL,
                     }],
                 }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleStrip,
-                    strip_index_format: Some(wgpu::IndexFormat::Uint16),
-                    ..Default::default()
-                },
+                primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: Renderer::MULTISAMPLE_STATE,
             });
@@ -125,6 +121,6 @@ impl AmbientPass {
         rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
         rpass.set_bind_group(1, &self.bind_group, &[]);
 
-        rpass.draw(0..4, 0..1);
+        rpass.draw(0..3, 0..1);
     }
 }

@@ -104,10 +104,11 @@ fn main(
 ) -> [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(in.clip_position.xy));
 
+    let ao = textureLoad(t_ao, c, 0).r;
     let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));
     let normal_roughness = textureLoad(t_normal_roughness, c, i32(msaa_sample));
 
-    let albedo = albedo_metallic.rgb;
+    let albedo = albedo_metallic.rgb * ao;
     let normal = normal_roughness.xyz;
     let metallic = albedo_metallic.a;
     let roughness = normal_roughness.a;
@@ -116,9 +117,7 @@ fn main(
     let frag_pos = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
     let frag_pos = frag_pos.xyz / frag_pos.w;
 
-    let ao = textureLoad(t_ao, c, 0).r;
-
-    let N = normal * ao;
+    let N = normal;
     let V = normalize(-frag_pos);
     let L = normalize(in.l_position - frag_pos);
     let H = normalize(L + V);
