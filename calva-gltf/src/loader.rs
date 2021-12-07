@@ -436,7 +436,13 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },
-                depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Renderer::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
                 multisample: Renderer::MULTISAMPLE_STATE,
             });
 

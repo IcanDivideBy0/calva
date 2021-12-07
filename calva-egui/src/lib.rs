@@ -85,27 +85,18 @@ impl EguiPass {
         let frame_time = (Instant::now() - egui_start).as_secs_f64() as f32;
         self.previous_frame_time = Some(frame_time);
 
-        self.rpass.update_texture(
-            &ctx.renderer.device,
-            &ctx.renderer.queue,
-            &self.platform.context().texture(),
-        );
-
         self.rpass
-            .update_user_textures(&ctx.renderer.device, &ctx.renderer.queue);
+            .update_texture(ctx.device, ctx.queue, &self.platform.context().texture());
 
+        self.rpass.update_user_textures(ctx.device, ctx.queue);
         let screen_descriptor = ScreenDescriptor {
             physical_width: ctx.renderer.surface_config.width,
             physical_height: ctx.renderer.surface_config.height,
             scale_factor,
         };
 
-        self.rpass.update_buffers(
-            &ctx.renderer.device,
-            &ctx.renderer.queue,
-            &paint_jobs,
-            &screen_descriptor,
-        );
+        self.rpass
+            .update_buffers(ctx.device, ctx.queue, &paint_jobs, &screen_descriptor);
 
         self.rpass.execute(
             &mut ctx.encoder,

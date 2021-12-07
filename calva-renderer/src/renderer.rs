@@ -6,6 +6,10 @@ use crate::RendererConfig;
 
 pub struct RenderContext<'a> {
     pub renderer: &'a Renderer,
+
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+
     pub view: &'a wgpu::TextureView,
     pub resolve_target: Option<&'a wgpu::TextureView>,
     pub encoder: wgpu::CommandEncoder,
@@ -20,31 +24,14 @@ pub struct Renderer {
     pub config: RendererConfig,
     pub camera: Camera,
 
+    msaa_texture: wgpu::Texture,
+    msaa: wgpu::TextureView,
     pub depth_stencil_texture: wgpu::Texture,
     pub depth_stencil: wgpu::TextureView,
-
-    msaa: wgpu::TextureView,
 }
 
 impl Renderer {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
-
-    pub const DEPTH_STENCIL_STATE: wgpu::DepthStencilState = wgpu::DepthStencilState {
-        format: Self::DEPTH_FORMAT,
-        depth_write_enabled: true,
-        depth_compare: wgpu::CompareFunction::Less,
-        stencil: wgpu::StencilState {
-            front: wgpu::StencilFaceState::IGNORE,
-            back: wgpu::StencilFaceState::IGNORE,
-            read_mask: 0,
-            write_mask: 0,
-        },
-        bias: wgpu::DepthBiasState {
-            constant: 0,
-            slope_scale: 0.0,
-            clamp: 0.0,
-        },
-    };
 
     pub const MULTISAMPLE_STATE: wgpu::MultisampleState = wgpu::MultisampleState {
         count: 4,
@@ -73,6 +60,7 @@ impl Renderer {
                 &wgpu::DeviceDescriptor {
                     features: wgpu::Features::empty(),
                     // features: wgpu::Features::TIMESTAMP_QUERY,
+                    // features: wgpu::Features::CLEAR_COMMANDS,
                     limits: wgpu::Limits::default(),
                     label: None,
                 },
@@ -96,6 +84,22 @@ impl Renderer {
         let config = RendererConfig::new(&device);
         let camera = Camera::new(&device);
 
+        let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Renderer msaa texture"),
+            format: surface_config.format,
+            size: wgpu::Extent3d {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: Self::MULTISAMPLE_STATE.count,
+            dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        });
+
+        let msaa = msaa_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let depth_stencil_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer depth stencil texture"),
             size: wgpu::Extent3d {
@@ -111,25 +115,9 @@ impl Renderer {
                 | wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::TEXTURE_BINDING,
         });
+
         let depth_stencil =
             depth_stencil_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let msaa = device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("Renderer msaa texture"),
-                format: surface_config.format,
-                size: wgpu::Extent3d {
-                    width: surface_config.width,
-                    height: surface_config.height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: Self::MULTISAMPLE_STATE.count,
-                dimension: wgpu::TextureDimension::D2,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-            })
-            .create_view(&wgpu::TextureViewDescriptor::default());
 
         Ok(Self {
             device,
@@ -140,10 +128,10 @@ impl Renderer {
             config,
             camera,
 
+            msaa_texture,
+            msaa,
             depth_stencil_texture,
             depth_stencil,
-
-            msaa,
         })
     }
 
@@ -151,6 +139,24 @@ impl Renderer {
         self.surface_config.width = size.width;
         self.surface_config.height = size.height;
         self.surface.configure(&self.device, &self.surface_config);
+
+        self.msaa_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Renderer msaa texture"),
+            format: self.surface_config.format,
+            size: wgpu::Extent3d {
+                width: self.surface_config.width,
+                height: self.surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: Self::MULTISAMPLE_STATE.count,
+            dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        });
+
+        self.msaa = self
+            .msaa_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         self.depth_stencil_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer depth stencil texture"),
@@ -169,24 +175,6 @@ impl Renderer {
         });
         self.depth_stencil = self
             .depth_stencil_texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        self.msaa = self
-            .device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("Renderer msaa texture"),
-                format: self.surface_config.format,
-                size: wgpu::Extent3d {
-                    width: self.surface_config.width,
-                    height: self.surface_config.height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: Self::MULTISAMPLE_STATE.count,
-                dimension: wgpu::TextureDimension::D2,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-            })
             .create_view(&wgpu::TextureViewDescriptor::default());
     }
 
@@ -213,6 +201,10 @@ impl Renderer {
 
         let mut ctx = RenderContext {
             renderer: self,
+
+            device: &self.device,
+            queue: &self.queue,
+
             view: &self.msaa,
             resolve_target: Some(&frame_view),
             encoder,

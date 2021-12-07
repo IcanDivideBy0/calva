@@ -9,9 +9,21 @@ pub struct SkyboxPass {
 }
 
 impl SkyboxPass {
-    pub fn new(renderer: &Renderer, size: u32, bytes: &[u8]) -> Self {
-        let texture = renderer.device.create_texture_with_data(
-            &renderer.queue,
+    pub fn new(
+        Renderer {
+            device,
+            queue,
+            surface_config,
+            config,
+            camera,
+            ..
+        }: &Renderer,
+
+        size: u32,
+        bytes: &[u8],
+    ) -> Self {
+        let texture = device.create_texture_with_data(
+            queue,
             &wgpu::TextureDescriptor {
                 label: Some("SkyboxPass texture"),
                 size: wgpu::Extent3d {
@@ -25,7 +37,7 @@ impl SkyboxPass {
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
             },
-            &bytemuck::cast_slice(&bytes),
+            bytemuck::cast_slice(bytes),
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
@@ -34,7 +46,7 @@ impl SkyboxPass {
             ..Default::default()
         });
 
-        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
@@ -44,98 +56,86 @@ impl SkyboxPass {
             ..Default::default()
         });
 
-        let bind_group_layout =
-            renderer
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("SkyboxPass bind group layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::Cube,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                });
-
-        let bind_group = renderer
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("SkyboxPass bind group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("SkyboxPass bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            });
-
-        let shader = renderer
-            .device
-            .create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("SkyboxPass shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/skybox.wgsl").into()),
-            });
-
-        let pipeline_layout =
-            renderer
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("SkyboxPass render pipeline layout"),
-                    bind_group_layouts: &[
-                        &renderer.config.bind_group_layout,
-                        &renderer.camera.bind_group_layout,
-                        &bind_group_layout,
-                    ],
-                    push_constant_ranges: &[],
-                });
-
-        let pipeline = renderer
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("SkyboxPass render pipeline"),
-                layout: Some(&pipeline_layout),
-                multiview: None,
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "main",
-                    buffers: &[],
+                    count: None,
                 },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "main",
-                    targets: &[wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Renderer::DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: Renderer::MULTISAMPLE_STATE,
-            });
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("SkyboxPass bind group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
+        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("SkyboxPass shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/skybox.wgsl").into()),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("SkyboxPass render pipeline layout"),
+            bind_group_layouts: &[
+                &config.bind_group_layout,
+                &camera.bind_group_layout,
+                &bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("SkyboxPass render pipeline"),
+            layout: Some(&pipeline_layout),
+            multiview: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "main",
+                targets: &[wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                }],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Renderer::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: Renderer::MULTISAMPLE_STATE,
+        });
 
         Self {
             bind_group,

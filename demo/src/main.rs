@@ -42,7 +42,7 @@ impl Scene {
             //     "Cube",
             // )),
             Box::new(calva::gltf::loader::load(
-                &renderer,
+                renderer,
                 &mut std::fs::File::open("./demo/assets/sponza.glb")?,
                 // &mut std::fs::File::open("./demo/assets/zombie.glb")?,
                 // &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
@@ -152,9 +152,9 @@ async fn main() -> Result<()> {
     };
 
     let mut gbuffer = GeometryBuffer::new(&renderer);
+    let mut skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
     let mut ssao = SsaoPass::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
     let mut ambient = AmbientPass::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
-    let mut skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
     let mut point_lights = PointLightsPass::new(
         &renderer,
         &gbuffer.albedo_metallic,
@@ -178,9 +178,9 @@ async fn main() -> Result<()> {
                 renderer.resize($size);
 
                 gbuffer = GeometryBuffer::new(&renderer);
+                skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
                 ssao = SsaoPass::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
                 ambient = AmbientPass::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
-                skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
                 point_lights = PointLightsPass::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
@@ -211,9 +211,9 @@ async fn main() -> Result<()> {
 
                 match renderer.render(|ctx| {
                     gbuffer.render(ctx, &scene.models);
+                    skybox.render(ctx);
                     ssao.render(ctx);
                     ambient.render(ctx);
-                    skybox.render(ctx);
                     point_lights.render(ctx, &scene.lights);
                     debug_lights.render(ctx, &scene.lights);
                     egui.render(ctx, &window, &mut my_app).unwrap();

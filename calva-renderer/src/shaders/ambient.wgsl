@@ -17,7 +17,7 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] v
         f32(vertex_index &  1u),
     );
 
-    return vec4<f32>(tc * 4.0 - 1.0, 0.0, 1.0);
+    return vec4<f32>(tc * 4.0 - 1.0, 1.0, 1.0);
 }
 
 // Fragment shader

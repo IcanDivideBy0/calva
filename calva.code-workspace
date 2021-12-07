@@ -1,6 +1,6 @@
 {
 	"settings": {
-		// "rust.clippy_preference": "on",
+		"rust.clippy_preference": "on",
 	},
 	"folders": [
 		{

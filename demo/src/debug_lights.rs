@@ -134,7 +134,13 @@ impl DebugLights {
                     }],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(Renderer::DEPTH_STENCIL_STATE),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Renderer::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
                 multisample: Renderer::MULTISAMPLE_STATE,
             });
 
@@ -146,8 +152,7 @@ impl DebugLights {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
-        ctx.renderer
-            .queue
+        ctx.queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

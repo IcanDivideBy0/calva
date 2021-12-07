@@ -26,15 +26,20 @@ impl GeometryBuffer {
         },
     ];
 
-    pub fn new(renderer: &Renderer) -> Self {
+    pub fn new(
+        Renderer {
+            device,
+            surface_config,
+            ..
+        }: &Renderer,
+    ) -> Self {
         let size = wgpu::Extent3d {
-            width: renderer.surface_config.width,
-            height: renderer.surface_config.height,
+            width: surface_config.width,
+            height: surface_config.height,
             depth_or_array_layers: 1,
         };
 
-        let albedo_metallic = renderer
-            .device
+        let albedo_metallic = device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("GBuffer albedo/metallic texture"),
                 size,
@@ -47,8 +52,7 @@ impl GeometryBuffer {
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let normal_roughness = renderer
-            .device
+        let normal_roughness = device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("GBuffer normal/roughness texture"),
                 size,
@@ -61,7 +65,7 @@ impl GeometryBuffer {
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let depth_texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("GBuffer depth texture"),
             size,
             mip_level_count: 1,

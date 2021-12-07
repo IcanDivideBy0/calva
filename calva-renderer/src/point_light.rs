@@ -39,23 +39,26 @@ impl PointLightsPass {
     pub const MAX_LIGHTS: usize = 10_000;
 
     pub fn new(
-        renderer: &Renderer,
+        Renderer {
+            device,
+            surface_config,
+            config,
+            camera,
+            ..
+        }: &Renderer,
 
         albedo_metallic: &wgpu::TextureView,
         normal_roughness: &wgpu::TextureView,
         depth: &wgpu::TextureView,
         ssao: &wgpu::TextureView,
     ) -> Self {
-        let icosphere = Icosphere::new(&renderer.device, 1);
+        let icosphere = Icosphere::new(device, 1);
 
-        let instances_buffer =
-            renderer
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("PointLights instances buffer"),
-                    contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                });
+        let instances_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLights instances buffer"),
+            contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
 
         let vertex_buffers_layout = [
             wgpu::VertexBufferLayout {
@@ -75,228 +78,201 @@ impl PointLightsPass {
         ];
 
         let stencil_pipeline = {
-            let shader = renderer
-                .device
-                .create_shader_module(&wgpu::ShaderModuleDescriptor {
-                    label: Some("PointLights stencil shader"),
-                    source: wgpu::ShaderSource::Wgsl(
-                        include_str!("shaders/light_stencil.wgsl").into(),
-                    ),
-                });
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("PointLights stencil shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/light_stencil.wgsl").into()),
+            });
 
-            let pipeline_layout =
-                renderer
-                    .device
-                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("PointLights stencil pipeline layout"),
-                        bind_group_layouts: &[&renderer.camera.bind_group_layout],
-                        push_constant_ranges: &[],
-                    });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("PointLights stencil pipeline layout"),
+                bind_group_layouts: &[&camera.bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-            renderer
-                .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("PointLights stencil pipeline"),
-                    layout: Some(&pipeline_layout),
-                    multiview: None,
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: "main",
-                        buffers: &vertex_buffers_layout,
-                    },
-                    fragment: None,
-                    primitive: wgpu::PrimitiveState::default(),
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: Renderer::DEPTH_FORMAT,
-                        depth_write_enabled: false,
-                        depth_compare: wgpu::CompareFunction::Less,
-                        stencil: wgpu::StencilState {
-                            front: wgpu::StencilFaceState {
-                                compare: wgpu::CompareFunction::Always,
-                                fail_op: wgpu::StencilOperation::Keep,
-                                depth_fail_op: wgpu::StencilOperation::DecrementWrap,
-                                pass_op: wgpu::StencilOperation::Keep,
-                            },
-                            back: wgpu::StencilFaceState {
-                                compare: wgpu::CompareFunction::Always,
-                                fail_op: wgpu::StencilOperation::Keep,
-                                depth_fail_op: wgpu::StencilOperation::IncrementWrap,
-                                pass_op: wgpu::StencilOperation::Keep,
-                            },
-                            read_mask: 0,
-                            write_mask: 0xFF,
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("PointLights stencil pipeline"),
+                layout: Some(&pipeline_layout),
+                multiview: None,
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "main",
+                    buffers: &vertex_buffers_layout,
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Renderer::DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState {
+                        front: wgpu::StencilFaceState {
+                            compare: wgpu::CompareFunction::Always,
+                            fail_op: wgpu::StencilOperation::Keep,
+                            depth_fail_op: wgpu::StencilOperation::DecrementWrap,
+                            pass_op: wgpu::StencilOperation::Keep,
                         },
-                        bias: wgpu::DepthBiasState::default(),
-                    }),
-                    multisample: Renderer::MULTISAMPLE_STATE,
-                })
+                        back: wgpu::StencilFaceState {
+                            compare: wgpu::CompareFunction::Always,
+                            fail_op: wgpu::StencilOperation::Keep,
+                            depth_fail_op: wgpu::StencilOperation::IncrementWrap,
+                            pass_op: wgpu::StencilOperation::Keep,
+                        },
+                        read_mask: 0,
+                        write_mask: 0xFF,
+                    },
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: Renderer::MULTISAMPLE_STATE,
+            })
         };
 
         let (lighting_bind_group, lighting_pipeline) = {
-            let shader = renderer
-                .device
-                .create_shader_module(&wgpu::ShaderModuleDescriptor {
-                    label: Some("PointLights lighting shader"),
-                    source: wgpu::ShaderSource::Wgsl(include_str!("shaders/light.pbr.wgsl").into()),
-                });
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("PointLights lighting shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/light.pbr.wgsl").into()),
+            });
 
             let bind_group_layout =
-                renderer
-                    .device
-                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("PointLights lighting bind group layout"),
-                        entries: &[
-                            // albedo + metallic
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: false,
-                                    },
-                                },
-                                count: None,
-                            },
-                            // normal + roughness
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: false,
-                                    },
-                                },
-                                count: None,
-                            },
-                            // depth
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 2,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Depth,
-                                },
-                                count: None,
-                            },
-                            // ssao
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 3,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: false,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: false,
-                                    },
-                                },
-                                count: None,
-                            },
-                        ],
-                    });
-
-            let bind_group = renderer
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("PointLights lighting bind group"),
-                    layout: &bind_group_layout,
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("PointLights lighting bind group layout"),
                     entries: &[
-                        wgpu::BindGroupEntry {
+                        // albedo + metallic
+                        wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::TextureView(albedo_metallic),
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            },
+                            count: None,
                         },
-                        wgpu::BindGroupEntry {
+                        // normal + roughness
+                        wgpu::BindGroupLayoutEntry {
                             binding: 1,
-                            resource: wgpu::BindingResource::TextureView(normal_roughness),
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            },
+                            count: None,
                         },
-                        wgpu::BindGroupEntry {
+                        // depth
+                        wgpu::BindGroupLayoutEntry {
                             binding: 2,
-                            resource: wgpu::BindingResource::TextureView(&depth),
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Depth,
+                            },
+                            count: None,
                         },
-                        wgpu::BindGroupEntry {
+                        // ssao
+                        wgpu::BindGroupLayoutEntry {
                             binding: 3,
-                            resource: wgpu::BindingResource::TextureView(ssao),
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            },
+                            count: None,
                         },
                     ],
                 });
 
-            let pipeline_layout =
-                renderer
-                    .device
-                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("PointLights lighting pipeline layout"),
-                        bind_group_layouts: &[
-                            &renderer.config.bind_group_layout,
-                            &renderer.camera.bind_group_layout,
-                            &bind_group_layout,
-                        ],
-                        push_constant_ranges: &[],
-                    });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("PointLights lighting bind group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(albedo_metallic),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(normal_roughness),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(ssao),
+                    },
+                ],
+            });
 
-            let pipeline =
-                renderer
-                    .device
-                    .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("PointLights lighting pipeline"),
-                        layout: Some(&pipeline_layout),
-                        multiview: None,
-                        vertex: wgpu::VertexState {
-                            module: &shader,
-                            entry_point: "main",
-                            buffers: &vertex_buffers_layout,
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &shader,
-                            entry_point: "main",
-                            targets: &[wgpu::ColorTargetState {
-                                format: renderer.surface_config.format,
-                                blend: Some(wgpu::BlendState {
-                                    color: wgpu::BlendComponent {
-                                        src_factor: wgpu::BlendFactor::One,
-                                        dst_factor: wgpu::BlendFactor::One,
-                                        operation: wgpu::BlendOperation::Add,
-                                    },
-                                    alpha: wgpu::BlendComponent {
-                                        src_factor: wgpu::BlendFactor::One,
-                                        dst_factor: wgpu::BlendFactor::One,
-                                        operation: wgpu::BlendOperation::Max,
-                                    },
-                                }),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }],
-                        }),
-                        primitive: wgpu::PrimitiveState {
-                            cull_mode: Some(wgpu::Face::Front),
-                            ..Default::default()
-                        },
-                        depth_stencil: Some(wgpu::DepthStencilState {
-                            format: Renderer::DEPTH_FORMAT,
-                            depth_write_enabled: false,
-                            depth_compare: wgpu::CompareFunction::Always,
-                            stencil: wgpu::StencilState {
-                                front: wgpu::StencilFaceState {
-                                    compare: wgpu::CompareFunction::NotEqual,
-                                    fail_op: wgpu::StencilOperation::Keep,
-                                    depth_fail_op: wgpu::StencilOperation::Keep,
-                                    pass_op: wgpu::StencilOperation::Keep,
-                                },
-                                back: wgpu::StencilFaceState {
-                                    compare: wgpu::CompareFunction::NotEqual,
-                                    fail_op: wgpu::StencilOperation::Keep,
-                                    depth_fail_op: wgpu::StencilOperation::Keep,
-                                    pass_op: wgpu::StencilOperation::Keep,
-                                },
-                                read_mask: 0xFF,
-                                write_mask: 0,
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("PointLights lighting pipeline layout"),
+                bind_group_layouts: &[
+                    &config.bind_group_layout,
+                    &camera.bind_group_layout,
+                    &bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("PointLights lighting pipeline"),
+                layout: Some(&pipeline_layout),
+                multiview: None,
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "main",
+                    buffers: &vertex_buffers_layout,
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "main",
+                    targets: &[wgpu::ColorTargetState {
+                        format: surface_config.format,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::One,
+                                operation: wgpu::BlendOperation::Add,
                             },
-                            bias: wgpu::DepthBiasState::default(),
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::One,
+                                operation: wgpu::BlendOperation::Max,
+                            },
                         }),
-                        multisample: Renderer::MULTISAMPLE_STATE,
-                    });
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Front),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Renderer::DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState {
+                        front: wgpu::StencilFaceState {
+                            compare: wgpu::CompareFunction::NotEqual,
+                            fail_op: wgpu::StencilOperation::Keep,
+                            depth_fail_op: wgpu::StencilOperation::Keep,
+                            pass_op: wgpu::StencilOperation::Keep,
+                        },
+                        back: wgpu::StencilFaceState {
+                            compare: wgpu::CompareFunction::NotEqual,
+                            fail_op: wgpu::StencilOperation::Keep,
+                            depth_fail_op: wgpu::StencilOperation::Keep,
+                            pass_op: wgpu::StencilOperation::Keep,
+                        },
+                        read_mask: 0xFF,
+                        write_mask: 0,
+                    },
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: Renderer::MULTISAMPLE_STATE,
+            });
 
             (bind_group, pipeline)
         };
@@ -313,8 +289,7 @@ impl PointLightsPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
-        ctx.renderer
-            .queue
+        ctx.queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
         {
