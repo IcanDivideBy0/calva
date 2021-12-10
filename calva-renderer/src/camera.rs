@@ -10,10 +10,17 @@ pub struct Camera {
 }
 
 impl Camera {
+    pub const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::const_mat4!(
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.5, 0.0],
+        [0.0, 0.0, 0.5, 1.0]
+    );
+
     pub fn new(device: &wgpu::Device) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&[glam::Mat4::default(); 4]),
+            contents: bytemuck::cast_slice(&[glam::Mat4::default(); 5]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -21,7 +28,7 @@ impl Camera {
             label: Some("Camera bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::all(),
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -51,14 +58,17 @@ impl Camera {
     }
 
     pub(crate) fn update_buffers(&self, queue: &wgpu::Queue) {
+        let proj = Self::OPENGL_TO_WGPU_MATRIX * self.proj;
+
         queue.write_buffer(
             &self.buffer,
             0,
             bytemuck::cast_slice(&[
                 self.view,
-                self.proj,
-                self.proj * self.view,
-                self.proj.inverse(),
+                proj,
+                proj * self.view,
+                self.view.inverse(),
+                proj.inverse(),
             ]),
         );
     }

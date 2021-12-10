@@ -3,13 +3,16 @@ struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
     view_proj: mat4x4<f32>;
+    inv_view: mat4x4<f32>;
     inv_proj: mat4x4<f32>;
 };
 
 [[group(0), binding(0)]]
 var<uniform> camera: Camera;
 
+//
 // Vertex shader
+//
 
 struct InstanceInput {
     [[location(0)]] position: vec3<f32>;

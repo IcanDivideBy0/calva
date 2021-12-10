@@ -25,7 +25,7 @@ impl PointLight {
     };
 }
 
-pub struct PointLightsPass {
+pub struct PointLights {
     icosphere: Icosphere,
     instances_buffer: wgpu::Buffer,
 
@@ -35,7 +35,7 @@ pub struct PointLightsPass {
     lighting_pipeline: wgpu::RenderPipeline,
 }
 
-impl PointLightsPass {
+impl PointLights {
     pub const MAX_LIGHTS: usize = 10_000;
 
     pub fn new(

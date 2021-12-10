@@ -1,14 +1,12 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu::{self, util::DeviceExt},
-    GeometryBuffer, Renderer, Texture,
+    GeometryBuffer, MeshInstances, Renderer, Texture,
 };
 use std::collections::HashMap;
 use std::io::Read;
 
-use crate::{
-    InstanceTransform, RenderInstances, RenderMaterial, RenderMesh, RenderModel, RenderPrimitive,
-};
+use crate::{RenderMaterial, RenderMesh, RenderModel, RenderPrimitive};
 
 macro_rules! label {
     ($s: expr, $obj: expr) => {
@@ -21,21 +19,13 @@ macro_rules! label {
 
 fn traverse_nodes<'a>(
     nodes: impl Iterator<Item = gltf::Node<'a>>,
-    parent: &InstanceTransform,
-    store: &mut HashMap<usize, InstanceTransform>,
+    parent: glam::Mat4,
+    store: &mut HashMap<usize, glam::Mat4>,
 ) {
     for node in nodes {
-        let (t, r, s) = node.transform().decomposed();
-
-        let transform = InstanceTransform {
-            translation: parent.translation + glam::Vec3::from_slice(&t),
-            rotation: parent.rotation * glam::Quat::from_slice(&r),
-            scale: parent.scale * glam::Vec3::from_slice(&s),
-        };
-
+        let transform = parent * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
         store.insert(node.index(), transform);
-
-        traverse_nodes(node.children(), &transform, store);
+        traverse_nodes(node.children(), transform, store);
     }
 }
 
@@ -58,7 +48,19 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
 
     let device = &renderer.device;
 
-    let mut meshes: Vec<_> = doc
+    let mut transforms = HashMap::new();
+    for scene in doc.scenes() {
+        traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut transforms);
+    }
+
+    let mut meshes_transforms = vec![Vec::new(); doc.meshes().len()];
+    for node in doc.nodes() {
+        if let Some(mesh) = node.mesh() {
+            meshes_transforms[mesh.index()].push(transforms[&node.index()])
+        }
+    }
+
+    let meshes: Vec<_> = doc
         .meshes()
         .map(|mesh| {
             let primitives = mesh
@@ -159,28 +161,10 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
 
             Ok(RenderMesh {
                 primitives,
-                instances: RenderInstances::new(device),
+                instances: MeshInstances::new(device, meshes_transforms[mesh.index()].clone()),
             })
         })
         .collect::<Result<_>>()?;
-
-    let mut transforms = HashMap::new();
-    for scene in doc.scenes() {
-        traverse_nodes(
-            scene.nodes(),
-            &InstanceTransform::default(),
-            &mut transforms,
-        );
-    }
-
-    for node in doc.nodes() {
-        if let Some(mesh) = node.mesh() {
-            meshes[mesh.index()]
-                .instances
-                .transforms
-                .push(transforms[&node.index()])
-        }
-    }
 
     let materials = doc
         .materials()
@@ -400,7 +384,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                     module: &shader,
                     entry_point: "main",
                     buffers: &[
-                        RenderInstances::DESC,
+                        MeshInstances::DESC,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,

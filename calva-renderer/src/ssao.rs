@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt;
 use crate::RenderContext;
 use crate::Renderer;
 
-pub struct SsaoPass {
+pub struct Ssao {
     pub output: wgpu::TextureView,
 
     bind_group: wgpu::BindGroup,
@@ -11,7 +11,7 @@ pub struct SsaoPass {
     blur: SsaoBlur,
 }
 
-impl SsaoPass {
+impl Ssao {
     const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 
     pub fn new(
@@ -34,7 +34,7 @@ impl SsaoPass {
 
         let output = device
             .create_texture(&wgpu::TextureDescriptor {
-                label: Some("SsaoPass output"),
+                label: Some("Ssao output"),
                 size,
                 mip_level_count: 1,
                 sample_count: 1,
@@ -46,13 +46,13 @@ impl SsaoPass {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let random_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("SsaoPass random data buffer"),
+            label: Some("Ssao random data buffer"),
             contents: bytemuck::cast_slice(&[SsaoUniform::new()]),
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SsaoPass bind group layout"),
+            label: Some("Ssao bind group layout"),
             entries: &[
                 // random data
                 wgpu::BindGroupLayoutEntry {
@@ -91,7 +91,7 @@ impl SsaoPass {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("SsaoPass bind group"),
+            label: Some("Ssao bind group"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -110,7 +110,7 @@ impl SsaoPass {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("SsaoPass pipeline layout"),
+            label: Some("Ssao pipeline layout"),
             bind_group_layouts: &[
                 &config.bind_group_layout,
                 &camera.bind_group_layout,
@@ -120,12 +120,12 @@ impl SsaoPass {
         });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("SsaoPass shader"),
+            label: Some("Ssao shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao.wgsl").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("SsaoPass pipeline"),
+            label: Some("Ssao pipeline"),
             layout: Some(&pipeline_layout),
             multiview: None,
             vertex: wgpu::VertexState {
@@ -161,7 +161,7 @@ impl SsaoPass {
     pub fn render(&self, ctx: &mut RenderContext) {
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("SsaoPass"),
+                label: Some("Ssao render pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &self.output,
                     resolve_target: None,
@@ -244,7 +244,7 @@ impl SsaoBlur {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: SsaoPass::OUTPUT_FORMAT,
+                format: Ssao::OUTPUT_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
             })
@@ -323,7 +323,7 @@ impl SsaoBlur {
                     module: &shader,
                     entry_point: "main",
                     targets: &[wgpu::ColorTargetState {
-                        format: SsaoPass::OUTPUT_FORMAT,
+                        format: Ssao::OUTPUT_FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }],
@@ -403,7 +403,7 @@ impl SsaoBlur {
                     module: &shader,
                     entry_point: "main",
                     targets: &[wgpu::ColorTargetState {
-                        format: SsaoPass::OUTPUT_FORMAT,
+                        format: Ssao::OUTPUT_FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }],
@@ -430,7 +430,7 @@ impl SsaoBlur {
     fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("SsaoBlur horizontal"),
+                label: Some("Ssao horizontal blur pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &self.view,
                     resolve_target: None,
@@ -450,7 +450,7 @@ impl SsaoBlur {
 
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("SsaoBlur vertical"),
+                label: Some("Ssao vertical blur pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: output,
                     resolve_target: None,

@@ -15,7 +15,7 @@ pub struct MyCamera {
 impl MyCamera {
     pub fn new(window: &Window) -> Self {
         let controller = FlyingCamera::default();
-        let projection = Perspective::new(window.inner_size(), 45.0, 0.1, 100.0);
+        let projection = Perspective::new(window.inner_size(), 45.0, 0.1, 40.0);
 
         Self {
             controller,

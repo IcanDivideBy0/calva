@@ -1,3 +1,4 @@
+use crate::Mesh;
 use crate::RenderContext;
 use crate::Renderer;
 
@@ -145,5 +146,7 @@ impl GeometryBuffer {
 }
 
 pub trait DrawModel {
+    fn meshes(&self) -> Box<dyn Iterator<Item = &dyn Mesh> + '_>;
+
     fn draw<'s: 'p, 'r: 'p, 'p>(&'s self, renderer: &'r Renderer, rpass: &mut wgpu::RenderPass<'p>);
 }

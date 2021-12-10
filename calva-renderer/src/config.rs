@@ -7,6 +7,8 @@ pub struct RendererConfigData {
     pub ssao_bias: f32,
     pub ssao_power: f32,
     pub ambient_factor: f32,
+    pub shadow_bias_factor: f32,
+    pub shadow_bias_max: f32,
 }
 
 impl RendererConfigData {
@@ -16,6 +18,8 @@ impl RendererConfigData {
             ssao_bias: 0.025,
             ssao_power: 2.0,
             ambient_factor: 0.1,
+            shadow_bias_factor: 0.005,
+            shadow_bias_max: 0.01,
         }
     }
 }
@@ -42,7 +46,7 @@ impl RendererConfig {
             label: Some("Renderer config bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::all(),
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,

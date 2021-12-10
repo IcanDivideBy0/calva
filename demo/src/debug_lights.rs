@@ -1,6 +1,6 @@
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    PointLight, PointLightsPass, RenderContext, Renderer,
+    PointLight, PointLights, RenderContext, Renderer,
 };
 
 #[allow(dead_code)]
@@ -77,7 +77,7 @@ impl DebugLights {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("DebugLights:Cube instances buffer"),
                     contents: bytemuck::cast_slice(
-                        &[PointLight::default(); PointLightsPass::MAX_LIGHTS],
+                        &[PointLight::default(); PointLights::MAX_LIGHTS],
                     ),
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });

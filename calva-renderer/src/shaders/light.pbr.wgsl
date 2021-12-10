@@ -4,6 +4,8 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
+    shadow_bias_factor: f32;
+    shadow_bias_max: f32;
 };
 
 [[block]]
@@ -11,13 +13,16 @@ struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
     view_proj: mat4x4<f32>;
+    inv_view: mat4x4<f32>;
     inv_proj: mat4x4<f32>;
 };
 
 [[group(0), binding(0)]] var<uniform> config: Config;
 [[group(1), binding(0)]] var<uniform> camera: Camera;
 
+//
 // Vertex shader
+//
 
 struct InstanceInput {
     [[location(0)]] position: vec3<f32>;
@@ -30,7 +35,7 @@ struct VertexInput {
 };
 
 struct VertexOutput {
-    [[builtin(position)]] clip_position: vec4<f32>;
+    [[builtin(position)]] position: vec4<f32>;
     [[location(0)]] ndc: vec2<f32>;
 
     [[location(1)]] l_position: vec3<f32>;
@@ -56,7 +61,9 @@ fn main(
     );
 }
 
+//
 // Fragment shader
+//
 
 [[group(2), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
 [[group(2), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
@@ -102,7 +109,7 @@ fn main(
     [[builtin(sample_index)]] msaa_sample: u32,
     in: VertexOutput,
 ) -> [[location(0)]] vec4<f32> {
-    let c = vec2<i32>(floor(in.clip_position.xy));
+    let c = vec2<i32>(floor(in.position.xy));
 
     let ao = textureLoad(t_ao, c, 0).r;
     let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));
@@ -121,6 +128,7 @@ fn main(
     let V = normalize(-frag_pos);
     let L = normalize(in.l_position - frag_pos);
     let H = normalize(L + V);
+    let NdotL = max(dot(N, L), 0.0);
 
     let dist = distance(in.l_position, frag_pos);
     // let attenuation = 1.0 - smoothStep(0.0, in.radius, dist);
@@ -135,13 +143,12 @@ fn main(
     let G   = geometry_smith(N, V, L, roughness); 
 
     let num      = NDF * G * F;
-    let denom    = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0)  + 0.0001;
+    let denom    = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;
     let specular = num / denom;
 
     let kS = F;
     let kD = (1.0 - kS) * (1.0 - metallic);
 
-    let NdotL = max(dot(N, L), 0.0);
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
     color = color / (color + 1.0);

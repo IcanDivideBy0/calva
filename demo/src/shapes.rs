@@ -1,6 +1,6 @@
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    DrawModel, GeometryBuffer, Renderer,
+    DrawModel, GeometryBuffer, Mesh, MeshInstances, MeshPrimitive, Renderer,
 };
 
 mod plane {
@@ -70,20 +70,45 @@ impl SimpleShape {
 }
 
 pub struct SimpleMesh {
+    instances: MeshInstances,
+
     positions_buffer: wgpu::Buffer,
+    colors_buffer: wgpu::Buffer,
     indices_buffer: wgpu::Buffer,
     num_elements: u32,
+
     pipeline: wgpu::RenderPipeline,
 }
 
 impl SimpleMesh {
     #[allow(dead_code)]
-    pub fn new(renderer: &Renderer, shape: SimpleShape, name: &str) -> Self {
+    pub fn new(
+        renderer: &Renderer,
+        shape: SimpleShape,
+        name: &str,
+        transform: glam::Mat4,
+        color: glam::Vec3,
+    ) -> Self {
         let device = &renderer.device;
+
+        let instances = MeshInstances::new(device, vec![transform]);
 
         let positions_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("Positions Buffer: {}", name)),
             contents: bytemuck::cast_slice(shape.vertices()),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let colors_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Positions Buffer: {}", name)),
+            contents: bytemuck::cast_slice(
+                shape
+                    .vertices()
+                    .iter()
+                    .map(|_| color)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            ),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -114,11 +139,21 @@ impl SimpleMesh {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: (std::mem::size_of::<glam::Vec3>()) as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-                    }],
+                    buffers: &[
+                        MeshInstances::DESC,
+                        // Positions
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![7 => Float32x3],
+                        },
+                        // colors
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                        },
+                    ],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -129,7 +164,7 @@ impl SimpleMesh {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
+                    cull_mode: None,
                     unclipped_depth: false,
                     // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                     polygon_mode: wgpu::PolygonMode::Fill,
@@ -147,24 +182,61 @@ impl SimpleMesh {
         };
 
         Self {
+            instances,
+
             positions_buffer,
+            colors_buffer,
             indices_buffer,
             num_elements,
+
             pipeline,
         }
     }
 }
 
+impl MeshPrimitive for SimpleMesh {
+    fn vertices(&self) -> &wgpu::Buffer {
+        &self.positions_buffer
+    }
+
+    fn indices(&self) -> &wgpu::Buffer {
+        &self.indices_buffer
+    }
+
+    fn num_elements(&self) -> u32 {
+        self.num_elements
+    }
+}
+
+impl Mesh for SimpleMesh {
+    fn instances(&self) -> &MeshInstances {
+        &self.instances
+    }
+
+    fn primitives(&self) -> Box<dyn Iterator<Item = &dyn MeshPrimitive> + '_> {
+        Box::new(std::iter::once(self as &dyn MeshPrimitive))
+    }
+}
+
 impl DrawModel for SimpleMesh {
+    fn meshes(&self) -> Box<dyn Iterator<Item = &dyn Mesh> + '_> {
+        Box::new(std::iter::once(self as &dyn Mesh))
+    }
+
     fn draw<'s: 'p, 'r: 'p, 'p>(
         &'s self,
         renderer: &'r Renderer,
         rpass: &mut wgpu::RenderPass<'p>,
     ) {
+        self.instances
+            .write_buffer(&renderer.queue, &renderer.camera);
+
         rpass.set_pipeline(&self.pipeline);
 
         rpass.set_bind_group(0, &renderer.camera.bind_group, &[]);
-        rpass.set_vertex_buffer(0, self.positions_buffer.slice(..));
+        rpass.set_vertex_buffer(0, self.instances.buffer.slice(..));
+        rpass.set_vertex_buffer(1, self.positions_buffer.slice(..));
+        rpass.set_vertex_buffer(2, self.colors_buffer.slice(..));
         rpass.set_index_buffer(self.indices_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
         rpass.draw_indexed(0..self.num_elements, 0, 0..1);

@@ -3,11 +3,14 @@ use calva::renderer::RendererConfigData;
 
 #[derive(Clone, Copy)]
 pub struct MyApp {
+    pub shadow_light_angle: f32,
     pub light_pos: glam::Vec3,
     pub ssao_radius: f32,
     pub ssao_bias: f32,
     pub ssao_power: f32,
     pub ambient_factor: f32,
+    pub shadow_bias_factor: f32,
+    pub shadow_bias_max: f32,
 }
 
 impl epi::App for MyApp {
@@ -23,6 +26,12 @@ impl epi::App for MyApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
+                egui::CollapsingHeader::new("ShadowLight")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(egui::DragValue::new(&mut self.shadow_light_angle).speed(0.01));
+                    });
+
                 egui::CollapsingHeader::new("Light")
                     .default_open(true)
                     .show(ui, |ui| {
@@ -46,6 +55,19 @@ impl epi::App for MyApp {
                             egui::Slider::new(&mut self.ambient_factor, 0.0..=1.0).text("Factor"),
                         );
                     });
+
+                egui::CollapsingHeader::new("Shadows")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut self.shadow_bias_factor, 0.01..=0.1)
+                                .text("Bias factor"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut self.shadow_bias_max, 0.0..=0.1)
+                                .text("Bias max"),
+                        );
+                    });
             });
     }
 }
@@ -53,12 +75,15 @@ impl epi::App for MyApp {
 impl From<RendererConfigData> for MyApp {
     fn from(data: RendererConfigData) -> Self {
         Self {
+            shadow_light_angle: 0.0,
             light_pos: glam::Vec3::ZERO,
 
             ssao_radius: data.ssao_radius,
             ssao_bias: data.ssao_bias,
             ssao_power: data.ssao_power,
             ambient_factor: data.ambient_factor,
+            shadow_bias_factor: data.shadow_bias_factor,
+            shadow_bias_max: data.shadow_bias_max,
         }
     }
 }
@@ -70,6 +95,8 @@ impl From<MyApp> for RendererConfigData {
             ssao_bias: my_app.ssao_bias,
             ssao_power: my_app.ssao_power,
             ambient_factor: my_app.ambient_factor,
+            shadow_bias_factor: my_app.shadow_bias_factor,
+            shadow_bias_max: my_app.shadow_bias_max,
         }
     }
 }

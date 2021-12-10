@@ -1,4 +1,6 @@
+//
 // Vertex shader
+//
 
 [[stage(vertex)]]
 fn main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] vec4<f32> {
@@ -10,7 +12,9 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] v
     return vec4<f32>(tc * 4.0 - 1.0, 0.0, 1.0);
 }
 
+//
 // Fragment shader
+//
 
 [[group(0), binding(0)]] var input: texture_2d<f32>;
 

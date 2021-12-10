@@ -4,6 +4,8 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
+    shadow_bias_factor: f32;
+    shadow_bias_max: f32;
 };
 
 [[block]]
@@ -11,13 +13,16 @@ struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
     view_proj: mat4x4<f32>;
+    inv_view: mat4x4<f32>;
     inv_proj: mat4x4<f32>;
 };
 
 [[group(0), binding(0)]] var<uniform> config: Config;
 [[group(1), binding(0)]] var<uniform> camera: Camera;
 
+//
 // Vertex shader
+//
 
 struct InstanceInput {
     [[location(0)]] model_matrix_0: vec4<f32>;
@@ -83,7 +88,9 @@ fn main(
     return out;
 }
 
+//
 // Fragment shader
+//
 
 struct FragmentOutput {
     [[location(0)]] albedo_metallic: vec4<f32>;
@@ -97,6 +104,12 @@ struct FragmentOutput {
 [[group(2), binding(4)]] var t_metallic_roughness: texture_2d<f32>;
 [[group(2), binding(5)]] var s_metallic_roughness: sampler;
 
+fn get_vert_normal(in: VertexOutput) -> vec3<f32> {
+    // no normals
+    // return cross(dpdx(in.position), dpdy(in.position));
+    return in.normal;
+}
+
 fn compute_tbn(in: VertexOutput) -> mat3x3<f32> {
     let pos_dx = dpdx(in.position);
     let pos_dy = dpdy(in.position);
@@ -106,7 +119,7 @@ fn compute_tbn(in: VertexOutput) -> mat3x3<f32> {
     let scale = sign(tex_dx.x * tex_dy.y - tex_dx.y * tex_dy.x);
     let tangent = (pos_dx * tex_dy.y - pos_dy * tex_dx.y) * scale;
     let bitangent = (pos_dy * tex_dx.x - pos_dx * tex_dy.x) * scale;
-    let normal = in.normal;
+    let normal = get_vert_normal(in);
 
     return mat3x3<f32>(
         normalize(tangent), 
@@ -115,10 +128,18 @@ fn compute_tbn(in: VertexOutput) -> mat3x3<f32> {
     );
 }
 
-fn compute_normal(in: VertexOutput) -> vec3<f32> {
-    // let tbn = compute_tbn(in);
-    let tbn = mat3x3<f32>(in.tangent, in.bitangent, in.normal);
+fn get_tbn(in: VertexOutput) -> mat3x3<f32> {
+    // no tangents
+    // return compute_tbn(in);
 
+    return mat3x3<f32>(in.tangent, in.bitangent, in.normal);
+}
+
+fn get_normal(in: VertexOutput) -> vec3<f32> {
+    // no normal mapping
+    // return get_vert_normal(in);
+
+    let tbn = get_tbn(in);
     let n = textureSample(t_normal, s_normal, in.uv).rgb * 2.0 - 1.0;
     return normalize(tbn * n);
 }
@@ -135,6 +156,6 @@ fn main(in: VertexOutput) ->  FragmentOutput {
 
     return FragmentOutput (
         vec4<f32>(albedo.rgb, metallic),
-        vec4<f32>(compute_normal(in), roughness),
+        vec4<f32>(get_normal(in), roughness),
     );
 }

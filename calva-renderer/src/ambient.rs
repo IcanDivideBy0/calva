@@ -1,12 +1,12 @@
 use crate::RenderContext;
 use crate::Renderer;
 
-pub struct AmbientPass {
+pub struct Ambient {
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl AmbientPass {
+impl Ambient {
     pub fn new(
         Renderer {
             device,
@@ -18,7 +18,7 @@ impl AmbientPass {
         ssao: &wgpu::TextureView,
     ) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("AmbientPass bind group layout"),
+            label: Some("Ambient bind group layout"),
             entries: &[
                 // albedo
                 wgpu::BindGroupLayoutEntry {
@@ -46,7 +46,7 @@ impl AmbientPass {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("AmbientPass bind group"),
+            label: Some("Ambient bind group"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -61,18 +61,18 @@ impl AmbientPass {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("AmbientPass pipeline layout"),
+            label: Some("Ambient pipeline layout"),
             bind_group_layouts: &[&config.bind_group_layout, &bind_group_layout],
             push_constant_ranges: &[],
         });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("AmbientPass shader"),
+            label: Some("Ambient shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ambient.wgsl").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("AmbientPass pipeline"),
+            label: Some("Ambient pipeline"),
             layout: Some(&pipeline_layout),
             multiview: None,
             vertex: wgpu::VertexState {
@@ -108,7 +108,7 @@ impl AmbientPass {
 
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("AmbientPass"),
+            label: Some("Ambient render pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
                 view: ctx.view,
                 resolve_target: ctx.resolve_target,

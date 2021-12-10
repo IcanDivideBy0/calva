@@ -2,8 +2,8 @@ use anyhow::Result;
 use calva::{
     egui::EguiPass,
     renderer::{
-        wgpu, AmbientPass, DrawModel, GeometryBuffer, PointLight, PointLightsPass, Renderer,
-        SkyboxPass, SsaoPass,
+        wgpu, Ambient, DrawModel, GeometryBuffer, PointLight, PointLights, Renderer, ShadowLight,
+        Skybox, Ssao,
     },
 };
 use std::time::{Duration, Instant};
@@ -37,9 +37,15 @@ impl Scene {
 
         let models: Vec<Box<dyn DrawModel>> = vec![
             // Box::new(shapes::SimpleMesh::new(
-            //     &renderer,
+            //     renderer,
             //     shapes::SimpleShape::Cube,
             //     "Cube",
+            //     glam::Mat4::from_scale_rotation_translation(
+            //         glam::Vec3::ONE,
+            //         glam::Quat::IDENTITY,
+            //         100_000.0 * glam::vec3(-1.0, 1.0, 0.0) + glam::Vec3::Y * 2.0,
+            //     ),
+            //     glam::vec3(0.0, 0.0, 1.0),
             // )),
             Box::new(calva::gltf::loader::load(
                 renderer,
@@ -121,11 +127,12 @@ async fn main() -> Result<()> {
     let window = WindowBuilder::new().build(&event_loop)?;
 
     let mut camera = MyCamera::new(&window);
-    camera.controller.transform = glam::Mat4::inverse(&glam::Mat4::look_at_rh(
+    camera.controller.transform = glam::Mat4::look_at_rh(
         glam::Vec3::Y,                 // eye
         glam::Vec3::Y + glam::Vec3::X, // target
         glam::Vec3::Y,                 // up
-    ));
+    )
+    .inverse();
 
     let mut renderer = Renderer::new(&window).await?;
 
@@ -152,10 +159,17 @@ async fn main() -> Result<()> {
     };
 
     let mut gbuffer = GeometryBuffer::new(&renderer);
-    let mut skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
-    let mut ssao = SsaoPass::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
-    let mut ambient = AmbientPass::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
-    let mut point_lights = PointLightsPass::new(
+    let mut skybox = Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
+    let mut ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
+    let mut ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
+    let mut shadows = ShadowLight::new(
+        &renderer,
+        &gbuffer.albedo_metallic,
+        &gbuffer.normal_roughness,
+        &gbuffer.depth,
+        &ssao.output,
+    );
+    let mut point_lights = PointLights::new(
         &renderer,
         &gbuffer.albedo_metallic,
         &gbuffer.normal_roughness,
@@ -178,10 +192,17 @@ async fn main() -> Result<()> {
                 renderer.resize($size);
 
                 gbuffer = GeometryBuffer::new(&renderer);
-                skybox = SkyboxPass::new(&renderer, skybox_data.0, &skybox_data.1);
-                ssao = SsaoPass::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
-                ambient = AmbientPass::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
-                point_lights = PointLightsPass::new(
+                skybox = Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
+                ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
+                ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
+                shadows = ShadowLight::new(
+                    &renderer,
+                    &gbuffer.albedo_metallic,
+                    &gbuffer.normal_roughness,
+                    &gbuffer.depth,
+                    &ssao.output,
+                );
+                point_lights = PointLights::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
                     &gbuffer.normal_roughness,
@@ -214,6 +235,11 @@ async fn main() -> Result<()> {
                     skybox.render(ctx);
                     ssao.render(ctx);
                     ambient.render(ctx);
+                    shadows.render(
+                        ctx,
+                        glam::vec3(1.0, -1.0, my_app.shadow_light_angle),
+                        &scene.models,
+                    );
                     point_lights.render(ctx, &scene.lights);
                     debug_lights.render(ctx, &scene.lights);
                     egui.render(ctx, &window, &mut my_app).unwrap();

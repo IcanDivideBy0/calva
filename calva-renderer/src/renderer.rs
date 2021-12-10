@@ -58,9 +58,10 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
+                    // features: wgpu::Features::empty(),
                     // features: wgpu::Features::TIMESTAMP_QUERY,
                     // features: wgpu::Features::CLEAR_COMMANDS,
+                    features: wgpu::Features::DEPTH_CLIP_CONTROL,
                     limits: wgpu::Limits::default(),
                     label: None,
                 },

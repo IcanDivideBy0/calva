@@ -3,12 +3,12 @@ use wgpu::util::DeviceExt;
 use crate::RenderContext;
 use crate::Renderer;
 
-pub struct SkyboxPass {
+pub struct Skybox {
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl SkyboxPass {
+impl Skybox {
     pub fn new(
         Renderer {
             device,
@@ -25,7 +25,7 @@ impl SkyboxPass {
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
-                label: Some("SkyboxPass texture"),
+                label: Some("Skybox texture"),
                 size: wgpu::Extent3d {
                     width: size,
                     height: size,
@@ -57,7 +57,7 @@ impl SkyboxPass {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SkyboxPass bind group layout"),
+            label: Some("Skybox bind group layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -79,7 +79,7 @@ impl SkyboxPass {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("SkyboxPass bind group"),
+            label: Some("Skybox bind group"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -94,12 +94,12 @@ impl SkyboxPass {
         });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("SkyboxPass shader"),
+            label: Some("Skybox shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/skybox.wgsl").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("SkyboxPass render pipeline layout"),
+            label: Some("Skybox render pipeline layout"),
             bind_group_layouts: &[
                 &config.bind_group_layout,
                 &camera.bind_group_layout,
@@ -109,7 +109,7 @@ impl SkyboxPass {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("SkyboxPass render pipeline"),
+            label: Some("Skybox render pipeline"),
             layout: Some(&pipeline_layout),
             multiview: None,
             vertex: wgpu::VertexState {
@@ -145,7 +145,7 @@ impl SkyboxPass {
 
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("SkyboxPass"),
+            label: Some("Skybox render pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
                 view: ctx.view,
                 resolve_target: ctx.resolve_target,

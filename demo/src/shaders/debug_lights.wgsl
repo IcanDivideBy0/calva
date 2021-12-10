@@ -1,4 +1,6 @@
+//
 // Vertex shader
+//
 
 [[block]]
 struct CameraUniforms {
@@ -35,7 +37,9 @@ fn main(
     );
 }
 
+//
 // Fragment shader
+//
 
 [[stage(fragment)]]
 fn main(in: VertexOutput) -> [[location(0)]] vec4<f32> {

@@ -4,6 +4,8 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
+    shadow_bias_factor: f32;
+    shadow_bias_max: f32;
 };
 
 [[block]]
@@ -11,6 +13,7 @@ struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
     view_proj: mat4x4<f32>;
+    inv_view: mat4x4<f32>;
     inv_proj: mat4x4<f32>;
 };
 
@@ -18,7 +21,9 @@ struct Camera {
 [[group(1), binding(0)]] var<uniform> camera: Camera;
 
 
+//
 // Vertex shader
+//
 
 struct VertexOutput {
     [[builtin(position)]] position: vec4<f32>;
@@ -42,6 +47,11 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
         camera.view.y.xyz,
         camera.view.z.xyz,
     ));
+    let view_inv = mat3x3<f32>(
+        camera.inv_view.x.xyz,
+        camera.inv_view.y.xyz,
+        camera.inv_view.z.xyz,
+    );
 
     let view_ray = camera.inv_proj * clip;
     let view_dir = view_inv * (view_ray.xyz / view_ray.w); // world space
@@ -49,7 +59,9 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
     return VertexOutput (clip, view_dir);
 }
 
+//
 // Fragment shader
+//
 
 [[group(2), binding(0)]] var t_skybox: texture_cube<f32>;
 [[group(2), binding(1)]] var s_skybox: sampler;
