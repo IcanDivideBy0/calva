@@ -1,5 +1,3 @@
-use wgpu::util::DeviceExt;
-
 use crate::Camera;
 use crate::DrawModel;
 use crate::MeshInstances;
@@ -242,20 +240,6 @@ impl ShadowLightDepth {
 
     const SIZE: u32 = 1024;
 
-    #[rustfmt::skip]
-    const CAMERA_FRUSTRUM: [glam::Vec4; 8] = [
-        // near
-        glam::const_vec4!([-1.0,  1.0, 0.0, 1.0]), // top left
-        glam::const_vec4!([ 1.0,  1.0, 0.0, 1.0]), // top right
-        glam::const_vec4!([-1.0, -1.0, 0.0, 1.0]), // bottom left
-        glam::const_vec4!([ 1.0, -1.0, 0.0, 1.0]), // bottom right
-        // far
-        glam::const_vec4!([-1.0,  1.0, 1.0, 1.0]), // top left
-        glam::const_vec4!([ 1.0,  1.0, 1.0, 1.0]), // top right
-        glam::const_vec4!([-1.0, -1.0, 1.0, 1.0]), // bottom left
-        glam::const_vec4!([ 1.0, -1.0, 1.0, 1.0]), // bottom right
-    ];
-
     pub fn new(device: &wgpu::Device) -> Self {
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ShadowLight depth texture"),
@@ -276,10 +260,11 @@ impl ShadowLightDepth {
             ..Default::default()
         });
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ShadowLight depth buffer"),
-            contents: bytemuck::cast_slice(&[glam::Mat4::default(); 3]),
+            size: std::mem::size_of::<ShadowLightUniform>() as _,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -370,13 +355,14 @@ impl ShadowLightDepth {
         light_dir: glam::Vec3,
         models: impl IntoIterator<Item = &'m Box<dyn DrawModel>>,
     ) {
-        let (light_view, light_proj) =
-            Self::get_frustrum_light_bounds(&ctx.renderer.camera, light_dir);
-
         ctx.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[light_view, light_proj, light_proj * light_view]),
+            bytemuck::cast_slice(&[ShadowLightUniform::new(
+                &ctx.renderer.camera,
+                Self::SIZE,
+                light_dir,
+            )]),
         );
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -411,12 +397,34 @@ impl ShadowLightDepth {
             }
         }
     }
+}
 
-    fn get_frustrum_light_bounds(
-        camera: &Camera,
-        light_dir: glam::Vec3,
-    ) -> (glam::Mat4, glam::Mat4) {
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct ShadowLightUniform {
+    light_dir: glam::Vec4, // camera view space
+    view_proj: glam::Mat4,
+}
+
+impl ShadowLightUniform {
+    #[rustfmt::skip]
+    const CAMERA_FRUSTRUM: [glam::Vec4; 8] = [
+        // near
+        glam::const_vec4!([-1.0,  1.0, 0.0, 1.0]), // top left
+        glam::const_vec4!([ 1.0,  1.0, 0.0, 1.0]), // top right
+        glam::const_vec4!([-1.0, -1.0, 0.0, 1.0]), // bottom left
+        glam::const_vec4!([ 1.0, -1.0, 0.0, 1.0]), // bottom right
+        // far
+        glam::const_vec4!([-1.0,  1.0, 1.0, 1.0]), // top left
+        glam::const_vec4!([ 1.0,  1.0, 1.0, 1.0]), // top right
+        glam::const_vec4!([-1.0, -1.0, 1.0, 1.0]), // bottom left
+        glam::const_vec4!([ 1.0, -1.0, 1.0, 1.0]), // bottom right
+    ];
+
+    fn new(camera: &Camera, shadow_map_size: u32, light_dir: glam::Vec3) -> Self {
         use glam::swizzles::*;
+
+        let light_dir = light_dir.normalize();
 
         // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L666-L709
         let ndc_to_world = (camera.proj * camera.view).inverse();
@@ -438,14 +446,13 @@ impl ShadowLightDepth {
 
         // Avoid shadow swimming
         radius = (radius * 16.0).ceil() / 16.0; // Prevent small radius changes
-        let texel_size = radius * 2.0 / Self::SIZE as f32; // Shadow texel size in world space
+        let texel_size = radius * 2.0 / shadow_map_size as f32; // Shadow texel size in world space
         center = (center / texel_size).ceil() * texel_size; // Light position can change only in texel size increments
 
         let min = center - glam::Vec3::from_slice(&[radius; 3]);
         let max = center + glam::Vec3::from_slice(&[radius; 3]);
 
-        let light_view =
-            glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir.normalize(), glam::Vec3::Y);
+        let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
         let light_proj = glam::Mat4::orthographic_rh(
             min.x, // left
@@ -456,21 +463,9 @@ impl ShadowLightDepth {
             max.z, // far
         );
 
-        // let light_view = glam::Mat4::look_at_rh(
-        //     center - light_dir.normalize() * radius,
-        //     center,
-        //     glam::Vec3::Y,
-        // );
-
-        // let light_proj = glam::Mat4::orthographic_rh(
-        //     -radius,      // left
-        //     radius,       // right
-        //     -radius,      // bottom
-        //     radius,       // top
-        //     0.0,          // near
-        //     2.0 * radius, // far
-        // );
-
-        (light_view, light_proj)
+        Self {
+            light_dir: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0),
+            view_proj: (light_proj * light_view),
+        }
     }
 }

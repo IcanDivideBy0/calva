@@ -1,12 +1,11 @@
 [[block]]
-struct LightCamera {
-    view: mat4x4<f32>;
-    proj: mat4x4<f32>;
+struct ShadowLight {
+    light_dir: vec4<f32>; // camera view space
     view_proj: mat4x4<f32>;
 };
 
 [[group(0), binding(0)]]
-var<uniform> light_camera: LightCamera;
+var<uniform> shadow_light: ShadowLight;
 
 //
 // Vertex shader
@@ -35,6 +34,5 @@ fn main(
         instance.model_matrix_3,
     );
 
-    // return light_camera.view_proj * model_matrix * vec4<f32>(position, 1.0);
-    return light_camera.proj * light_camera.view * model_matrix * vec4<f32>(position, 1.0);
+    return shadow_light.view_proj * model_matrix * vec4<f32>(position, 1.0);
 }
