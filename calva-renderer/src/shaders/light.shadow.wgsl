@@ -1,3 +1,4 @@
+
 [[block]]
 struct Config {
     ssao_radius: f32;
@@ -17,10 +18,12 @@ struct Camera {
     inv_proj: mat4x4<f32>;
 };
 
+let CASCADES: u32 = 4u;
 [[block]]
 struct ShadowLight {
     light_dir: vec4<f32>; // camera view space
-    view_proj: mat4x4<f32>;
+    view_proj: array<mat4x4<f32>, CASCADES>;
+    splits: array<f32, CASCADES>;
 };
 
 [[group(0), binding(0)]] var<uniform> config: Config;
@@ -37,7 +40,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
+fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -56,7 +59,7 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 [[group(3), binding(2)]] var t_depth: texture_depth_multisampled_2d;
 [[group(3), binding(3)]] var t_ao: texture_2d<f32>;
 
-[[group(3), binding(4)]] var t_shadows: texture_depth_2d;
+[[group(3), binding(4)]] var t_shadows: texture_depth_2d_array;
 [[group(3), binding(5)]] var s_shadows: sampler_comparison;
 
 var<private> poisson_disk: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
@@ -72,7 +75,7 @@ fn random(seed: vec4<f32>) -> f32 {
 }
 
 [[stage(fragment)]]
-fn main(
+fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
     in: VertexOutput,
 ) -> [[location(0)]] vec4<f32> {
@@ -91,6 +94,13 @@ fn main(
     var frag_pos_view = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
     frag_pos_view = frag_pos_view / frag_pos_view.w;
 
+    var cascade_index = 0u;
+    for (var i: u32 = 0u; i < CASCADES; i = i + 1u) {
+        if (z > shadow_light.splits[i]) {
+            cascade_index = i;
+        }
+    }
+
     let N = normal;
     let V = normalize(-frag_pos_view.xyz);
     let L = -shadow_light.light_dir.xyz;
@@ -99,9 +109,9 @@ fn main(
 
     let frag_pos_world = camera.inv_view * frag_pos_view;
 
-    let frag_proj = shadow_light.view_proj * frag_pos_world;
+    let frag_proj = shadow_light.view_proj[cascade_index] * frag_pos_world;
     let frag_proj = (frag_proj.xyz / frag_proj.w);
-    let frag_proj_uv = frag_proj.xy * vec2<f32>(0.5, -0.5) + 0.5; 
+    let frag_proj_uv = frag_proj.xy * vec2<f32>(0.5, -0.5) + 0.5;
 
     let bias = 0.0;
     // https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
@@ -119,11 +129,10 @@ fn main(
         // let i = u32(r * 4.0) % 4u;
 
         let uv = frag_proj_uv + poisson_disk[i] / 700.0;
-        let depth_cmp = textureSampleCompare(t_shadows, s_shadows, uv, frag_proj.z) - bias;
+        let depth_cmp = textureSampleCompare(t_shadows, s_shadows, uv, i32(cascade_index), frag_proj.z) - bias;
 
         visibility = visibility + depth_cmp / 4.0;
     }
 
     return vec4<f32>(visibility * NdotL * albedo, 1.0);
-
 }

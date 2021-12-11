@@ -114,12 +114,12 @@ impl Skybox {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "vs_main",
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: None,
@@ -144,6 +144,8 @@ impl Skybox {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
+        ctx.encoder.push_debug_group("Skybox");
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skybox render pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
@@ -170,5 +172,8 @@ impl Skybox {
         rpass.set_bind_group(2, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
+        drop(rpass);
+
+        ctx.encoder.pop_debug_group();
     }
 }

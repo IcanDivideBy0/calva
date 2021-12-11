@@ -25,7 +25,7 @@ struct VertexInput {
 };
 
 [[stage(vertex)]]
-fn main(
+fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> [[builtin(position)]] vec4<f32> {

@@ -3,7 +3,7 @@ use calva::renderer::RendererConfigData;
 
 #[derive(Clone, Copy)]
 pub struct MyApp {
-    pub shadow_light_angle: f32,
+    pub shadow_light_angle: glam::Vec3,
     pub light_pos: glam::Vec3,
     pub ssao_radius: f32,
     pub ssao_bias: f32,
@@ -29,7 +29,8 @@ impl epi::App for MyApp {
                 egui::CollapsingHeader::new("ShadowLight")
                     .default_open(true)
                     .show(ui, |ui| {
-                        ui.add(egui::DragValue::new(&mut self.shadow_light_angle).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut self.shadow_light_angle.x).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut self.shadow_light_angle.z).speed(0.01));
                     });
 
                 egui::CollapsingHeader::new("Light")
@@ -75,7 +76,7 @@ impl epi::App for MyApp {
 impl From<RendererConfigData> for MyApp {
     fn from(data: RendererConfigData) -> Self {
         Self {
-            shadow_light_angle: 0.0,
+            shadow_light_angle: -glam::Vec3::Y,
             light_pos: glam::Vec3::ZERO,
 
             ssao_radius: data.ssao_radius,

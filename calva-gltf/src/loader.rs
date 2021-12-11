@@ -382,7 +382,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[
                         MeshInstances::DESC,
                         // Positions
@@ -413,7 +413,7 @@ pub fn load(renderer: &Renderer, reader: &mut dyn Read) -> Result<RenderModel> {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "fs_main",
                     targets: GeometryBuffer::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {

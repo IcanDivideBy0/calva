@@ -95,7 +95,7 @@ impl PointLights {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &vertex_buffers_layout,
                 },
                 fragment: None,
@@ -222,12 +222,12 @@ impl PointLights {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &vertex_buffers_layout,
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "fs_main",
                     targets: &[wgpu::ColorTargetState {
                         format: surface_config.format,
                         blend: Some(wgpu::BlendState {

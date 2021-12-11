@@ -93,7 +93,7 @@ impl DebugLights {
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("DebugLights lighting pipeline layout"),
+                    label: Some("DebugLights pipeline layout"),
                     bind_group_layouts: &[&renderer.camera.bind_group_layout],
                     push_constant_ranges: &[],
                 });
@@ -101,12 +101,12 @@ impl DebugLights {
         let pipeline = renderer
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("DebugLights lighting pipeline"),
+                label: Some("DebugLights pipeline"),
                 layout: Some(&pipeline_layout),
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[
                         wgpu::VertexBufferLayout {
                             array_stride: std::mem::size_of::<PointLight>() as _,
@@ -126,7 +126,7 @@ impl DebugLights {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "fs_main",
                     targets: &[wgpu::ColorTargetState {
                         format: renderer.surface_config.format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -152,6 +152,8 @@ impl DebugLights {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
+        ctx.encoder.push_debug_group("DebugLights");
+
         ctx.queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
@@ -186,5 +188,8 @@ impl DebugLights {
         rpass.set_index_buffer(self.cube.indices.slice(..), wgpu::IndexFormat::Uint16);
 
         rpass.draw_indexed(0..self.cube.count, 0, 0..lights.len() as u32);
+        drop(rpass);
+
+        ctx.encoder.pop_debug_group();
     }
 }

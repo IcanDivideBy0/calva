@@ -130,12 +130,12 @@ impl Ssao {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "vs_main",
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: Self::OUTPUT_FORMAT,
                     blend: None,
@@ -293,12 +293,12 @@ impl SsaoBlur {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main_horizontal",
+                    entry_point: "fs_main_horizontal",
                     targets: &[wgpu::ColorTargetState {
                         format: Ssao::OUTPUT_FORMAT,
                         blend: None,
@@ -334,12 +334,12 @@ impl SsaoBlur {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main_vertical",
+                    entry_point: "fs_main_vertical",
                     targets: &[wgpu::ColorTargetState {
                         format: Ssao::OUTPUT_FORMAT,
                         blend: None,

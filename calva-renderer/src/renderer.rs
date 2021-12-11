@@ -61,7 +61,7 @@ impl Renderer {
                     // features: wgpu::Features::empty(),
                     // features: wgpu::Features::TIMESTAMP_QUERY,
                     // features: wgpu::Features::CLEAR_COMMANDS,
-                    features: wgpu::Features::DEPTH_CLIP_CONTROL,
+                    features: wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::MULTIVIEW,
                     limits: wgpu::Limits::default(),
                     label: None,
                 },

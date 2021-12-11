@@ -52,7 +52,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn main(
+fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
@@ -145,7 +145,7 @@ fn get_normal(in: VertexOutput) -> vec3<f32> {
 }
 
 [[stage(fragment)]]
-fn main(in: VertexOutput) ->  FragmentOutput {
+fn fs_main(in: VertexOutput) ->  FragmentOutput {
     let albedo = textureSample(t_albedo, s_albedo, in.uv);
 
     let metallic_roughness = textureSample(t_metallic_roughness, s_metallic_roughness, in.uv).bg;

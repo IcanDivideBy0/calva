@@ -31,7 +31,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
+fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -67,7 +67,7 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 [[group(2), binding(1)]] var s_skybox: sampler;
 
 [[stage(fragment)]]
-fn main(in: VertexOutput) ->  [[location(0)]] vec4<f32> {
+fn fs_main(in: VertexOutput) ->  [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(in.position));
 
     let uv = vec3<f32>(in.position.xy, 1.0);

@@ -97,41 +97,43 @@ impl GeometryBuffer {
         ctx: &mut RenderContext,
         models: impl IntoIterator<Item = &'m Box<dyn DrawModel>>,
     ) {
-        {
-            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("GeometryPass"),
-                color_attachments: &[
-                    wgpu::RenderPassColorAttachment {
-                        view: &self.albedo_metallic,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: true,
-                        },
-                    },
-                    wgpu::RenderPassColorAttachment {
-                        view: &self.normal_roughness,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: true,
-                        },
-                    },
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
+        ctx.encoder.push_debug_group("GeometryBuffer");
 
-            for model in models {
-                model.draw(ctx.renderer, &mut rpass);
-            }
+        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("GeometryPass"),
+            color_attachments: &[
+                wgpu::RenderPassColorAttachment {
+                    view: &self.albedo_metallic,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                },
+                wgpu::RenderPassColorAttachment {
+                    view: &self.normal_roughness,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                },
+            ],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
+        });
+
+        for model in models {
+            model.draw(ctx.renderer, &mut rpass);
         }
+
+        drop(rpass);
 
         ctx.encoder.copy_texture_to_texture(
             self.depth_texture.as_image_copy(),
@@ -142,6 +144,8 @@ impl GeometryBuffer {
                 depth_or_array_layers: 1,
             },
         );
+
+        ctx.encoder.pop_debug_group();
     }
 }
 

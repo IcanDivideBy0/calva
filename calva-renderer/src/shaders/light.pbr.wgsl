@@ -44,7 +44,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn main(
+fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
@@ -105,7 +105,7 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
 }
 
 [[stage(fragment)]]
-fn main(
+fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
     in: VertexOutput,
 ) -> [[location(0)]] vec4<f32> {

@@ -58,6 +58,8 @@ impl EguiPass {
         window: &Window,
         app: &mut impl epi::App,
     ) -> Result<(), BackendError> {
+        ctx.encoder.push_debug_group("Egui");
+
         let scale_factor = window.scale_factor() as f32;
 
         let egui_start = Instant::now();
@@ -104,6 +106,10 @@ impl EguiPass {
             &paint_jobs,
             &screen_descriptor,
             None,
-        )
+        )?;
+
+        ctx.encoder.pop_debug_group();
+
+        Ok(())
     }
 }

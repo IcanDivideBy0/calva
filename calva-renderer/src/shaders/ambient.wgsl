@@ -15,7 +15,7 @@ struct Config {
 //
 
 [[stage(vertex)]]
-fn main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] vec4<f32> {
+fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] vec4<f32> {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -32,7 +32,7 @@ fn main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] v
 [[group(1), binding(1)]] var ao: texture_2d<f32>;
 
 [[stage(fragment)]]
-fn main(
+fn fs_main(
     [[builtin(position)]] coord : vec4<f32>,
     [[builtin(sample_index)]] msaa_sample: u32
 ) ->  [[location(0)]] vec4<f32> {

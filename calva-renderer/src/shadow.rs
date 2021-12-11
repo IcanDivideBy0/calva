@@ -1,3 +1,5 @@
+use glam::swizzles::*;
+
 use crate::Camera;
 use crate::DrawModel;
 use crate::MeshInstances;
@@ -92,7 +94,7 @@ impl ShadowLight {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         sample_type: wgpu::TextureSampleType::Depth,
                     },
                     count: None,
@@ -155,12 +157,12 @@ impl ShadowLight {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "vs_main",
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: Some(wgpu::BlendState {
@@ -237,16 +239,16 @@ struct ShadowLightDepth {
 
 impl ShadowLightDepth {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-
-    const SIZE: u32 = 1024;
+    const TEXTURE_SIZE: u32 = 1024;
+    const CASCADES: usize = 4;
 
     pub fn new(device: &wgpu::Device) -> Self {
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ShadowLight depth texture"),
             size: wgpu::Extent3d {
-                width: Self::SIZE,
-                height: Self::SIZE,
-                depth_or_array_layers: 1,
+                width: Self::TEXTURE_SIZE,
+                height: Self::TEXTURE_SIZE,
+                depth_or_array_layers: Self::CASCADES as _,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -257,6 +259,10 @@ impl ShadowLightDepth {
 
         let depth = depth_texture.create_view(&wgpu::TextureViewDescriptor {
             aspect: wgpu::TextureAspect::DepthOnly,
+            base_array_layer: 0,
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: core::num::NonZeroU32::new(Self::CASCADES as _),
+            // array_layer_count: core::num::NonZeroU32::new(1),
             ..Default::default()
         });
 
@@ -304,10 +310,11 @@ impl ShadowLightDepth {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ShadowLight depth render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
+            multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
+            // multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "main",
+                entry_point: "vs_main",
                 buffers: &[
                     MeshInstances::DESC,
                     // Positions
@@ -358,11 +365,7 @@ impl ShadowLightDepth {
         ctx.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[ShadowLightUniform::new(
-                &ctx.renderer.camera,
-                Self::SIZE,
-                light_dir,
-            )]),
+            bytemuck::cast_slice(&[ShadowLightUniform::new(&ctx.renderer.camera, light_dir)]),
         );
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -403,7 +406,8 @@ impl ShadowLightDepth {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct ShadowLightUniform {
     light_dir: glam::Vec4, // camera view space
-    view_proj: glam::Mat4,
+    view_proj: [glam::Mat4; ShadowLightDepth::CASCADES],
+    splits: [f32; ShadowLightDepth::CASCADES],
 }
 
 impl ShadowLightUniform {
@@ -421,51 +425,78 @@ impl ShadowLightUniform {
         glam::const_vec4!([ 1.0, -1.0, 1.0, 1.0]), // bottom right
     ];
 
-    fn new(camera: &Camera, shadow_map_size: u32, light_dir: glam::Vec3) -> Self {
-        use glam::swizzles::*;
+    fn new(camera: &Camera, light_dir: glam::Vec3) -> Self {
+        // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L639-L716
 
         let light_dir = light_dir.normalize();
+        let light_view =
+            glam::Mat4::from_quat(glam::Quat::from_rotation_arc(glam::Vec3::Z, light_dir));
+        // let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
-        // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L666-L709
-        let ndc_to_world = (camera.proj * camera.view).inverse();
+        let inv_proj = camera.proj.inverse();
+        let near = inv_proj * glam::Vec3::ZERO.extend(1.0);
+        let near = -near.z / near.w;
+        let far = inv_proj * glam::Vec3::Z.extend(1.0);
+        let far = -far.z / far.w;
 
-        let corners = Self::CAMERA_FRUSTRUM
-            .iter()
-            .map(|&v| {
-                let v = ndc_to_world * v;
-                v.xyz() / v.w
+        let splits = (0..=ShadowLightDepth::CASCADES)
+            .map(|cascade| {
+                if cascade == 0 {
+                    return 0.0;
+                };
+
+                let z = cascade as f32 / ShadowLightDepth::CASCADES as f32 * (far - near);
+                let v = camera.proj * glam::vec4(0.0, 0.0, -z, 1.0);
+                v.z / v.w
             })
             .collect::<Vec<_>>();
 
-        let mut center =
-            corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
+        let transform = light_view * (camera.proj * camera.view).inverse();
 
-        let mut radius = corners
-            .iter()
-            .fold(0.0_f32, |acc, &v| acc.max((v - center).length()));
+        let split_transforms = (0..ShadowLightDepth::CASCADES)
+            .map(|cascade_index| {
+                let corners = Self::CAMERA_FRUSTRUM
+                    .iter()
+                    .map(|v| {
+                        let mut v = *v;
+                        v.z = splits[cascade_index + v.z as usize];
+                        let v = transform * v;
+                        v.xyz() / v.w
+                    })
+                    .collect::<Vec<_>>();
 
-        // Avoid shadow swimming
-        radius = (radius * 16.0).ceil() / 16.0; // Prevent small radius changes
-        let texel_size = radius * 2.0 / shadow_map_size as f32; // Shadow texel size in world space
-        center = (center / texel_size).ceil() * texel_size; // Light position can change only in texel size increments
+                let mut center =
+                    corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
 
-        let min = center - glam::Vec3::from_slice(&[radius; 3]);
-        let max = center + glam::Vec3::from_slice(&[radius; 3]);
+                let mut radius = corners
+                    .iter()
+                    .fold(0.0_f32, |acc, &v| acc.max(v.distance(center)));
 
-        let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
+                // Avoid shadow swimming
+                radius = (radius * 16.0).ceil() / 16.0; // Prevent small radius changes
+                let texel_size = radius * 2.0 / ShadowLightDepth::TEXTURE_SIZE as f32; // Shadow texel size in world space
+                center = (center / texel_size).ceil() * texel_size; // Light position can change only in texel size increments
 
-        let light_proj = glam::Mat4::orthographic_rh(
-            min.x, // left
-            max.x, // right
-            min.y, // bottom
-            max.y, // top
-            min.z, // near
-            max.z, // far
-        );
+                let min = center - glam::Vec3::splat(radius);
+                let max = center + glam::Vec3::splat(radius);
+
+                let light_proj = glam::Mat4::orthographic_rh(
+                    min.x,  // left
+                    max.x,  // right
+                    min.y,  // bottom
+                    max.y,  // top
+                    -max.z, // near
+                    -min.z, // far
+                );
+
+                light_proj * light_view
+            })
+            .collect::<Vec<_>>();
 
         Self {
             light_dir: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0),
-            view_proj: (light_proj * light_view),
+            view_proj: TryFrom::try_from(split_transforms).unwrap(),
+            splits: TryFrom::try_from(&splits[0..ShadowLightDepth::CASCADES]).unwrap(),
         }
     }
 }

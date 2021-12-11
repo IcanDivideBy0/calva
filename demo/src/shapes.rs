@@ -23,10 +23,10 @@ mod cube {
         [ 1.0, -1.0,  1.0],
         [ 1.0,  1.0,  1.0],
         [-1.0,  1.0,  1.0],
-        [-1.0, -1.0, -1.0],
-        [ 1.0, -1.0, -1.0],
-        [ 1.0,  1.0, -1.0],
-        [-1.0,  1.0, -1.0],
+        [-1.0, -1.0, 0.0],
+        [ 1.0, -1.0, 0.0],
+        [ 1.0,  1.0, 0.0],
+        [-1.0,  1.0, 0.0],
     ];
 
     #[allow(dead_code)]
@@ -138,7 +138,7 @@ impl SimpleMesh {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[
                         MeshInstances::DESC,
                         // Positions
@@ -157,14 +157,15 @@ impl SimpleMesh {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "fs_main",
                     targets: GeometryBuffer::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
+                    // cull_mode: None,
+                    cull_mode: Some(wgpu::Face::Back),
                     unclipped_depth: false,
                     // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                     polygon_mode: wgpu::PolygonMode::Fill,

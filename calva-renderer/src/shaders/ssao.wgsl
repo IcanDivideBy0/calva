@@ -30,7 +30,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
+fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -57,7 +57,7 @@ struct RandomData {
 [[group(2), binding(2)]] var t_normal: texture_multisampled_2d<f32>;
 
 [[stage(fragment)]]
-fn main(
+fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
     in: VertexOutput
 ) ->  [[location(0)]] f32 {
