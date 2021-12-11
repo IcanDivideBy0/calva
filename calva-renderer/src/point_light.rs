@@ -289,9 +289,12 @@ impl PointLights {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
+        ctx.encoder.push_debug_group("PointLights");
+
         ctx.queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
+        // Stencil pass
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights stencil pass"),
@@ -319,6 +322,7 @@ impl PointLights {
             rpass.draw_indexed(0..self.icosphere.count, 0, 0..lights.len() as u32);
         }
 
+        // lighting pass
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights lighting pass"),
@@ -354,5 +358,7 @@ impl PointLights {
 
             rpass.draw_indexed(0..self.icosphere.count, 0, 0..lights.len() as u32);
         }
+
+        ctx.encoder.pop_debug_group();
     }
 }

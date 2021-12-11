@@ -159,29 +159,31 @@ impl Ssao {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        {
-            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Ssao render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &self.output,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: None,
-            });
+        ctx.encoder.push_debug_group("Ssao");
 
-            rpass.set_pipeline(&self.pipeline);
-            rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
-            rpass.set_bind_group(1, &ctx.renderer.camera.bind_group, &[]);
-            rpass.set_bind_group(2, &self.bind_group, &[]);
+        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Ssao render pass"),
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: &self.output,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+        });
 
-            rpass.draw(0..3, 0..1);
-        }
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
+        rpass.set_bind_group(1, &ctx.renderer.camera.bind_group, &[]);
+        rpass.set_bind_group(2, &self.bind_group, &[]);
 
-        self.blur.render(ctx, &self.output)
+        rpass.draw(0..3, 0..1);
+        drop(rpass);
+
+        self.blur.render(ctx, &self.output);
+        ctx.encoder.pop_debug_group();
     }
 }
 
@@ -255,53 +257,28 @@ impl SsaoBlur {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao_blur.wgsl").into()),
         });
 
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("SsaoBlur bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                },
+                count: None,
+            }],
+        });
+
         let (h_bind_group, h_pipeline) = {
-            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("SsaoBlur horizontal buffer"),
-                contents: bytemuck::cast_slice::<i32, _>(&[1, 0]),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("SsaoBlur horizontal bind group layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("SsaoBlur horizontal bind group"),
                 layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(output),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(output),
+                }],
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -321,7 +298,7 @@ impl SsaoBlur {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "main_horizontal",
                     targets: &[wgpu::ColorTargetState {
                         format: Ssao::OUTPUT_FORMAT,
                         blend: None,
@@ -336,52 +313,13 @@ impl SsaoBlur {
         };
 
         let (v_bind_group, v_pipeline) = {
-            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("SsaoBlur vertical buffer"),
-                contents: bytemuck::cast_slice::<i32, _>(&[0, 1]),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("SsaoBlur vertical bind group layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("SsaoBlur vertical bind group"),
                 layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                }],
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -401,7 +339,7 @@ impl SsaoBlur {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "main_vertical",
                     targets: &[wgpu::ColorTargetState {
                         format: Ssao::OUTPUT_FORMAT,
                         blend: None,
@@ -428,6 +366,7 @@ impl SsaoBlur {
     }
 
     fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
+        // horizontal pass
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Ssao horizontal blur pass"),
@@ -448,6 +387,7 @@ impl SsaoBlur {
             rpass.draw(0..3, 0..1);
         }
 
+        // vertical pass
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Ssao vertical blur pass"),

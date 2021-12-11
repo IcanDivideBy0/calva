@@ -198,10 +198,12 @@ impl ShadowLight {
         direction: glam::Vec3,
         models: impl IntoIterator<Item = &'m Box<dyn DrawModel>>,
     ) {
+        ctx.encoder.push_debug_group("ShadowLight");
+
         self.shadows.render(ctx, direction, models);
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("ShadowLight render pass"),
+            label: Some("ShadowLight lighting pass"),
             color_attachments: &[wgpu::RenderPassColorAttachment {
                 view: ctx.view,
                 resolve_target: ctx.resolve_target,
@@ -220,6 +222,9 @@ impl ShadowLight {
         rpass.set_bind_group(3, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
+        drop(rpass);
+
+        ctx.encoder.pop_debug_group();
     }
 }
 
@@ -235,7 +240,7 @@ struct ShadowLightDepth {
 impl ShadowLightDepth {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 
-    const SIZE: u32 = 512;
+    const SIZE: u32 = 1024;
 
     #[rustfmt::skip]
     const CAMERA_FRUSTRUM: [glam::Vec4; 8] = [
@@ -416,7 +421,7 @@ impl ShadowLightDepth {
         // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L666-L709
         let ndc_to_world = (camera.proj * camera.view).inverse();
 
-        let frustrum_corners = Self::CAMERA_FRUSTRUM
+        let corners = Self::CAMERA_FRUSTRUM
             .iter()
             .map(|&v| {
                 let v = ndc_to_world * v;
@@ -424,30 +429,47 @@ impl ShadowLightDepth {
             })
             .collect::<Vec<_>>();
 
-        let frustrum_center = frustrum_corners
-            .iter()
-            .fold(glam::Vec3::ZERO, |acc, &v| acc + v)
-            / frustrum_corners.len() as f32;
+        let mut center =
+            corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
 
-        let mut radius = frustrum_corners
+        let mut radius = corners
             .iter()
-            .fold(0.0_f32, |acc, &v| acc.max((v - frustrum_center).length()));
-        radius = (radius * 16.0).ceil() / 16.0;
+            .fold(0.0_f32, |acc, &v| acc.max((v - center).length()));
 
-        let light_view = glam::Mat4::look_at_rh(
-            frustrum_center - light_dir.normalize() * radius,
-            frustrum_center,
-            glam::Vec3::Y,
-        );
+        // Avoid shadow swimming
+        radius = (radius * 16.0).ceil() / 16.0; // Prevent small radius changes
+        let texel_size = radius * 2.0 / Self::SIZE as f32; // Shadow texel size in world space
+        center = (center / texel_size).ceil() * texel_size; // Light position can change only in texel size increments
+
+        let min = center - glam::Vec3::from_slice(&[radius; 3]);
+        let max = center + glam::Vec3::from_slice(&[radius; 3]);
+
+        let light_view =
+            glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir.normalize(), glam::Vec3::Y);
 
         let light_proj = glam::Mat4::orthographic_rh(
-            -radius,      // left
-            radius,       // right
-            -radius,      // bottom
-            radius,       // top
-            0.0,          // near
-            2.0 * radius, // far
+            min.x, // left
+            max.x, // right
+            min.y, // bottom
+            max.y, // top
+            min.z, // near
+            max.z, // far
         );
+
+        // let light_view = glam::Mat4::look_at_rh(
+        //     center - light_dir.normalize() * radius,
+        //     center,
+        //     glam::Vec3::Y,
+        // );
+
+        // let light_proj = glam::Mat4::orthographic_rh(
+        //     -radius,      // left
+        //     radius,       // right
+        //     -radius,      // bottom
+        //     radius,       // top
+        //     0.0,          // near
+        //     2.0 * radius, // far
+        // );
 
         (light_view, light_proj)
     }
