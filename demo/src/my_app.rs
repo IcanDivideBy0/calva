@@ -9,8 +9,8 @@ pub struct MyApp {
     pub ssao_bias: f32,
     pub ssao_power: f32,
     pub ambient_factor: f32,
-    pub shadow_bias_factor: f32,
-    pub shadow_bias_max: f32,
+    pub shadow_variance_min: f32,
+    pub shadow_light_bleed_reduction: f32,
 }
 
 impl epi::App for MyApp {
@@ -20,6 +20,7 @@ impl epi::App for MyApp {
 
     fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
         egui::SidePanel::right("config_panel")
+            .min_width(300.0)
             .frame(egui::containers::Frame {
                 margin: (10.0, 10.0).into(),
                 fill: egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
@@ -61,12 +62,13 @@ impl epi::App for MyApp {
                     .default_open(true)
                     .show(ui, |ui| {
                         ui.add(
-                            egui::Slider::new(&mut self.shadow_bias_factor, 0.01..=0.1)
-                                .text("Bias factor"),
+                            egui::Slider::new(&mut self.shadow_variance_min, 0.0..=0.1)
+                                .logarithmic(true)
+                                .text("Variance min"),
                         );
                         ui.add(
-                            egui::Slider::new(&mut self.shadow_bias_max, 0.0..=0.1)
-                                .text("Bias max"),
+                            egui::Slider::new(&mut self.shadow_light_bleed_reduction, 0.0..=1.0)
+                                .text("Bleed reduction"),
                         );
                     });
             });
@@ -76,15 +78,15 @@ impl epi::App for MyApp {
 impl From<RendererConfigData> for MyApp {
     fn from(data: RendererConfigData) -> Self {
         Self {
-            shadow_light_angle: -glam::Vec3::Y,
+            shadow_light_angle: glam::vec3(0.5, -1.0, 0.0),
             light_pos: glam::Vec3::ZERO,
 
             ssao_radius: data.ssao_radius,
             ssao_bias: data.ssao_bias,
             ssao_power: data.ssao_power,
             ambient_factor: data.ambient_factor,
-            shadow_bias_factor: data.shadow_bias_factor,
-            shadow_bias_max: data.shadow_bias_max,
+            shadow_variance_min: data.shadow_variance_min,
+            shadow_light_bleed_reduction: data.shadow_light_bleed_reduction,
         }
     }
 }
@@ -96,8 +98,8 @@ impl From<MyApp> for RendererConfigData {
             ssao_bias: my_app.ssao_bias,
             ssao_power: my_app.ssao_power,
             ambient_factor: my_app.ambient_factor,
-            shadow_bias_factor: my_app.shadow_bias_factor,
-            shadow_bias_max: my_app.shadow_bias_max,
+            shadow_variance_min: my_app.shadow_variance_min,
+            shadow_light_bleed_reduction: my_app.shadow_light_bleed_reduction,
         }
     }
 }

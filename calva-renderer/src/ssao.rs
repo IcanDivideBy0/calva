@@ -241,7 +241,7 @@ impl SsaoBlur {
     fn new(device: &wgpu::Device, size: wgpu::Extent3d, output: &wgpu::TextureView) -> Self {
         let view = device
             .create_texture(&wgpu::TextureDescriptor {
-                label: Some("SsaoBlur temp texture"),
+                label: Some("Ssao blur temp texture"),
                 size,
                 mip_level_count: 1,
                 sample_count: 1,
@@ -253,12 +253,12 @@ impl SsaoBlur {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("SsaoBlur shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao_blur.wgsl").into()),
+            label: Some("Ssao blur shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao.blur.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SsaoBlur bind group layout"),
+            label: Some("Ssao blur bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -273,7 +273,7 @@ impl SsaoBlur {
 
         let (h_bind_group, h_pipeline) = {
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("SsaoBlur horizontal bind group"),
+                label: Some("Ssao blur horizontal bind group"),
                 layout: &bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
@@ -282,13 +282,13 @@ impl SsaoBlur {
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("SsaoBlur horizontal pipeline layout"),
+                label: Some("Ssao blur horizontal pipeline layout"),
                 bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
             });
 
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("SsaoBlur horizontal pipeline"),
+                label: Some("Ssao blur horizontal pipeline"),
                 layout: Some(&pipeline_layout),
                 multiview: None,
                 vertex: wgpu::VertexState {
@@ -314,7 +314,7 @@ impl SsaoBlur {
 
         let (v_bind_group, v_pipeline) = {
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("SsaoBlur vertical bind group"),
+                label: Some("Ssao blur vertical bind group"),
                 layout: &bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
@@ -323,13 +323,13 @@ impl SsaoBlur {
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("SsaoBlur vertical pipeline layout"),
+                label: Some("Ssao blur vertical pipeline layout"),
                 bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
             });
 
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("SsaoBlur vertical pipeline"),
+                label: Some("Ssao blur vertical pipeline"),
                 layout: Some(&pipeline_layout),
                 multiview: None,
                 vertex: wgpu::VertexState {
@@ -369,7 +369,7 @@ impl SsaoBlur {
         // horizontal pass
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Ssao horizontal blur pass"),
+                label: Some("Ssao blur horizontal pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &self.view,
                     resolve_target: None,
@@ -390,7 +390,7 @@ impl SsaoBlur {
         // vertical pass
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Ssao vertical blur pass"),
+                label: Some("Ssao blur vertical pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: output,
                     resolve_target: None,

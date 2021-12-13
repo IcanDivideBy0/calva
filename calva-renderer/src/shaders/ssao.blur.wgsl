@@ -18,20 +18,18 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
 
 [[group(0), binding(0)]] var input: texture_2d<f32>;
 
-var<private> blur_size: i32 = 4;
-
-fn blur(position: vec4<f32>, direction: vec2<i32>) ->  f32 {
+fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
     let c = vec2<i32>(floor(position.xy));
 
-    let r = textureLoad(input, c, 0).r;
-
     var result: f32 = 0.0;
+
     result = result + textureLoad(input, c + vec2<i32>(-2) * direction, 0).r;
     result = result + textureLoad(input, c + vec2<i32>(-1) * direction, 0).r;
     result = result + textureLoad(input, c + vec2<i32>( 0) * direction, 0).r;
     result = result + textureLoad(input, c + vec2<i32>( 1) * direction, 0).r;
+    result = result + textureLoad(input, c + vec2<i32>(-2) * direction, 0).r;
 
-    return result / f32(blur_size);
+    return result / 5.0;
 }
 
 [[stage(fragment)]]
