@@ -1,6 +1,37 @@
 use wgpu::util::DeviceExt;
 
-pub struct Camera {
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraUniformRaw {
+    view: glam::Mat4,
+    proj: glam::Mat4,
+    view_proj: glam::Mat4,
+    inv_view: glam::Mat4,
+    inv_proj: glam::Mat4,
+}
+
+impl CameraUniformRaw {
+    pub const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::const_mat4!(
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.5, 0.0],
+        [0.0, 0.0, 0.5, 1.0]
+    );
+
+    fn new(view: glam::Mat4, proj: glam::Mat4) -> Self {
+        let proj = Self::OPENGL_TO_WGPU_MATRIX * proj;
+
+        Self {
+            view,
+            proj,
+            view_proj: proj * view,
+            inv_view: view.inverse(),
+            inv_proj: proj.inverse(),
+        }
+    }
+}
+
+pub struct CameraUniform {
     pub view: glam::Mat4,
     pub proj: glam::Mat4,
 
@@ -9,18 +40,15 @@ pub struct Camera {
     pub bind_group: wgpu::BindGroup,
 }
 
-impl Camera {
-    pub const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::const_mat4!(
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.5, 0.0],
-        [0.0, 0.0, 0.5, 1.0]
-    );
-
+impl CameraUniform {
     pub fn new(device: &wgpu::Device) -> Self {
+        let view = glam::Mat4::default();
+        let proj = glam::Mat4::default();
+
+        let raw = CameraUniformRaw::new(view, proj);
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&[glam::Mat4::default(); 5]),
+            contents: bytemuck::cast_slice(&[raw]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -48,8 +76,8 @@ impl Camera {
         });
 
         Self {
-            view: glam::Mat4::default(),
-            proj: glam::Mat4::default(),
+            view,
+            proj,
 
             buffer,
             bind_group_layout,
@@ -58,18 +86,7 @@ impl Camera {
     }
 
     pub(crate) fn update_buffers(&self, queue: &wgpu::Queue) {
-        let proj = Self::OPENGL_TO_WGPU_MATRIX * self.proj;
-
-        queue.write_buffer(
-            &self.buffer,
-            0,
-            bytemuck::cast_slice(&[
-                self.view,
-                proj,
-                proj * self.view,
-                self.view.inverse(),
-                proj.inverse(),
-            ]),
-        );
+        let raw = CameraUniformRaw::new(self.view, self.proj);
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[raw]));
     }
 }

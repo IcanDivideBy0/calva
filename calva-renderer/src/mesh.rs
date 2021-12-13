@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::Camera;
+use crate::CameraUniform;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -9,11 +9,11 @@ struct InstanceRaw {
     normal: [f32; 9],
 }
 
-impl From<(glam::Mat4, &Camera)> for InstanceRaw {
-    fn from((model, camera): (glam::Mat4, &Camera)) -> Self {
+impl InstanceRaw {
+    fn new(model: glam::Mat4, camera: &CameraUniform) -> Self {
         let normal = (camera.view * model).inverse().transpose();
 
-        InstanceRaw {
+        Self {
             model: model.to_cols_array(),
             normal: glam::Mat3::from_mat4(normal).to_cols_array(),
         }
@@ -61,11 +61,11 @@ impl MeshInstances {
         self.transforms.len() as u32
     }
 
-    pub fn write_buffer(&self, queue: &wgpu::Queue, camera: &Camera) {
+    pub fn write_buffer(&self, queue: &wgpu::Queue, camera: &CameraUniform) {
         let data = self
             .transforms
             .iter()
-            .map(|transform| InstanceRaw::from((*transform, camera)))
+            .map(|transform| InstanceRaw::new(*transform, camera))
             .collect::<Vec<_>>();
 
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&data));

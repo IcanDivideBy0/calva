@@ -14,7 +14,7 @@ mod ssao;
 mod texture;
 
 pub use ambient::Ambient;
-pub use camera::Camera;
+pub use camera::CameraUniform;
 pub use config::{RendererConfig, RendererConfigData};
 pub use gbuffer::{DrawModel, GeometryBuffer};
 pub use mesh::{Mesh, MeshInstances, MeshPrimitive};

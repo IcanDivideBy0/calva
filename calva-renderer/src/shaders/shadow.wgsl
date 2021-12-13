@@ -2,7 +2,8 @@ let CASCADES: u32 = 4u;
 
 [[block]]
 struct ShadowLight {
-    light_dir: vec4<f32>; // camera view space
+    color: vec4<f32>;
+    direction: vec4<f32>; // camera view space
     view_proj: array<mat4x4<f32>, CASCADES>;
     splits: array<f32, CASCADES>;
 };
@@ -38,6 +39,7 @@ fn vs_main(
         instance.model_matrix_3,
     );
 
-    // let view_index = 0u;
-    return shadow_light.view_proj[view_index] * model_matrix * vec4<f32>(position, 1.0);
+    let view_proj = shadow_light.view_proj[view_index];
+
+    return view_proj * model_matrix * vec4<f32>(position, 1.0);
 }

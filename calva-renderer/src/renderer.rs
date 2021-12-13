@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use winit::window::Window;
 
-use crate::Camera;
+use crate::CameraUniform;
 use crate::RendererConfig;
 
 pub struct RenderContext<'a> {
@@ -22,7 +22,7 @@ pub struct Renderer {
     pub surface_config: wgpu::SurfaceConfiguration,
 
     pub config: RendererConfig,
-    pub camera: Camera,
+    pub camera: CameraUniform,
 
     msaa_texture: wgpu::Texture,
     msaa: wgpu::TextureView,
@@ -83,7 +83,7 @@ impl Renderer {
         surface.configure(&device, &surface_config);
 
         let config = RendererConfig::new(&device);
-        let camera = Camera::new(&device);
+        let camera = CameraUniform::new(&device);
 
         let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer msaa texture"),

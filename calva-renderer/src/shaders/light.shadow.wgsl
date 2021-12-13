@@ -21,7 +21,8 @@ struct Camera {
 let CASCADES: u32 = 4u;
 [[block]]
 struct ShadowLight {
-    light_dir: vec4<f32>; // camera view space
+    color: vec4<f32>;
+    direction: vec4<f32>; // camera view space
     view_proj: array<mat4x4<f32>, CASCADES>;
     splits: array<f32, CASCADES>;
 };
@@ -74,6 +75,40 @@ fn random(seed: vec4<f32>) -> f32 {
     return fract(sin(d) * 43758.5453);
 }
 
+fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+let PI: f32 = 3.14159265359;
+
+fn distribution_ggx(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
+    let a      = roughness * roughness;
+    let a2     = a * a;
+    let NdotH  = max(dot(N, H), 0.0);
+    let NdotH2 = NdotH * NdotH;
+
+    let num   = a2;
+    let denom = (NdotH2 * (a2 - 1.0) + 1.0);
+
+    return num / (PI * denom * denom);
+}
+
+fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
+    let r = (roughness + 1.0);
+    let k = (r * r) / 8.0;
+
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f32 {
+    let NdotV = max(dot(N, V), 0.0);
+    let NdotL = max(dot(N, L), 0.0);
+    let ggx2  = geometry_schlick_ggx(NdotV, roughness);
+    let ggx1  = geometry_schlick_ggx(NdotL, roughness);
+
+    return ggx1 * ggx2;
+}
+
 [[stage(fragment)]]
 fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
@@ -101,17 +136,17 @@ fn fs_main(
         }
     }
 
-    let N = normal;
-    let V = normalize(-frag_pos_view.xyz);
-    let L = -shadow_light.light_dir.xyz;
-    let H = normalize(L + V);
-    let NdotL = max(dot(normal, L), 0.0);
-
     let frag_pos_world = camera.inv_view * frag_pos_view;
 
     let frag_proj = shadow_light.view_proj[cascade_index] * frag_pos_world;
     let frag_proj = (frag_proj.xyz / frag_proj.w);
     let frag_proj_uv = frag_proj.xy * vec2<f32>(0.5, -0.5) + 0.5;
+
+    let N = normal;
+    let V = normalize(-frag_pos_view.xyz);
+    let L = normalize(-shadow_light.direction.xyz);
+    let H = normalize(L + V);
+    let NdotL = max(dot(normal, L), 0.0);
 
     let bias = 0.0;
     // https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
@@ -121,11 +156,11 @@ fn fs_main(
     // let bias = config.shadow_bias_factor * tan(acos(NdotL));
     // let bias = clamp(bias, 0.0, config.shadow_bias_max);
 
-    // let visibility = textureSampleCompare(t_shadows, s_shadows, frag_proj_uv, frag_proj.z) - bias;
+    // let visibility = textureSampleCompare(t_shadows, s_shadows, frag_proj_uv, i32(cascade_index), frag_proj.z) - bias;
 
     var visibility = 0.0;
     for (var i: u32 = 0u; i < 4u; i = i + 1u) {
-        // let r = random(vec4<f32>(fract(in.position.xyy), f32(i)));
+        // let r = random(vec4<f32>(fract(frag_pos_world.xyz), f32(i)));
         // let i = u32(r * 4.0) % 4u;
 
         let uv = frag_proj_uv + poisson_disk[i] / 700.0;
@@ -134,5 +169,25 @@ fn fs_main(
         visibility = visibility + depth_cmp / 4.0;
     }
 
-    return vec4<f32>(visibility * NdotL * albedo, 1.0);
+    let radiance = shadow_light.color.rgb * shadow_light.color.a * visibility;
+
+    let F0 = mix(vec3<f32>(0.04), albedo, metallic);
+    let F  = fresnel_schlick(max(dot(H, V), 0.0), F0);
+
+    let NDF = distribution_ggx(N, H, roughness);
+    let G   = geometry_smith(N, V, L, roughness); 
+
+    let num      = NDF * G * F;
+    let denom    = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;
+    let specular = num / denom;
+
+    let kS = F;
+    let kD = (1.0 - kS) * (1.0 - metallic);
+
+    var color = (kD * albedo / PI + specular) * radiance * NdotL;
+
+    color = color / (color + 1.0);
+    color = pow(color, vec3<f32>(1.0 / 2.2));
+
+    return vec4<f32>(color, 1.0);
 }

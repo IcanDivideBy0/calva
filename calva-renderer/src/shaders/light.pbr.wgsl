@@ -121,16 +121,16 @@ fn fs_main(
     let roughness = normal_roughness.a;
 
     let z = textureLoad(t_depth, c, i32(msaa_sample));
-    let frag_pos = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
-    let frag_pos = frag_pos.xyz / frag_pos.w;
+    let frag_pos_view = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
+    let frag_pos_view = frag_pos_view.xyz / frag_pos_view.w;
 
     let N = normal;
-    let V = normalize(-frag_pos);
-    let L = normalize(in.l_position - frag_pos);
+    let V = normalize(-frag_pos_view);
+    let L = normalize(in.l_position - frag_pos_view);
     let H = normalize(L + V);
     let NdotL = max(dot(N, L), 0.0);
 
-    let dist = distance(in.l_position, frag_pos);
+    let dist = distance(in.l_position, frag_pos_view);
     // let attenuation = 1.0 - smoothStep(0.0, in.radius, dist);
     let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 

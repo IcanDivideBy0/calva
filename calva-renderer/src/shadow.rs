@@ -1,6 +1,6 @@
 use glam::swizzles::*;
 
-use crate::Camera;
+use crate::CameraUniform;
 use crate::DrawModel;
 use crate::MeshInstances;
 use crate::RenderContext;
@@ -239,7 +239,7 @@ struct ShadowLightDepth {
 
 impl ShadowLightDepth {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-    const TEXTURE_SIZE: u32 = 1024;
+    const TEXTURE_SIZE: u32 = 512;
     const CASCADES: usize = 4;
 
     pub fn new(device: &wgpu::Device) -> Self {
@@ -405,7 +405,8 @@ impl ShadowLightDepth {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct ShadowLightUniform {
-    light_dir: glam::Vec4, // camera view space
+    color: glam::Vec4,
+    direction: glam::Vec4, // camera view space
     view_proj: [glam::Mat4; ShadowLightDepth::CASCADES],
     splits: [f32; ShadowLightDepth::CASCADES],
 }
@@ -425,13 +426,11 @@ impl ShadowLightUniform {
         glam::const_vec4!([ 1.0, -1.0, 1.0, 1.0]), // bottom right
     ];
 
-    fn new(camera: &Camera, light_dir: glam::Vec3) -> Self {
+    fn new(camera: &CameraUniform, light_dir: glam::Vec3) -> Self {
         // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L639-L716
 
         let light_dir = light_dir.normalize();
-        let light_view =
-            glam::Mat4::from_quat(glam::Quat::from_rotation_arc(glam::Vec3::Z, light_dir));
-        // let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
+        let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
         let inv_proj = camera.proj.inverse();
         let near = inv_proj * glam::Vec3::ZERO.extend(1.0);
@@ -439,17 +438,45 @@ impl ShadowLightUniform {
         let far = inv_proj * glam::Vec3::Z.extend(1.0);
         let far = -far.z / far.w;
 
-        let splits = (0..=ShadowLightDepth::CASCADES)
-            .map(|cascade| {
-                if cascade == 0 {
-                    return 0.0;
-                };
+        // let ratio = far / near;
+        // let lambda = 0.95;
+        // let mut splits = (0..ShadowLightDepth::CASCADES)
+        //     .map(|cascade| {
+        //         let p = (cascade + 1) as f32 / ShadowLightDepth::CASCADES as f32;
+        //         let log = near * ratio.powf(p);
+        //         let uniform = near + (far - near) * p;
+        //         let d = lambda * (log - uniform) + uniform;
+        //         1.0 - (d - near) / (far - near) / 2.0
+        //     })
+        //     .collect::<Vec<_>>();
 
-                let z = cascade as f32 / ShadowLightDepth::CASCADES as f32 * (far - near);
+        // splits.insert(0, 0.0);
+        // dbg!(&splits);
+
+        // let splits = (0..=ShadowLightDepth::CASCADES)
+        //     .map(|cascade| {
+        //         if cascade == 0 {
+        //             return 0.0;
+        //         };
+
+        //         let z = cascade as f32 / ShadowLightDepth::CASCADES as f32 * (far - near);
+        //         let v = camera.proj * glam::vec4(0.0, 0.0, -z, 1.0);
+        //         v.z / v.w
+        //     })
+        //     .collect::<Vec<_>>();
+
+        let mut ratio = 1.0;
+        let mut splits = (0..ShadowLightDepth::CASCADES)
+            .map(|_| {
+                let z = ratio * (far - near);
                 let v = camera.proj * glam::vec4(0.0, 0.0, -z, 1.0);
+                ratio /= 2.0;
+
                 v.z / v.w
             })
             .collect::<Vec<_>>();
+        splits.push(0.0);
+        splits.reverse();
 
         let transform = light_view * (camera.proj * camera.view).inverse();
 
@@ -494,7 +521,8 @@ impl ShadowLightUniform {
             .collect::<Vec<_>>();
 
         Self {
-            light_dir: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0),
+            color: glam::Vec3::ONE.extend(0.2),
+            direction: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0), // use only rotation component from camera view
             view_proj: TryFrom::try_from(split_transforms).unwrap(),
             splits: TryFrom::try_from(&splits[0..ShadowLightDepth::CASCADES]).unwrap(),
         }
