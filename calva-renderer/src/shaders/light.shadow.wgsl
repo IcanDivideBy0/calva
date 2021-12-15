@@ -5,8 +5,6 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
-    shadow_variance_min: f32;
-    shadow_light_bleed_reduction: f32;
 };
 
 [[block]]
@@ -23,8 +21,7 @@ let CASCADES: u32 = 4u;
 struct ShadowLight {
     color: vec4<f32>;
     direction: vec4<f32>; // camera view space
-    view: array<mat4x4<f32>, CASCADES>;
-    proj: array<mat4x4<f32>, CASCADES>;
+    view_proj: array<mat4x4<f32>, CASCADES>;
     splits: array<f32, CASCADES>;
 };
 
@@ -62,23 +59,7 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 [[group(3), binding(3)]] var t_ao: texture_2d<f32>;
 
 [[group(3), binding(4)]] var t_shadows: texture_depth_2d_array;
-[[group(3), binding(5)]] var s_shadows: sampler_comparison;
-
-[[group(3), binding(6)]] var t_vsm: texture_2d_array<f32>;
-[[group(3), binding(7)]] var s_vsm: sampler;
-
-
-var<private> poisson_disk: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
-  vec2<f32>(-0.94201624, -0.39906216 ),
-  vec2<f32>( 0.94558609, -0.76890725 ),
-  vec2<f32>(-0.09418410, -0.92938870 ),
-  vec2<f32>( 0.34495938,  0.29387760 )
-);
-
-fn random(seed: vec4<f32>) -> f32 {
-    let d = dot(seed, vec4<f32>(12.9898, 78.233, 45.164, 94.673));
-    return fract(sin(d) * 43758.5453);
-}
+[[group(3), binding(5)]] var s_shadows: sampler;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -114,26 +95,6 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
     return ggx1 * ggx2;
 }
 
-fn linstep(min: f32, max: f32, v: f32) -> f32 {
-    return clamp((v - min) / (max - min), 0.0, 1.0);
-}
-
-fn chebyshev_upper_bound(moments: vec2<f32>, distance: f32) -> f32 {
-    var p = 0.0;
-    if (distance <= moments.x) { p = 1.0; }
-
-    var variance = moments.y - (moments.x * moments.x);
-    variance = max(variance, config.shadow_variance_min);
-
-    let d = distance - moments.x;
-    let p_max = variance / (variance + d * d);
-
-    // let p_max = linstep(config.shadow_light_bleed_reduction, 1.0, p_max);
-    let p_max = smoothStep(config.shadow_light_bleed_reduction, 1.0, p_max);
-
-    return max(p, p_max);
-}
-
 [[stage(fragment)]]
 fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
@@ -161,14 +122,17 @@ fn fs_main(
         }
     }
 
-    let frag_pos_light = shadow_light.view[cascade_index] * camera.inv_view * frag_pos_view;
+    let frag_pos_view = camera.inv_view * frag_pos_view;
 
-    let frag_proj = shadow_light.proj[cascade_index] * frag_pos_light;
+    let frag_proj = shadow_light.view_proj[cascade_index] * frag_pos_view;
     let frag_proj = frag_proj.xyz / frag_proj.w;
     let frag_proj_uv = frag_proj.xy * vec2<f32>(0.5, -0.5) + 0.5;
-    let moments = textureSample(t_vsm, s_vsm, frag_proj_uv, i32(cascade_index)).rg;
 
-    let visibility = chebyshev_upper_bound(moments, max(-frag_pos_light.z, 0.0));
+    let light_depth = textureSample(t_shadows, s_shadows, frag_proj_uv, i32(cascade_index));
+
+    // Exponential shadow mapping
+    let ratio = 40.0; // TODO: compute a different ratio for each cascade
+    let visibility = clamp(exp(ratio * 10.0 * (light_depth - frag_proj.z)), 0.0, 1.0 );
 
     let N = normal;
     let V = normalize(-frag_pos_view.xyz);

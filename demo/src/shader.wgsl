@@ -63,7 +63,7 @@ struct FragmentOutput {
 };
 
 [[stage(fragment)]]
-fn fs_main(in: VertexOutput) ->  FragmentOutput {
+fn fs_main(in: VertexOutput) -> FragmentOutput {
     return FragmentOutput (
         vec4<f32>(in.color, 1.0),
         vec4<f32>(0.1, 0.1, 0.1, 1.0),

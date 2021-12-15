@@ -4,8 +4,6 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
-    shadow_variance_min: f32;
-    shadow_light_bleed_reduction: f32;
 };
 
 [[group(0), binding(0)]] var<uniform> config: Config;
@@ -35,7 +33,7 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
 fn fs_main(
     [[builtin(position)]] coord : vec4<f32>,
     [[builtin(sample_index)]] msaa_sample: u32
-) ->  [[location(0)]] vec4<f32> {
+) -> [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(coord.xy));
 
     let diffuse = textureLoad(albedo, c, i32(msaa_sample)).rgb;

@@ -4,8 +4,6 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
-    shadow_variance_min: f32;
-    shadow_light_bleed_reduction: f32;
 };
 
 [[block]]

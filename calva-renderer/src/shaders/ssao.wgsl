@@ -4,8 +4,6 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
-    shadow_variance_min: f32;
-    shadow_light_bleed_reduction: f32;
 };
 
 [[block]]
@@ -60,7 +58,7 @@ struct RandomData {
 fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
     in: VertexOutput
-) ->  [[location(0)]] f32 {
+) -> [[location(0)]] f32 {
     let c = vec2<i32>(floor(in.position.xy));
 
     let frag_depth = textureLoad(t_depth, c, 0);

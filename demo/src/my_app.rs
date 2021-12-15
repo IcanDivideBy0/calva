@@ -9,8 +9,6 @@ pub struct MyApp {
     pub ssao_bias: f32,
     pub ssao_power: f32,
     pub ambient_factor: f32,
-    pub shadow_variance_min: f32,
-    pub shadow_light_bleed_reduction: f32,
 }
 
 impl epi::App for MyApp {
@@ -57,20 +55,6 @@ impl epi::App for MyApp {
                             egui::Slider::new(&mut self.ambient_factor, 0.0..=1.0).text("Factor"),
                         );
                     });
-
-                egui::CollapsingHeader::new("Shadows")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::Slider::new(&mut self.shadow_variance_min, 0.0..=0.1)
-                                .logarithmic(true)
-                                .text("Variance min"),
-                        );
-                        ui.add(
-                            egui::Slider::new(&mut self.shadow_light_bleed_reduction, 0.0..=1.0)
-                                .text("Bleed reduction"),
-                        );
-                    });
             });
     }
 }
@@ -85,8 +69,6 @@ impl From<RendererConfigData> for MyApp {
             ssao_bias: data.ssao_bias,
             ssao_power: data.ssao_power,
             ambient_factor: data.ambient_factor,
-            shadow_variance_min: data.shadow_variance_min,
-            shadow_light_bleed_reduction: data.shadow_light_bleed_reduction,
         }
     }
 }
@@ -98,8 +80,6 @@ impl From<MyApp> for RendererConfigData {
             ssao_bias: my_app.ssao_bias,
             ssao_power: my_app.ssao_power,
             ambient_factor: my_app.ambient_factor,
-            shadow_variance_min: my_app.shadow_variance_min,
-            shadow_light_bleed_reduction: my_app.shadow_light_bleed_reduction,
         }
     }
 }

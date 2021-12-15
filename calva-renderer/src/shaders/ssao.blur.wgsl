@@ -33,11 +33,11 @@ fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
 }
 
 [[stage(fragment)]]
-fn fs_main_horizontal([[builtin(position)]] position: vec4<f32>) ->  [[location(0)]] f32 {
+fn fs_main_horizontal([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] f32 {
     return blur(position, vec2<i32>(1, 0));
 }
 
 [[stage(fragment)]]
-fn fs_main_vertical([[builtin(position)]] position: vec4<f32>) ->  [[location(0)]] f32 {
+fn fs_main_vertical([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] f32 {
     return blur(position, vec2<i32>(0, 1));
 }

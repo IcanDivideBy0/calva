@@ -4,8 +4,6 @@ struct Config {
     ssao_bias: f32;
     ssao_power: f32;
     ambient_factor: f32;
-    shadow_variance_min: f32;
-    shadow_light_bleed_reduction: f32;
 };
 
 [[block]]
@@ -145,7 +143,7 @@ fn get_normal(in: VertexOutput) -> vec3<f32> {
 }
 
 [[stage(fragment)]]
-fn fs_main(in: VertexOutput) ->  FragmentOutput {
+fn fs_main(in: VertexOutput) -> FragmentOutput {
     let albedo = textureSample(t_albedo, s_albedo, in.uv);
 
     let metallic_roughness = textureSample(t_metallic_roughness, s_metallic_roughness, in.uv).bg;

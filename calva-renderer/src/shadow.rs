@@ -1,5 +1,3 @@
-use glam::swizzles::*;
-
 use crate::CameraUniform;
 use crate::DrawModel;
 use crate::MeshInstances;
@@ -32,13 +30,7 @@ impl ShadowLight {
         let shadows_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::Less),
-            ..Default::default()
-        });
-
-        let vsm_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            // compare: Some(wgpu::CompareFunction::Less),
             ..Default::default()
         });
 
@@ -109,24 +101,6 @@ impl ShadowLight {
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                    count: None,
-                },
-                // vsm
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // vsm sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
@@ -160,14 +134,6 @@ impl ShadowLight {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::Sampler(&shadows_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&shadows.variance),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::Sampler(&vsm_sampler),
                 },
             ],
         });
@@ -262,7 +228,6 @@ impl ShadowLight {
 
 struct ShadowLightDepth {
     depth: wgpu::TextureView,
-    variance: wgpu::TextureView,
 
     uniform_buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -274,8 +239,7 @@ struct ShadowLightDepth {
 
 impl ShadowLightDepth {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-    const VARIANCE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg32Float;
-    const TEXTURE_SIZE: u32 = 1024;
+    const TEXTURE_SIZE: u32 = 2048;
     const CASCADES: usize = 4;
 
     pub fn new(device: &wgpu::Device) -> Self {
@@ -297,22 +261,6 @@ impl ShadowLightDepth {
 
         let depth = depth_texture.create_view(&wgpu::TextureViewDescriptor {
             aspect: wgpu::TextureAspect::DepthOnly,
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: core::num::NonZeroU32::new(Self::CASCADES as _),
-            ..Default::default()
-        });
-
-        let variance_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("ShadowLight variance texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::VARIANCE_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        });
-
-        let variance = variance_texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             array_layer_count: core::num::NonZeroU32::new(Self::CASCADES as _),
             ..Default::default()
@@ -380,11 +328,7 @@ impl ShadowLightDepth {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
-                    format: Self::VARIANCE_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                }],
+                targets: &[],
             }),
             primitive: wgpu::PrimitiveState {
                 // cull_mode: Some(wgpu::Face::Front),
@@ -406,11 +350,10 @@ impl ShadowLightDepth {
             multisample: wgpu::MultisampleState::default(),
         });
 
-        let blur = ShadowLightBlur::new(device, size, &variance);
+        let blur = ShadowLightBlur::new(device, size, &depth);
 
         Self {
             depth,
-            variance,
 
             uniform_buffer,
             bind_group_layout,
@@ -435,14 +378,7 @@ impl ShadowLightDepth {
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ShadowLight depth pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: &self.variance,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                    store: true,
-                },
-            }],
+            color_attachments: &[],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth,
                 depth_ops: Some(wgpu::Operations {
@@ -474,7 +410,7 @@ impl ShadowLightDepth {
 
         drop(rpass);
 
-        self.blur.render(ctx, &self.variance);
+        self.blur.render(ctx, &self.depth);
     }
 }
 
@@ -483,8 +419,7 @@ impl ShadowLightDepth {
 struct ShadowLightUniform {
     color: glam::Vec4,
     direction: glam::Vec4, // camera view space
-    view: [glam::Mat4; ShadowLightDepth::CASCADES],
-    proj: [glam::Mat4; ShadowLightDepth::CASCADES],
+    view_proj: [glam::Mat4; ShadowLightDepth::CASCADES],
     splits: [f32; ShadowLightDepth::CASCADES],
 }
 
@@ -506,6 +441,7 @@ impl ShadowLightUniform {
     // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L639-L716
     fn new(camera: &CameraUniform, light_dir: glam::Vec3) -> Self {
         let light_dir = light_dir.normalize();
+        let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
         let inv_proj = camera.proj.inverse();
         let near = inv_proj * glam::Vec3::ZERO.extend(1.0);
@@ -553,78 +489,64 @@ impl ShadowLightUniform {
         // splits.push(0.0);
         // splits.reverse();
 
-        let cam_inv = (camera.proj * camera.view).inverse();
+        let transform = light_view * (camera.proj * camera.view).inverse();
 
-        let mut view = Vec::with_capacity(ShadowLightDepth::CASCADES);
-        let mut proj = Vec::with_capacity(ShadowLightDepth::CASCADES);
+        let split_transforms = (0..ShadowLightDepth::CASCADES)
+            .map(|cascade_index| {
+                let corners = Self::CAMERA_FRUSTRUM
+                    .iter()
+                    .map(|v| {
+                        let mut v = *v;
+                        v.z = splits[cascade_index + v.z as usize];
+                        let v = transform * v.extend(1.0);
+                        v.truncate() / v.w
+                    })
+                    .collect::<Vec<_>>();
 
-        // From world to view space (rotation only)
-        let light_transform = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
+                // Frustrum center in world space
+                let mut center =
+                    corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
 
-        for cascade_index in 0..ShadowLightDepth::CASCADES {
-            let corners = Self::CAMERA_FRUSTRUM
-                .iter()
-                .map(|v| {
-                    let mut v = *v;
-                    v.z = splits[cascade_index + v.z as usize];
-                    let v = cam_inv * v.extend(1.0);
-                    v.xyz() / v.w
-                })
-                .collect::<Vec<_>>();
+                // Radius of the camera frustrum slice bounding sphere
+                let mut radius = corners
+                    .iter()
+                    .fold(0.0_f32, |acc, &v| acc.max(v.distance(center)));
 
-            // Frustrum center in world space
-            let center =
-                corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
-
-            // Radius of the camera frustrum slice bounding sphere
-            let mut radius = corners
-                .iter()
-                .fold(0.0_f32, |acc, &v| acc.max(v.distance(center)));
-
-            // Avoid shadow swimming
-            let translation = {
+                // Avoid shadow swimming
                 // Prevent small radius changes due to float precision
                 radius = (radius * 16.0).ceil() / 16.0;
-
-                // Move frustum center to view space (orientation only)
-                let center = light_transform * center.extend(1.0);
                 // Shadow texel size in light view space
-                let texel_size = (radius * 2.0) / ShadowLightDepth::TEXTURE_SIZE as f32;
+                let texel_size = radius * 2.0 / ShadowLightDepth::TEXTURE_SIZE as f32;
                 // Center can only change in texel size increments
-                let mut center = (center / texel_size).ceil() * texel_size;
-                // Move center back so the near ortho plane is at 0
-                center.z += radius;
+                center = (center / texel_size).ceil() * texel_size;
 
-                glam::Mat4::from_translation(-center.xyz())
-            };
+                let min = center - glam::Vec3::splat(radius);
+                let max = center + glam::Vec3::splat(radius);
 
-            view.push(translation * light_transform);
+                let light_proj = glam::Mat4::orthographic_rh(
+                    min.x,  // left
+                    max.x,  // right
+                    min.y,  // bottom
+                    max.y,  // top
+                    -max.z, // near
+                    -min.z, // far
+                );
 
-            // We want to keep the near plane at 0, so it’s easy to get the distance in
-            // fragment shader during lighting phase. Usiing distance instead of depth
-            // prevent a lot of visual articacts due to float precision.
-            proj.push(glam::Mat4::orthographic_rh(
-                -radius,      // left
-                radius,       // right
-                -radius,      // bottom
-                radius,       // top
-                0.0,          // near
-                2.0 * radius, // far
-            ));
-        }
+                light_proj * light_view
+            })
+            .collect::<Vec<_>>();
 
         Self {
             color: glam::Vec3::ONE.extend(0.2),
             direction: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0), // use only rotation component from camera view
-            view: TryFrom::try_from(view).unwrap(),
-            proj: TryFrom::try_from(proj).unwrap(),
+            view_proj: TryFrom::try_from(split_transforms).unwrap(),
             splits: TryFrom::try_from(&splits[0..ShadowLightDepth::CASCADES]).unwrap(),
         }
     }
 }
 
 struct ShadowLightBlur {
-    view: wgpu::TextureView,
+    depth: wgpu::TextureView,
 
     h_bind_group: wgpu::BindGroup,
     h_pipeline: wgpu::RenderPipeline,
@@ -635,14 +557,14 @@ struct ShadowLightBlur {
 
 impl ShadowLightBlur {
     fn new(device: &wgpu::Device, size: wgpu::Extent3d, output: &wgpu::TextureView) -> Self {
-        let view = device
+        let depth = device
             .create_texture(&wgpu::TextureDescriptor {
-                label: Some("ShadowLight blur temp texture"),
+                label: Some("ShadowLight blur depth temp texture"),
                 size,
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: ShadowLightDepth::VARIANCE_FORMAT,
+                format: ShadowLightDepth::DEPTH_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
             })
@@ -665,7 +587,7 @@ impl ShadowLightBlur {
                 ty: wgpu::BindingType::Texture {
                     multisampled: false,
                     view_dimension: wgpu::TextureViewDimension::D2Array,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    sample_type: wgpu::TextureSampleType::Depth,
                 },
                 count: None,
             }],
@@ -699,14 +621,16 @@ impl ShadowLightBlur {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main_horizontal",
-                    targets: &[wgpu::ColorTargetState {
-                        format: ShadowLightDepth::VARIANCE_FORMAT,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    targets: &[],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: ShadowLightDepth::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
                 multisample: wgpu::MultisampleState::default(),
             });
 
@@ -719,7 +643,7 @@ impl ShadowLightBlur {
                 layout: &bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&depth),
                 }],
             });
 
@@ -741,14 +665,16 @@ impl ShadowLightBlur {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main_vertical",
-                    targets: &[wgpu::ColorTargetState {
-                        format: ShadowLightDepth::VARIANCE_FORMAT,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    targets: &[],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: ShadowLightDepth::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
                 multisample: wgpu::MultisampleState::default(),
             });
 
@@ -756,7 +682,7 @@ impl ShadowLightBlur {
         };
 
         Self {
-            view,
+            depth,
 
             h_bind_group,
             h_pipeline,
@@ -771,15 +697,15 @@ impl ShadowLightBlur {
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ShadowLight blur horizontal pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &self.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
                         store: true,
-                    },
-                }],
-                depth_stencil_attachment: None,
+                    }),
+                    stencil_ops: None,
+                }),
             });
 
             rpass.set_pipeline(&self.h_pipeline);
@@ -792,15 +718,15 @@ impl ShadowLightBlur {
         {
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ShadowLight blur vertical pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: output,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
                         store: true,
-                    },
-                }],
-                depth_stencil_attachment: None,
+                    }),
+                    stencil_ops: None,
+                }),
             });
 
             rpass.set_pipeline(&self.v_pipeline);

@@ -4,8 +4,7 @@ let CASCADES: u32 = 4u;
 struct ShadowLight {
     color: vec4<f32>;
     direction: vec4<f32>; // camera view space
-    view: array<mat4x4<f32>, CASCADES>;
-    proj: array<mat4x4<f32>, CASCADES>;
+    view_proj: array<mat4x4<f32>, CASCADES>;
     splits: array<f32, CASCADES>;
 };
 
@@ -29,7 +28,7 @@ struct InstanceInput {
 
 struct VertexOutput {
     [[builtin(position)]] position: vec4<f32>;
-    [[location(0)]] distance: f32;
+    [[location(0)]] depth: f32;
 };
 
 [[stage(vertex)]]
@@ -45,14 +44,12 @@ fn vs_main(
         instance.model_matrix_3,
     );
 
-    let light_view = shadow_light.view[view_index];
-    let light_proj = shadow_light.proj[view_index];
-
-    let position_view = light_view * model_matrix * vec4<f32>(position, 1.0);
+    let light_view_proj = shadow_light.view_proj[view_index];
+    let position = light_view_proj * model_matrix * vec4<f32>(position, 1.0);
 
     return VertexOutput(
-        light_proj * position_view,
-        -position_view.z
+        position,
+        position.z
     );
 }
 
@@ -64,8 +61,10 @@ fn vs_main(
 [[group(2), binding(1)]] var s_skybox: sampler;
 
 [[stage(fragment)]]
-fn fs_main(in: VertexOutput) ->  [[location(0)]] vec2<f32> {
-    let moment = max(in.distance, 0.0);
+fn fs_main(in: VertexOutput) -> [[location(0)]] vec2<f32> {
+    // let moment = max(in.distance, 0.0);
+    // let moment = clamp(in.depth * 0.5 + 0.5, 0.0, 1.0);
+    let moment = in.depth;
 
     let dx = dpdx(moment);
     let dy = dpdy(moment);

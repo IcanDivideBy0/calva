@@ -16,20 +16,20 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
 // Fragment shader
 //
 
-[[group(0), binding(0)]] var input: texture_2d_array<f32>;
+[[group(0), binding(0)]] var input: texture_depth_2d_array;
 
-fn blur(view_index: i32, position: vec4<f32>, direction: vec2<i32>) -> vec2<f32> {
+fn blur(layer: i32, position: vec4<f32>, direction: vec2<i32>) -> f32 {
     let c = vec2<i32>(floor(position.xy));
 
-    var result = vec2<f32>(0.0);
+    var result = 0.0;
 
-    result = result + textureLoad(input, c + vec2<i32>(-3) * direction, view_index, 0).rg * ( 1.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>(-2) * direction, view_index, 0).rg * ( 6.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>(-1) * direction, view_index, 0).rg * (15.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>( 0) * direction, view_index, 0).rg * (20.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>( 1) * direction, view_index, 0).rg * (15.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>( 2) * direction, view_index, 0).rg * ( 6.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>( 3) * direction, view_index, 0).rg * ( 1.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>(-3) * direction, layer, 0) * ( 1.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>(-2) * direction, layer, 0) * ( 6.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>(-1) * direction, layer, 0) * (15.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>( 0) * direction, layer, 0) * (20.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>( 1) * direction, layer, 0) * (15.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>( 2) * direction, layer, 0) * ( 6.0 / 64.0);
+    result = result + textureLoad(input, c + vec2<i32>( 3) * direction, layer, 0) * ( 1.0 / 64.0);
 
     return result;
 }
@@ -38,7 +38,7 @@ fn blur(view_index: i32, position: vec4<f32>, direction: vec2<i32>) -> vec2<f32>
 fn fs_main_horizontal(
     [[builtin(view_index)]] view_index: i32,
     [[builtin(position)]] position: vec4<f32>,
-) -> [[location(0)]] vec2<f32> {
+) -> [[builtin(frag_depth)]] f32 {
     return blur(view_index, position, vec2<i32>(1, 0));
 }
 
@@ -46,6 +46,6 @@ fn fs_main_horizontal(
 fn fs_main_vertical(
     [[builtin(view_index)]] view_index: i32,
     [[builtin(position)]] position: vec4<f32>,
-) -> [[location(0)]] vec2<f32> {
+) -> [[builtin(frag_depth)]] f32 {
     return blur(view_index, position, vec2<i32>(0, 1));
 }
