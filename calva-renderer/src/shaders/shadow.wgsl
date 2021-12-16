@@ -52,23 +52,3 @@ fn vs_main(
         position.z
     );
 }
-
-//
-// Fragment shader
-//
-
-[[group(2), binding(0)]] var t_skybox: texture_cube<f32>;
-[[group(2), binding(1)]] var s_skybox: sampler;
-
-[[stage(fragment)]]
-fn fs_main(in: VertexOutput) -> [[location(0)]] vec2<f32> {
-    // let moment = max(in.distance, 0.0);
-    // let moment = clamp(in.depth * 0.5 + 0.5, 0.0, 1.0);
-    let moment = in.depth;
-
-    let dx = dpdx(moment);
-    let dy = dpdy(moment);
-    let moment2 = moment * moment + 0.25 * (dx * dx + dy * dy);
-
-    return vec2<f32>(moment, moment2);
-}

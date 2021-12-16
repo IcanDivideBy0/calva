@@ -122,16 +122,16 @@ fn fs_main(
         }
     }
 
-    let frag_pos_view = camera.inv_view * frag_pos_view;
+    let frag_pos_world = camera.inv_view * frag_pos_view;
 
-    let frag_proj = shadow_light.view_proj[cascade_index] * frag_pos_view;
+    let frag_proj = shadow_light.view_proj[cascade_index] * frag_pos_world;
     let frag_proj = frag_proj.xyz / frag_proj.w;
     let frag_proj_uv = frag_proj.xy * vec2<f32>(0.5, -0.5) + 0.5;
 
     let light_depth = textureSample(t_shadows, s_shadows, frag_proj_uv, i32(cascade_index));
 
     // Exponential shadow mapping
-    let ratio = 40.0; // TODO: compute a different ratio for each cascade
+    let ratio = 60.0; // TODO: compute a different ratio for each cascade
     let visibility = clamp(exp(ratio * 10.0 * (light_depth - frag_proj.z)), 0.0, 1.0 );
 
     let N = normal;

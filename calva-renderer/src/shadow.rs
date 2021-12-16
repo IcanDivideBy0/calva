@@ -239,7 +239,7 @@ struct ShadowLightDepth {
 
 impl ShadowLightDepth {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-    const TEXTURE_SIZE: u32 = 2048;
+    const TEXTURE_SIZE: u32 = 1024;
     const CASCADES: usize = 4;
 
     pub fn new(device: &wgpu::Device) -> Self {
@@ -325,13 +325,8 @@ impl ShadowLightDepth {
                     },
                 ],
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[],
-            }),
+            fragment: None,
             primitive: wgpu::PrimitiveState {
-                // cull_mode: Some(wgpu::Face::Front),
                 unclipped_depth: true,
                 ..Default::default()
             },
@@ -340,12 +335,12 @@ impl ShadowLightDepth {
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-                // bias: wgpu::DepthBiasState {
-                //     constant: 2, // corresponds to bilinear filtering
-                //     slope_scale: 2.0,
-                //     clamp: 0.0,
-                // },
+                // bias: wgpu::DepthBiasState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2, // corresponds to bilinear filtering
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
             }),
             multisample: wgpu::MultisampleState::default(),
         });
@@ -410,6 +405,7 @@ impl ShadowLightDepth {
 
         drop(rpass);
 
+        self.blur.render(ctx, &self.depth);
         self.blur.render(ctx, &self.depth);
     }
 }
