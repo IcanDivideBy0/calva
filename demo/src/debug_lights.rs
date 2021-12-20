@@ -154,7 +154,8 @@ impl DebugLights {
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
         ctx.encoder.push_debug_group("DebugLights");
 
-        ctx.queue
+        ctx.renderer
+            .queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -1,6 +1,6 @@
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    DrawModel, GeometryBuffer, Mesh, MeshInstances, MeshPrimitive, Renderer,
+    GeometryBuffer, Mesh, MeshInstances, Renderer,
 };
 
 mod plane {
@@ -23,10 +23,10 @@ mod cube {
         [ 1.0, -1.0,  1.0],
         [ 1.0,  1.0,  1.0],
         [-1.0,  1.0,  1.0],
-        [-1.0, -1.0, 0.0],
-        [ 1.0, -1.0, 0.0],
-        [ 1.0,  1.0, 0.0],
-        [-1.0,  1.0, 0.0],
+        [-1.0, -1.0, -1.0],
+        [ 1.0, -1.0, -1.0],
+        [ 1.0,  1.0, -1.0],
+        [-1.0,  1.0, -1.0],
     ];
 
     #[allow(dead_code)]
@@ -140,7 +140,7 @@ impl SimpleMesh {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        MeshInstances::DESC,
+                        MeshInstances::LAYOUT,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
@@ -195,51 +195,59 @@ impl SimpleMesh {
     }
 }
 
-impl MeshPrimitive for SimpleMesh {
-    fn vertices(&self) -> &wgpu::Buffer {
-        &self.positions_buffer
-    }
+// impl MeshPrimitive for SimpleMesh {
+//     fn vertices(&self) -> &wgpu::Buffer {
+//         &self.positions_buffer
+//     }
 
-    fn indices(&self) -> &wgpu::Buffer {
-        &self.indices_buffer
-    }
+//     fn indices(&self) -> &wgpu::Buffer {
+//         &self.indices_buffer
+//     }
 
-    fn num_elements(&self) -> u32 {
-        self.num_elements
-    }
-}
+//     fn num_elements(&self) -> u32 {
+//         self.num_elements
+//     }
+// }
 
-impl Mesh for SimpleMesh {
-    fn instances(&self) -> &MeshInstances {
-        &self.instances
-    }
+// impl Mesh for SimpleMesh {
+//     fn instances(&self) -> &MeshInstances {
+//         &self.instances
+//     }
 
-    fn primitives(&self) -> Box<dyn Iterator<Item = &dyn MeshPrimitive> + '_> {
-        Box::new(std::iter::once(self as &dyn MeshPrimitive))
-    }
-}
+//     fn instances_mut(&mut self) -> &mut MeshInstances {
+//         &mut self.instances
+//     }
 
-impl DrawModel for SimpleMesh {
-    fn meshes(&self) -> Box<dyn Iterator<Item = &dyn Mesh> + '_> {
-        Box::new(std::iter::once(self as &dyn Mesh))
-    }
+//     fn primitives(&self) -> Box<dyn Iterator<Item = &dyn MeshPrimitive> + '_> {
+//         Box::new(std::iter::once(self as &dyn MeshPrimitive))
+//     }
+// }
 
-    fn draw<'s: 'p, 'r: 'p, 'p>(
-        &'s self,
-        renderer: &'r Renderer,
-        rpass: &mut wgpu::RenderPass<'p>,
-    ) {
-        self.instances
-            .write_buffer(&renderer.queue, &renderer.camera);
+// impl DrawModel for SimpleMesh {
+//     fn meshes(&self) -> Box<dyn Iterator<Item = &dyn Mesh> + '_> {
+//         Box::new(std::iter::once(self as &dyn Mesh))
+//     }
 
-        rpass.set_pipeline(&self.pipeline);
+//     fn meshes_mut(&mut self) -> Box<dyn Iterator<Item = &mut dyn Mesh> + '_> {
+//         Box::new(std::iter::once(self as &mut dyn Mesh))
+//     }
 
-        rpass.set_bind_group(0, &renderer.camera.bind_group, &[]);
-        rpass.set_vertex_buffer(0, self.instances.buffer.slice(..));
-        rpass.set_vertex_buffer(1, self.positions_buffer.slice(..));
-        rpass.set_vertex_buffer(2, self.colors_buffer.slice(..));
-        rpass.set_index_buffer(self.indices_buffer.slice(..), wgpu::IndexFormat::Uint16);
+//     fn draw<'s: 'p, 'r: 'p, 'p>(
+//         &'s self,
+//         renderer: &'r Renderer,
+//         rpass: &mut wgpu::RenderPass<'p>,
+//     ) {
+//         self.instances
+//             .write_buffer(&renderer.queue, &renderer.camera);
 
-        rpass.draw_indexed(0..self.num_elements, 0, 0..1);
-    }
-}
+//         rpass.set_pipeline(&self.pipeline);
+
+//         rpass.set_bind_group(0, &renderer.camera.bind_group, &[]);
+//         rpass.set_vertex_buffer(0, self.instances.buffer.slice(..));
+//         rpass.set_vertex_buffer(1, self.positions_buffer.slice(..));
+//         rpass.set_vertex_buffer(2, self.colors_buffer.slice(..));
+//         rpass.set_index_buffer(self.indices_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+//         rpass.draw_indexed(0..self.num_elements, 0, 0..1);
+//     }
+// }

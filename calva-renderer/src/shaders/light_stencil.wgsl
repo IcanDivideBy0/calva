@@ -1,4 +1,3 @@
-[[block]]
 struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
@@ -29,6 +28,6 @@ fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> [[builtin(position)]] vec4<f32> {
-    let world_pos = in.position * instance.radius + instance.position;
+    let world_pos = 1.1 * in.position * instance.radius + instance.position;
     return camera.view_proj * vec4<f32>(world_pos, 1.0);
 }

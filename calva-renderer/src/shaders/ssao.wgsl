@@ -1,4 +1,3 @@
-[[block]]
 struct Config {
     ssao_radius: f32;
     ssao_bias: f32;
@@ -6,7 +5,6 @@ struct Config {
     ambient_factor: f32;
 };
 
-[[block]]
 struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
@@ -32,8 +30,8 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
-    );
-    let clip = vec4<f32>(tc * 4.0 - 1.0, 0.0, 1.0);
+    ) * 2.0;
+    let clip = vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0);
 
     return VertexOutput (clip, clip.xy);
 }
@@ -42,9 +40,8 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 // Fragment shader
 //
 
-let SAMPLES_COUNT: u32 = 32u;
+let SAMPLES_COUNT: u32 = 16u;
 
-[[block]]
 struct RandomData {
     samples: array<vec2<f32>, SAMPLES_COUNT>;
     noise: array<array<vec2<f32>, 4>, 4>;

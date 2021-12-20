@@ -4,23 +4,27 @@ mod ambient;
 mod camera;
 mod config;
 mod gbuffer;
-mod icosphere;
+mod material;
 mod mesh;
 mod point_light;
 mod renderer;
 mod shadow;
 mod skybox;
 mod ssao;
-mod texture;
 
 pub use ambient::Ambient;
 pub use camera::CameraUniform;
 pub use config::{RendererConfig, RendererConfigData};
-pub use gbuffer::{DrawModel, GeometryBuffer};
-pub use mesh::{Mesh, MeshInstances, MeshPrimitive};
+pub use gbuffer::{DrawCallArgs, GeometryBuffer};
+pub use material::Material;
+pub use mesh::{Mesh, MeshInstances};
 pub use point_light::{PointLight, PointLights};
 pub use renderer::{RenderContext, Renderer};
 pub use shadow::ShadowLight;
 pub use skybox::Skybox;
 pub use ssao::Ssao;
-pub use texture::Texture;
+
+pub mod util {
+    pub mod icosphere;
+    pub mod mipmap;
+}

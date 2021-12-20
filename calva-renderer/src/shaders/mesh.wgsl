@@ -1,12 +1,3 @@
-[[block]]
-struct Config {
-    ssao_radius: f32;
-    ssao_bias: f32;
-    ssao_power: f32;
-    ambient_factor: f32;
-};
-
-[[block]]
 struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
@@ -15,8 +6,7 @@ struct Camera {
     inv_proj: mat4x4<f32>;
 };
 
-[[group(0), binding(0)]] var<uniform> config: Config;
-[[group(1), binding(0)]] var<uniform> camera: Camera;
+[[group(0), binding(0)]] var<uniform> camera: Camera;
 
 //
 // Vertex shader
@@ -60,7 +50,13 @@ fn vs_main(
         instance.model_matrix_2,
         instance.model_matrix_3,
     );
-    let normal_matrix = mat3x3<f32>(
+
+    let view3 = mat3x3<f32>(
+        camera.view[0].xyz,
+        camera.view[1].xyz,
+        camera.view[2].xyz,
+    );
+    let normal_matrix = view3 * mat3x3<f32>(
         instance.normal_matrix_0,
         instance.normal_matrix_1,
         instance.normal_matrix_2,
@@ -76,10 +72,7 @@ fn vs_main(
 
     out.normal = normalize(normal_matrix * in.normal);
     out.tangent = normalize(normal_matrix * in.tangent.xyz);
-    // glTF tangents export shenanigans: tangent.w must be flipped?
-    // https://github.com/KhronosGroup/glTF-Sample-Models/issues/174
-    // https://github.com/KhronosGroup/glTF/issues/2056
-    out.bitangent = cross(out.normal, out.tangent) * -in.tangent.w;
+    out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;
 
@@ -95,12 +88,12 @@ struct FragmentOutput {
     [[location(1)]] normal_roughness: vec4<f32>;
 };
 
-[[group(2), binding(0)]] var t_albedo: texture_2d<f32>;
-[[group(2), binding(1)]] var s_albedo: sampler;
-[[group(2), binding(2)]] var t_normal: texture_2d<f32>;
-[[group(2), binding(3)]] var s_normal: sampler;
-[[group(2), binding(4)]] var t_metallic_roughness: texture_2d<f32>;
-[[group(2), binding(5)]] var s_metallic_roughness: sampler;
+[[group(1), binding(0)]] var t_albedo: texture_2d<f32>;
+[[group(1), binding(1)]] var s_albedo: sampler;
+[[group(1), binding(2)]] var t_normal: texture_2d<f32>;
+[[group(1), binding(3)]] var s_normal: sampler;
+[[group(1), binding(4)]] var t_metallic_roughness: texture_2d<f32>;
+[[group(1), binding(5)]] var s_metallic_roughness: sampler;
 
 fn get_vert_normal(in: VertexOutput) -> vec3<f32> {
     // no normals

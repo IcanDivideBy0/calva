@@ -2,8 +2,7 @@ use anyhow::Result;
 use calva::{
     egui::EguiPass,
     renderer::{
-        wgpu, Ambient, DrawModel, GeometryBuffer, PointLight, PointLights, Renderer, ShadowLight,
-        Skybox, Ssao,
+        wgpu, Ambient, GeometryBuffer, PointLight, PointLights, Renderer, ShadowLight, Skybox, Ssao,
     },
 };
 use std::time::{Duration, Instant};
@@ -16,14 +15,14 @@ use winit::{
 mod camera;
 mod debug_lights;
 mod my_app;
-mod shapes;
+// mod shapes;
 
 use camera::MyCamera;
 use debug_lights::DebugLights;
 use my_app::*;
 
 struct Scene {
-    models: Vec<Box<dyn DrawModel>>,
+    // models: Vec<Box<dyn DrawModel>>,
     lights: Vec<PointLight>,
     lights_vel: Vec<glam::Vec3>,
 }
@@ -32,29 +31,29 @@ impl Scene {
     // const NUM_LIGHTS: usize = calva::renderer::PointLightsPass::MAX_LIGHTS;
     const NUM_LIGHTS: usize = 1;
 
-    pub fn new(renderer: &Renderer) -> Result<Self> {
+    pub fn new(_renderer: &Renderer) -> Result<Self> {
         let get_random_vec3 = || glam::vec3(rand::random(), rand::random(), rand::random());
 
-        let models: Vec<Box<dyn DrawModel>> = vec![
-            // Box::new(shapes::SimpleMesh::new(
-            //     renderer,
-            //     shapes::SimpleShape::Cube,
-            //     "Cube",
-            //     glam::Mat4::from_scale_rotation_translation(
-            //         glam::Vec3::ONE,
-            //         glam::Quat::IDENTITY,
-            //         100_000.0 * glam::vec3(-1.0, 1.0, 0.0) + glam::Vec3::Y * 2.0,
-            //     ),
-            //     glam::vec3(0.0, 0.0, 1.0),
-            // )),
-            Box::new(calva::gltf::loader::load(
-                renderer,
-                &mut std::fs::File::open("./demo/assets/sponza.glb")?,
-                // &mut std::fs::File::open("./demo/assets/zombie.glb")?,
-                // &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
-                // &mut std::fs::File::open("./demo/assets/plane.glb")?,
-            )?),
-        ];
+        // let models: Vec<Box<dyn DrawModel>> = vec![
+        //     Box::new(shapes::SimpleMesh::new(
+        //         renderer,
+        //         shapes::SimpleShape::Cube,
+        //         "Cube",
+        //         glam::Mat4::from_scale_rotation_translation(
+        //             glam::Vec3::ONE,
+        //             glam::Quat::IDENTITY,
+        //             100_000.0 * glam::vec3(-1.0, 1.0, 0.0) + glam::Vec3::Y * 2.0,
+        //         ),
+        //         glam::vec3(0.0, 0.0, 1.0),
+        //     )),
+        //     Box::new(calva::gltf::loader::load(
+        //         renderer,
+        //         &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+        //         // &mut std::fs::File::open("./demo/assets/zombie.glb")?,
+        //         // &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
+        //         // &mut std::fs::File::open("./demo/assets/plane.glb")?,
+        //     )?),
+        // ];
 
         let lights = (0..Self::NUM_LIGHTS)
             .map(|_| PointLight {
@@ -75,13 +74,13 @@ impl Scene {
             .collect::<Vec<_>>();
 
         Ok(Self {
-            models,
+            // models,
             lights,
             lights_vel,
         })
     }
 
-    pub fn update(&mut self, dt: Duration) {
+    pub fn update(&mut self, _t: Duration, dt: Duration) {
         // for (light, idx) in lights.iter_mut().zip(0..) {
         //     light.position = glam::vec3(
         //         (start_time.elapsed().as_secs_f32() + (idx as f32 / num_lights)).sin()
@@ -117,6 +116,27 @@ impl Scene {
                 light.position.z = limit;
             }
         }
+
+        // for mesh in self.models[0].meshes_mut() {
+        //     let instances = mesh.instances_mut();
+
+        //     instances.transforms[0] = glam::Mat4::from_scale_rotation_translation(
+        //         glam::Vec3::ONE,
+        //         glam::Quat::from_euler(glam::EulerRot::XYZ, t.as_secs_f32(), 0.0, 0.0),
+        //         glam::Vec3::Y * 2.0,
+        //     );
+        // }
+
+        // let cube: Box<&mut dyn std::any::Any> = Box::new(&mut self.models[0].as_mut());
+        // if let Some(Model::Simple(m)) = cube.downcast_mut::<Model>() {
+        //     m.instances.transforms[0] = glam::Mat4::from_scale_rotation_translation(
+        //         glam::Vec3::ONE,
+        //         glam::Quat::from_euler(glam::EulerRot::XYZ, dt.as_secs_f32(), 0.0, 0.0),
+        //         glam::Vec3::Y * 2.0,
+        //     );
+        // } else {
+        //     dbg!("nocube");
+        // }
     }
 }
 
@@ -160,30 +180,32 @@ async fn main() -> Result<()> {
 
     let mut gbuffer = GeometryBuffer::new(&renderer);
     let mut skybox = Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
-    let mut ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
-    let mut ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
+    let mut ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic);
     let mut shadows = ShadowLight::new(
         &renderer,
         &gbuffer.albedo_metallic,
         &gbuffer.normal_roughness,
         &gbuffer.depth,
-        &ssao.output,
     );
     let mut point_lights = PointLights::new(
         &renderer,
         &gbuffer.albedo_metallic,
         &gbuffer.normal_roughness,
         &gbuffer.depth,
-        &ssao.output,
     );
     let mut debug_lights = DebugLights::new(&renderer);
+    let mut ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
 
     let mut my_app: MyApp = renderer.config.data.into();
     let mut egui = EguiPass::new(&renderer, &window);
 
     let mut scene = Scene::new(&renderer)?;
+    let sponza = calva::gltf::GltfModel::new(
+        &renderer,
+        &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+    )?;
 
-    // let start_time = Instant::now();
+    let start_time = Instant::now();
     let mut last_render_time = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
@@ -193,23 +215,21 @@ async fn main() -> Result<()> {
 
                 gbuffer = GeometryBuffer::new(&renderer);
                 skybox = Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
-                ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
-                ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic, &ssao.output);
+                ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic);
                 shadows = ShadowLight::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
                     &gbuffer.normal_roughness,
                     &gbuffer.depth,
-                    &ssao.output,
                 );
                 point_lights = PointLights::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
                     &gbuffer.normal_roughness,
                     &gbuffer.depth,
-                    &ssao.output,
                 );
                 debug_lights = DebugLights::new(&renderer);
+                ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
 
                 camera.resize($size);
             }};
@@ -227,17 +247,34 @@ async fn main() -> Result<()> {
 
                 renderer.config.data = my_app.into();
                 camera.update(&mut renderer, dt);
-                scene.update(dt);
+                scene.update(start_time.elapsed(), dt);
                 scene.lights[0].position = my_app.light_pos;
 
+                for instances in &sponza.instances {
+                    instances.write_buffer(&renderer.queue);
+                }
+
                 match renderer.render(|ctx| {
-                    gbuffer.render(ctx, &scene.models);
+                    gbuffer.render(ctx, |draw| {
+                        for (mesh, material_index, instances_index) in &sponza.meshes {
+                            let instances = sponza.instances.get(*instances_index).unwrap();
+                            let material = sponza.materials.get(*material_index).unwrap();
+                            draw((instances, mesh, material));
+                        }
+                    });
+
                     skybox.render(ctx);
-                    ssao.render(ctx);
                     ambient.render(ctx);
-                    shadows.render(ctx, my_app.shadow_light_angle, &scene.models);
+                    shadows.render(ctx, my_app.shadow_light_angle, |draw| {
+                        for (mesh, _, instances_index) in &sponza.meshes {
+                            let instances = sponza.instances.get(*instances_index).unwrap();
+                            draw((instances, mesh));
+                        }
+                    });
+
                     point_lights.render(ctx, &scene.lights);
                     debug_lights.render(ctx, &scene.lights);
+                    ssao.render(ctx);
                     egui.render(ctx, &window, &mut my_app).unwrap();
                 }) {
                     Ok(_) => {}

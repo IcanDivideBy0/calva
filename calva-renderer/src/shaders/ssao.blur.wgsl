@@ -7,9 +7,9 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
-    );
+    ) * 2.0;
 
-    return vec4<f32>(tc * 4.0 - 1.0, 0.0, 1.0);
+    return vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0);
 }
 
 //

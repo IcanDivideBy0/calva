@@ -1,7 +1,5 @@
 use wgpu::util::DeviceExt;
 
-use crate::CameraUniform;
-
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct InstanceRaw {
@@ -10,12 +8,10 @@ struct InstanceRaw {
 }
 
 impl InstanceRaw {
-    fn new(model: glam::Mat4, camera: &CameraUniform) -> Self {
-        let normal = (camera.view * model).inverse().transpose();
-
+    fn new(model: glam::Mat4) -> Self {
         Self {
             model: model.to_cols_array(),
-            normal: glam::Mat3::from_mat4(normal).to_cols_array(),
+            normal: glam::Mat3::from_quat(glam::Quat::from_mat4(&model)).to_cols_array(),
         }
     }
 }
@@ -28,7 +24,7 @@ pub struct MeshInstances {
 impl MeshInstances {
     pub const SIZE: usize = std::mem::size_of::<InstanceRaw>();
 
-    pub const DESC: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+    pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
         array_stride: Self::SIZE as _,
         step_mode: wgpu::VertexStepMode::Instance,
         attributes: &wgpu::vertex_attr_array![
@@ -61,24 +57,23 @@ impl MeshInstances {
         self.transforms.len() as u32
     }
 
-    pub fn write_buffer(&self, queue: &wgpu::Queue, camera: &CameraUniform) {
+    pub fn write_buffer(&self, queue: &wgpu::Queue) {
         let data = self
             .transforms
             .iter()
-            .map(|transform| InstanceRaw::new(*transform, camera))
+            .map(|transform| InstanceRaw::new(*transform))
             .collect::<Vec<_>>();
 
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&data));
     }
 }
 
-pub trait MeshPrimitive {
-    fn vertices(&self) -> &wgpu::Buffer;
-    fn indices(&self) -> &wgpu::Buffer;
-    fn num_elements(&self) -> u32;
-}
-
-pub trait Mesh {
-    fn instances(&self) -> &MeshInstances;
-    fn primitives(&self) -> Box<dyn Iterator<Item = &dyn MeshPrimitive> + '_>;
+#[derive(Debug)]
+pub struct Mesh {
+    pub vertices: wgpu::Buffer,
+    pub normals: wgpu::Buffer,
+    pub tangents: wgpu::Buffer,
+    pub uv0: wgpu::Buffer,
+    pub indices: wgpu::Buffer,
+    pub num_elements: u32,
 }

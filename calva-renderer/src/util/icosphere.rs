@@ -1,34 +1,33 @@
 use std::collections::HashMap;
-use wgpu::util::DeviceExt;
 
 pub struct Icosphere {
-    pub vertices: wgpu::Buffer,
-    pub indices: wgpu::Buffer,
+    pub vertices: Vec<glam::Vec3>,
+    pub indices: Vec<u16>,
     pub count: u32,
 }
 
 impl Icosphere {
     #[allow(clippy::many_single_char_names)]
-    pub fn new(device: &wgpu::Device, order: u32) -> Self {
+    pub fn new(order: u32) -> Self {
         // set up a 20-triangle icosahedron
         let f = (1.0 + 5.0_f32.powf(0.5)) / 2.0;
 
         #[rustfmt::skip]
         let mut vertices = vec![
-            -1.0,    f,  0.0,
-             1.0,    f,  0.0,
-            -1.0,   -f,  0.0,
-             1.0,   -f,  0.0,
+            glam::vec3(-1.0,    f,  0.0),
+            glam::vec3( 1.0,    f,  0.0),
+            glam::vec3(-1.0,   -f,  0.0),
+            glam::vec3( 1.0,   -f,  0.0),
 
-             0.0, -1.0,    f,
-             0.0,  1.0,    f,
-             0.0, -1.0,   -f,
-             0.0,  1.0,   -f,
+            glam::vec3( 0.0, -1.0,    f),
+            glam::vec3( 0.0,  1.0,    f),
+            glam::vec3( 0.0, -1.0,   -f),
+            glam::vec3( 0.0,  1.0,   -f),
 
-               f,  0.0, -1.0,
-               f,  0.0,  1.0,
-              -f,  0.0, -1.0,
-              -f,  0.0,  1.0,
+            glam::vec3(   f,  0.0, -1.0),
+            glam::vec3(   f,  0.0,  1.0),
+            glam::vec3(  -f,  0.0, -1.0),
+            glam::vec3(  -f,  0.0,  1.0),
         ];
 
         #[rustfmt::skip]
@@ -57,17 +56,17 @@ impl Icosphere {
 
         let mut v: u16 = 12;
         let mut mid_cache: HashMap<(u16, u16), u16> = HashMap::new();
-        let mut add_mid_point = move |vertices: &mut Vec<f32>, a: u16, b: u16| -> u16 {
+        let mut add_mid_point = move |vertices: &mut Vec<glam::Vec3>, a: u16, b: u16| -> u16 {
             let key = (a, b);
+
             match mid_cache.get(&key).copied() {
-                Some(i) => i,
+                Some(index) => index,
                 None => {
                     mid_cache.insert(key, v);
-                    for k in 0..3 {
-                        vertices.push(
-                            (vertices[3 * a as usize + k] + vertices[3 * b as usize + k]) / 2.0,
-                        );
-                    }
+
+                    let mid_point = (vertices[a as usize] + vertices[b as usize]) / 2.0;
+                    vertices.push(mid_point);
+
                     v += 1;
                     v - 1
                 }
@@ -106,29 +105,12 @@ impl Icosphere {
         }
 
         // Normalize vertices
-        for i in (0..vertices.len()).step_by(3) {
-            let n = (vertices[i].powf(2.0) + vertices[i + 1].powf(2.0) + vertices[i + 2].powf(2.0))
-                .sqrt()
-                * 0.9;
-
-            vertices[i] /= n;
-            vertices[i + 1] /= n;
-            vertices[i + 2] /= n;
-        }
+        let vertices = vertices
+            .drain(..)
+            .map(|v| v.normalize())
+            .collect::<Vec<_>>();
 
         let count = indices.len() as u32;
-
-        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("LightsPass positions buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("LightsPass indices buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
 
         Icosphere {
             vertices,

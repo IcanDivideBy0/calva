@@ -12,7 +12,3 @@ members = [
 opt-level = 3
 
 [patch.crates-io]
-wgpu = { git = "https://github.com/gfx-rs/wgpu", branch = "master" }
-# wgpu = { path = "../wgpu/wgpu" }
-egui_wgpu_backend = { git = "https://github.com/IcanDivideBy0/egui_wgpu_backend", branch = "wgpu_master" }
-# egui_wgpu_backend = { path = "../egui_wgpu_backend" }

@@ -1,8 +1,4 @@
-use crate::CameraUniform;
-use crate::DrawModel;
-use crate::MeshInstances;
-use crate::RenderContext;
-use crate::Renderer;
+use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer};
 
 pub struct ShadowLight {
     shadows: ShadowLightDepth,
@@ -23,7 +19,6 @@ impl ShadowLight {
         albedo_metallic: &wgpu::TextureView,
         normal_roughness: &wgpu::TextureView,
         depth: &wgpu::TextureView,
-        ssao: &wgpu::TextureView,
     ) -> Self {
         let shadows = ShadowLightDepth::new(device);
 
@@ -75,20 +70,9 @@ impl ShadowLight {
                     },
                     count: None,
                 },
-                // ssao
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    },
-                    count: None,
-                },
                 // shadows
                 wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
@@ -99,7 +83,7 @@ impl ShadowLight {
                 },
                 // shadows sampler
                 wgpu::BindGroupLayoutEntry {
-                    binding: 5,
+                    binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -125,14 +109,10 @@ impl ShadowLight {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(ssao),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&shadows.depth),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 4,
                     resource: wgpu::BindingResource::Sampler(&shadows_sampler),
                 },
             ],
@@ -190,15 +170,15 @@ impl ShadowLight {
         }
     }
 
-    pub fn render<'m>(
+    pub fn render<'ctx, 'data: 'ctx>(
         &self,
-        ctx: &mut RenderContext,
+        ctx: &'ctx mut RenderContext,
         direction: glam::Vec3,
-        models: impl IntoIterator<Item = &'m Box<dyn DrawModel>>,
+        cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
         ctx.encoder.push_debug_group("ShadowLight");
 
-        self.shadows.render(ctx, direction, models);
+        self.shadows.render(ctx, direction, cb);
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ShadowLight lighting pass"),
@@ -225,6 +205,8 @@ impl ShadowLight {
         ctx.encoder.pop_debug_group();
     }
 }
+
+pub type DrawCallArgs<'a> = (&'a MeshInstances, &'a Mesh);
 
 struct ShadowLightDepth {
     depth: wgpu::TextureView,
@@ -310,13 +292,11 @@ impl ShadowLightDepth {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ShadowLight depth render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
-            // multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[
-                    MeshInstances::DESC,
+                    MeshInstances::LAYOUT,
                     // Positions
                     wgpu::VertexBufferLayout {
                         array_stride: (std::mem::size_of::<f32>() * 3) as _,
@@ -335,7 +315,6 @@ impl ShadowLightDepth {
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
-                // bias: wgpu::DepthBiasState::default(),
                 bias: wgpu::DepthBiasState {
                     constant: 2, // corresponds to bilinear filtering
                     slope_scale: 2.0,
@@ -343,6 +322,7 @@ impl ShadowLightDepth {
                 },
             }),
             multisample: wgpu::MultisampleState::default(),
+            multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
         });
 
         let blur = ShadowLightBlur::new(device, size, &depth);
@@ -359,13 +339,13 @@ impl ShadowLightDepth {
         }
     }
 
-    pub fn render<'m>(
+    pub fn render<'ctx, 'data: 'ctx>(
         &self,
-        ctx: &mut RenderContext,
+        ctx: &'ctx mut RenderContext,
         light_dir: glam::Vec3,
-        models: impl IntoIterator<Item = &'m Box<dyn DrawModel>>,
+        cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
-        ctx.queue.write_buffer(
+        ctx.renderer.queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::cast_slice(&[ShadowLightUniform::new(&ctx.renderer.camera, light_dir)]),
@@ -387,23 +367,14 @@ impl ShadowLightDepth {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
 
-        for model in models {
-            for mesh in model.meshes() {
-                let instances = mesh.instances();
-                let count = mesh.instances().count();
+        cb(&mut move |(instances, mesh): DrawCallArgs| {
+            rpass.set_vertex_buffer(0, instances.buffer.slice(..));
+            rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
 
-                rpass.set_vertex_buffer(0, instances.buffer.slice(..));
+            rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-                for p in mesh.primitives() {
-                    rpass.set_vertex_buffer(1, p.vertices().slice(..));
-                    rpass.set_index_buffer(p.indices().slice(..), wgpu::IndexFormat::Uint16);
-
-                    rpass.draw_indexed(0..p.num_elements(), 0, 0..count)
-                }
-            }
-        }
-
-        drop(rpass);
+            rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count())
+        });
 
         self.blur.render(ctx, &self.depth);
         self.blur.render(ctx, &self.depth);
@@ -533,7 +504,7 @@ impl ShadowLightUniform {
             .collect::<Vec<_>>();
 
         Self {
-            color: glam::Vec3::ONE.extend(0.2),
+            color: glam::Vec4::ONE,
             direction: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0), // use only rotation component from camera view
             view_proj: TryFrom::try_from(split_transforms).unwrap(),
             splits: TryFrom::try_from(&splits[0..ShadowLightDepth::CASCADES]).unwrap(),

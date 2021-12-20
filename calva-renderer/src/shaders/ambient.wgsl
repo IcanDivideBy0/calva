@@ -1,4 +1,3 @@
-[[block]]
 struct Config {
     ssao_radius: f32;
     ssao_bias: f32;
@@ -17,9 +16,9 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
-    );
+    ) * 2.0;
 
-    return vec4<f32>(tc * 4.0 - 1.0, 1.0, 1.0);
+    return vec4<f32>(tc * 2.0 - 1.0, 1.0, 1.0);
 }
 
 //
@@ -27,7 +26,6 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
 //
 
 [[group(1), binding(0)]] var albedo: texture_multisampled_2d<f32>;
-[[group(1), binding(1)]] var ao: texture_2d<f32>;
 
 [[stage(fragment)]]
 fn fs_main(
@@ -37,7 +35,6 @@ fn fs_main(
     let c = vec2<i32>(floor(coord.xy));
 
     let diffuse = textureLoad(albedo, c, i32(msaa_sample)).rgb;
-    let ao = textureLoad(ao, c, 0).r;
 
-    return vec4<f32>(vec3<f32>(config.ambient_factor * diffuse * ao), 1.0);
+    return vec4<f32>(vec3<f32>(config.ambient_factor * diffuse), 1.0);
 }

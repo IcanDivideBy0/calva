@@ -41,18 +41,8 @@ pub struct CameraUniform {
 }
 
 impl CameraUniform {
-    pub fn new(device: &wgpu::Device) -> Self {
-        let view = glam::Mat4::default();
-        let proj = glam::Mat4::default();
-
-        let raw = CameraUniformRaw::new(view, proj);
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&[raw]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    const DESC: &'static wgpu::BindGroupLayoutDescriptor<'static> =
+        &wgpu::BindGroupLayoutDescriptor {
             label: Some("Camera bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -64,7 +54,20 @@ impl CameraUniform {
                 },
                 count: None,
             }],
+        };
+
+    pub fn new(device: &wgpu::Device) -> Self {
+        let view = glam::Mat4::default();
+        let proj = glam::Mat4::default();
+
+        let raw = CameraUniformRaw::new(view, proj);
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera buffer"),
+            contents: bytemuck::cast_slice(&[raw]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+
+        let bind_group_layout = device.create_bind_group_layout(Self::DESC);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Camera bind group"),
@@ -85,7 +88,7 @@ impl CameraUniform {
         }
     }
 
-    pub(crate) fn update_buffers(&self, queue: &wgpu::Queue) {
+    pub(crate) fn update_buffer(&self, queue: &wgpu::Queue) {
         let raw = CameraUniformRaw::new(self.view, self.proj);
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[raw]));
     }

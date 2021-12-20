@@ -1,5 +1,3 @@
-
-[[block]]
 struct Config {
     ssao_radius: f32;
     ssao_bias: f32;
@@ -7,7 +5,6 @@ struct Config {
     ambient_factor: f32;
 };
 
-[[block]]
 struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
@@ -17,7 +14,6 @@ struct Camera {
 };
 
 let CASCADES: u32 = 4u;
-[[block]]
 struct ShadowLight {
     color: vec4<f32>;
     direction: vec4<f32>; // camera view space
@@ -43,8 +39,8 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
-    );
-    let clip = vec4<f32>(tc * 4.0 - 1.0, 0.0, 1.0);
+    ) * 2.0;
+    let clip = vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0);
 
     return VertexOutput (clip, clip.xy);
 }
@@ -56,10 +52,9 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 [[group(3), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
 [[group(3), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
 [[group(3), binding(2)]] var t_depth: texture_depth_multisampled_2d;
-[[group(3), binding(3)]] var t_ao: texture_2d<f32>;
 
-[[group(3), binding(4)]] var t_shadows: texture_depth_2d_array;
-[[group(3), binding(5)]] var s_shadows: sampler;
+[[group(3), binding(3)]] var t_shadows: texture_depth_2d_array;
+[[group(3), binding(4)]] var s_shadows: sampler;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -102,11 +97,10 @@ fn fs_main(
 ) -> [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(in.position.xy));
 
-    let ao = textureLoad(t_ao, c, 0).r;
     let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));
     let normal_roughness = textureLoad(t_normal_roughness, c, i32(msaa_sample));
 
-    let albedo = albedo_metallic.rgb * ao;
+    let albedo = albedo_metallic.rgb;
     let normal = normal_roughness.xyz;
     let metallic = albedo_metallic.a;
     let roughness = normal_roughness.a;
@@ -157,8 +151,8 @@ fn fs_main(
 
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    color = color / (color + 1.0);
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    // color = color / (color + 1.0);
+    // color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, 1.0);
 }

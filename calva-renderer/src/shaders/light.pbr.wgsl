@@ -1,4 +1,3 @@
-[[block]]
 struct Config {
     ssao_radius: f32;
     ssao_bias: f32;
@@ -6,7 +5,6 @@ struct Config {
     ambient_factor: f32;
 };
 
-[[block]]
 struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
@@ -46,7 +44,7 @@ fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
-    let world_pos = in.position * instance.radius + instance.position;
+    let world_pos = 1.1 * in.position * instance.radius + instance.position;
     let clip_pos = camera.proj * camera.view * vec4<f32>(world_pos, 1.0);
 
     return VertexOutput (
@@ -66,7 +64,6 @@ fn vs_main(
 [[group(2), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
 [[group(2), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
 [[group(2), binding(2)]] var t_depth: texture_depth_multisampled_2d;
-[[group(2), binding(3)]] var t_ao: texture_2d<f32>;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -109,11 +106,10 @@ fn fs_main(
 ) -> [[location(0)]] vec4<f32> {
     let c = vec2<i32>(floor(in.position.xy));
 
-    let ao = textureLoad(t_ao, c, 0).r;
     let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));
     let normal_roughness = textureLoad(t_normal_roughness, c, i32(msaa_sample));
 
-    let albedo = albedo_metallic.rgb * ao;
+    let albedo = albedo_metallic.rgb;
     let normal = normal_roughness.xyz;
     let metallic = albedo_metallic.a;
     let roughness = normal_roughness.a;

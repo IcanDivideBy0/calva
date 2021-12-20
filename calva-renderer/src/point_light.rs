@@ -1,9 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::RenderContext;
-use crate::Renderer;
-
-use super::icosphere::Icosphere;
+use crate::{util::icosphere::Icosphere, RenderContext, Renderer};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -25,9 +22,39 @@ impl PointLight {
     };
 }
 
+struct PointLightMesh {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    num_elements: u32,
+}
+
+impl PointLightMesh {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let icosphere = Icosphere::new(1);
+
+        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLightMesh vertices buffer"),
+            contents: bytemuck::cast_slice(&icosphere.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLightMesh indices buffer"),
+            contents: bytemuck::cast_slice(&icosphere.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        Self {
+            vertices,
+            indices,
+            num_elements: icosphere.count,
+        }
+    }
+}
+
 pub struct PointLights {
-    icosphere: Icosphere,
     instances_buffer: wgpu::Buffer,
+    mesh: PointLightMesh,
 
     stencil_pipeline: wgpu::RenderPipeline,
 
@@ -50,15 +77,14 @@ impl PointLights {
         albedo_metallic: &wgpu::TextureView,
         normal_roughness: &wgpu::TextureView,
         depth: &wgpu::TextureView,
-        ssao: &wgpu::TextureView,
     ) -> Self {
-        let icosphere = Icosphere::new(device, 1);
-
         let instances_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("PointLights instances buffer"),
             contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
+
+        let mesh = PointLightMesh::new(device);
 
         let vertex_buffers_layout = [
             wgpu::VertexBufferLayout {
@@ -169,17 +195,6 @@ impl PointLights {
                             },
                             count: None,
                         },
-                        // ssao
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            },
-                            count: None,
-                        },
                     ],
                 });
 
@@ -198,10 +213,6 @@ impl PointLights {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(depth),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(ssao),
                     },
                 ],
             });
@@ -278,8 +289,8 @@ impl PointLights {
         };
 
         Self {
-            icosphere,
             instances_buffer,
+            mesh,
 
             stencil_pipeline,
 
@@ -291,7 +302,8 @@ impl PointLights {
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
         ctx.encoder.push_debug_group("PointLights");
 
-        ctx.queue
+        ctx.renderer
+            .queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
         // Stencil pass
@@ -316,10 +328,10 @@ impl PointLights {
             rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
 
             rpass.set_vertex_buffer(0, self.instances_buffer.slice(..));
-            rpass.set_vertex_buffer(1, self.icosphere.vertices.slice(..));
-            rpass.set_index_buffer(self.icosphere.indices.slice(..), wgpu::IndexFormat::Uint16);
+            rpass.set_vertex_buffer(1, self.mesh.vertices.slice(..));
+            rpass.set_index_buffer(self.mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-            rpass.draw_indexed(0..self.icosphere.count, 0, 0..lights.len() as u32);
+            rpass.draw_indexed(0..self.mesh.num_elements, 0, 0..lights.len() as u32);
         }
 
         // lighting pass
@@ -353,10 +365,10 @@ impl PointLights {
             rpass.set_bind_group(2, &self.lighting_bind_group, &[]);
 
             rpass.set_vertex_buffer(0, self.instances_buffer.slice(..));
-            rpass.set_vertex_buffer(1, self.icosphere.vertices.slice(..));
-            rpass.set_index_buffer(self.icosphere.indices.slice(..), wgpu::IndexFormat::Uint16);
+            rpass.set_vertex_buffer(1, self.mesh.vertices.slice(..));
+            rpass.set_index_buffer(self.mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-            rpass.draw_indexed(0..self.icosphere.count, 0, 0..lights.len() as u32);
+            rpass.draw_indexed(0..self.mesh.num_elements, 0, 0..lights.len() as u32);
         }
 
         ctx.encoder.pop_debug_group();

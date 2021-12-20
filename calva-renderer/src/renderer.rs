@@ -1,14 +1,45 @@
 use anyhow::{anyhow, Result};
 use winit::window::Window;
 
-use crate::CameraUniform;
-use crate::RendererConfig;
+use crate::{CameraUniform, RendererConfig};
+
+// pub struct TraceEncoder<'a> {
+//     profiler: &'a mut GpuProfiler,
+//     device: &'a wgpu::Device,
+
+//     inner: &'a mut wgpu::CommandEncoder,
+// }
+
+// impl<'a> TraceEncoder<'a> {
+//     pub fn begin_render_pass<'s: 'd, 'd>(
+//         &'s mut self,
+//         desc: &wgpu::RenderPassDescriptor<'d, '_>,
+//     ) -> impl std::ops::DerefMut<Target = wgpu::RenderPass<'d>> {
+//         wgpu_profiler::scope::OwningScope::start(
+//             desc.label.unwrap_or("unnamed"),
+//             self.profiler,
+//             self.inner.begin_render_pass(desc),
+//             self.device,
+//         )
+//     }
+// }
+
+// impl<'a> std::ops::Deref for TraceEncoder<'a> {
+//     type Target = wgpu::CommandEncoder;
+
+//     fn deref(&self) -> &Self::Target {
+//         self.inner
+//     }
+// }
+
+// impl<'a> std::ops::DerefMut for TraceEncoder<'a> {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         self.inner
+//     }
+// }
 
 pub struct RenderContext<'a> {
     pub renderer: &'a Renderer,
-
-    pub device: &'a wgpu::Device,
-    pub queue: &'a wgpu::Queue,
 
     pub view: &'a wgpu::TextureView,
     pub resolve_target: Option<&'a wgpu::TextureView>,
@@ -21,13 +52,13 @@ pub struct Renderer {
     pub surface: wgpu::Surface,
     pub surface_config: wgpu::SurfaceConfiguration,
 
-    pub config: RendererConfig,
-    pub camera: CameraUniform,
-
-    msaa_texture: wgpu::Texture,
-    msaa: wgpu::TextureView,
+    pub msaa_texture: wgpu::Texture,
+    pub msaa: wgpu::TextureView,
     pub depth_stencil_texture: wgpu::Texture,
     pub depth_stencil: wgpu::TextureView,
+
+    pub config: RendererConfig,
+    pub camera: CameraUniform,
 }
 
 impl Renderer {
@@ -42,9 +73,9 @@ impl Renderer {
     pub async fn new(window: &Window) -> Result<Self> {
         let size = window.inner_size();
 
-        // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
+        // let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
+        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -59,9 +90,10 @@ impl Renderer {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     // features: wgpu::Features::empty(),
-                    // features: wgpu::Features::TIMESTAMP_QUERY,
                     // features: wgpu::Features::CLEAR_COMMANDS,
-                    features: wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::MULTIVIEW,
+                    features: wgpu::Features::DEPTH_CLIP_CONTROL // all platforms
+                        | wgpu::Features::MULTIVIEW // Vulkan
+                        | wgpu::Features::TIMESTAMP_QUERY, // Vulkan, DX12, web
                     limits: wgpu::Limits::default(),
                     label: None,
                 },
@@ -82,20 +114,19 @@ impl Renderer {
         };
         surface.configure(&device, &surface_config);
 
-        let config = RendererConfig::new(&device);
-        let camera = CameraUniform::new(&device);
+        let size = wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
 
         let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer msaa texture"),
-            format: surface_config.format,
-            size: wgpu::Extent3d {
-                width: surface_config.width,
-                height: surface_config.height,
-                depth_or_array_layers: 1,
-            },
+            size,
             mip_level_count: 1,
             sample_count: Self::MULTISAMPLE_STATE.count,
             dimension: wgpu::TextureDimension::D2,
+            format: surface_config.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         });
 
@@ -103,11 +134,7 @@ impl Renderer {
 
         let depth_stencil_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer depth stencil texture"),
-            size: wgpu::Extent3d {
-                width: surface_config.width,
-                height: surface_config.height,
-                depth_or_array_layers: 1,
-            },
+            size,
             mip_level_count: 1,
             sample_count: Self::MULTISAMPLE_STATE.count,
             dimension: wgpu::TextureDimension::D2,
@@ -120,19 +147,22 @@ impl Renderer {
         let depth_stencil =
             depth_stencil_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let config = RendererConfig::new(&device);
+        let camera = CameraUniform::new(&device);
+
         Ok(Self {
             device,
             queue,
             surface,
             surface_config,
 
-            config,
-            camera,
-
             msaa_texture,
             msaa,
             depth_stencil_texture,
             depth_stencil,
+
+            config,
+            camera,
         })
     }
 
@@ -183,7 +213,7 @@ impl Renderer {
         self.camera.view = view;
         self.camera.proj = proj;
 
-        self.camera.update_buffers(&self.queue);
+        self.camera.update_buffer(&self.queue);
     }
 
     pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<(), wgpu::SurfaceError> {
@@ -202,9 +232,6 @@ impl Renderer {
 
         let mut ctx = RenderContext {
             renderer: self,
-
-            device: &self.device,
-            queue: &self.queue,
 
             view: &self.msaa,
             resolve_target: Some(&frame_view),

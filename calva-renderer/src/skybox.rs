@@ -14,7 +14,6 @@ impl Skybox {
             device,
             queue,
             surface_config,
-            config,
             camera,
             ..
         }: &Renderer,
@@ -100,11 +99,7 @@ impl Skybox {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox render pipeline layout"),
-            bind_group_layouts: &[
-                &config.bind_group_layout,
-                &camera.bind_group_layout,
-                &bind_group_layout,
-            ],
+            bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -167,9 +162,8 @@ impl Skybox {
         });
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
-        rpass.set_bind_group(1, &ctx.renderer.camera.bind_group, &[]);
-        rpass.set_bind_group(2, &self.bind_group, &[]);
+        rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
+        rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
         drop(rpass);
