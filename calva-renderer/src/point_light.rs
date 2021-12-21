@@ -66,18 +66,18 @@ impl PointLights {
     pub const MAX_LIGHTS: usize = 10_000;
 
     pub fn new(
-        Renderer {
-            device,
-            surface_config,
-            config,
-            camera,
-            ..
-        }: &Renderer,
-
+        renderer: &Renderer,
         albedo_metallic: &wgpu::TextureView,
         normal_roughness: &wgpu::TextureView,
         depth: &wgpu::TextureView,
     ) -> Self {
+        let Renderer {
+            device,
+            surface_config,
+            camera,
+            ..
+        } = renderer;
+
         let instances_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("PointLights instances buffer"),
             contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
@@ -219,11 +219,7 @@ impl PointLights {
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights lighting pipeline layout"),
-                bind_group_layouts: &[
-                    &config.bind_group_layout,
-                    &camera.bind_group_layout,
-                    &bind_group_layout,
-                ],
+                bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -360,9 +356,8 @@ impl PointLights {
             });
 
             rpass.set_pipeline(&self.lighting_pipeline);
-            rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
-            rpass.set_bind_group(1, &ctx.renderer.camera.bind_group, &[]);
-            rpass.set_bind_group(2, &self.lighting_bind_group, &[]);
+            rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
+            rpass.set_bind_group(1, &self.lighting_bind_group, &[]);
 
             rpass.set_vertex_buffer(0, self.instances_buffer.slice(..));
             rpass.set_vertex_buffer(1, self.mesh.vertices.slice(..));

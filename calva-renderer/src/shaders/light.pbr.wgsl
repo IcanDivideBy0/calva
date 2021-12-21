@@ -1,10 +1,3 @@
-struct Config {
-    ssao_radius: f32;
-    ssao_bias: f32;
-    ssao_power: f32;
-    ambient_factor: f32;
-};
-
 struct Camera {
     view: mat4x4<f32>;
     proj: mat4x4<f32>;
@@ -13,8 +6,7 @@ struct Camera {
     inv_proj: mat4x4<f32>;
 };
 
-[[group(0), binding(0)]] var<uniform> config: Config;
-[[group(1), binding(0)]] var<uniform> camera: Camera;
+[[group(0), binding(0)]] var<uniform> camera: Camera;
 
 //
 // Vertex shader
@@ -61,9 +53,9 @@ fn vs_main(
 // Fragment shader
 //
 
-[[group(2), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
-[[group(2), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
-[[group(2), binding(2)]] var t_depth: texture_depth_multisampled_2d;
+[[group(1), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
+[[group(1), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
+[[group(1), binding(2)]] var t_depth: texture_depth_multisampled_2d;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -146,7 +138,7 @@ fn fs_main(
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
     color = color / (color + 1.0);
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    // color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, 1.0);
 }

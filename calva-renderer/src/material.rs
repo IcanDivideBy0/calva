@@ -12,7 +12,7 @@ pub struct Material {
 
 impl Material {
     const DESC: wgpu::BindGroupLayoutDescriptor<'static> = wgpu::BindGroupLayoutDescriptor {
-        label: Some("Geometry bind group layout"),
+        label: Some("Material bind group layout"),
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -27,7 +27,11 @@ impl Material {
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
@@ -42,22 +46,6 @@ impl Material {
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 4,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 5,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
@@ -81,20 +69,15 @@ impl Material {
         normal: &wgpu::TextureView,
         metallic_roughness: &wgpu::TextureView,
     ) -> Self {
-        let sampler_desc = wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            anisotropy_clamp: std::num::NonZeroU8::new(4),
+            mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
-        };
-
-        let albedo_sampler = device.create_sampler(&sampler_desc);
-        let normal_sampler = device.create_sampler(&sampler_desc);
-        let metallic_roughness_sampler = device.create_sampler(&sampler_desc);
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Material bind group"),
@@ -106,23 +89,15 @@ impl Material {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&albedo_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(normal),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&normal_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
+                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(metallic_roughness),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Sampler(&metallic_roughness_sampler),
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
         });

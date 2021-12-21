@@ -273,8 +273,9 @@ async fn main() -> Result<()> {
                     });
 
                     point_lights.render(ctx, &scene.lights);
-                    debug_lights.render(ctx, &scene.lights);
                     ssao.render(ctx);
+
+                    debug_lights.render(ctx, &scene.lights);
                     egui.render(ctx, &window, &mut my_app).unwrap();
                 }) {
                     Ok(_) => {}

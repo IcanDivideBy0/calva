@@ -89,11 +89,9 @@ struct FragmentOutput {
 };
 
 [[group(1), binding(0)]] var t_albedo: texture_2d<f32>;
-[[group(1), binding(1)]] var s_albedo: sampler;
-[[group(1), binding(2)]] var t_normal: texture_2d<f32>;
-[[group(1), binding(3)]] var s_normal: sampler;
-[[group(1), binding(4)]] var t_metallic_roughness: texture_2d<f32>;
-[[group(1), binding(5)]] var s_metallic_roughness: sampler;
+[[group(1), binding(1)]] var t_normal: texture_2d<f32>;
+[[group(1), binding(2)]] var t_metallic_roughness: texture_2d<f32>;
+[[group(1), binding(3)]] var t_sampler: sampler;
 
 fn get_vert_normal(in: VertexOutput) -> vec3<f32> {
     // no normals
@@ -131,15 +129,15 @@ fn get_normal(in: VertexOutput) -> vec3<f32> {
     // return get_vert_normal(in);
 
     let tbn = get_tbn(in);
-    let n = textureSample(t_normal, s_normal, in.uv).rgb * 2.0 - 1.0;
+    let n = textureSample(t_normal, t_sampler, in.uv).rgb * 2.0 - 1.0;
     return normalize(tbn * n);
 }
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> FragmentOutput {
-    let albedo = textureSample(t_albedo, s_albedo, in.uv);
+    let albedo = textureSample(t_albedo, t_sampler, in.uv);
 
-    let metallic_roughness = textureSample(t_metallic_roughness, s_metallic_roughness, in.uv).bg;
+    let metallic_roughness = textureSample(t_metallic_roughness, t_sampler, in.uv).bg;
     let metallic = metallic_roughness.x;
     let roughness = metallic_roughness.y;
 

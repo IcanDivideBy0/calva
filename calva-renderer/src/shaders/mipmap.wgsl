@@ -24,10 +24,10 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 // Fragment shader
 //
 
-[[group(0), binding(0)]] var input: texture_2d<f32>;
-[[group(0), binding(1)]] var input_sampler: sampler;
+[[group(0), binding(0)]] var t_input: texture_2d<f32>;
+[[group(0), binding(1)]] var t_sampler: sampler;
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    return textureSample(input, input_sampler, in.uv);
+    return textureSample(t_input, t_sampler, in.uv);
 }
