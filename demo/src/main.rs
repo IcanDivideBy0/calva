@@ -48,7 +48,7 @@ impl Scene {
         //     )),
         //     Box::new(calva::gltf::loader::load(
         //         renderer,
-        //         &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+        //         &mut std::fs::File::open("./demo/assets/model.glb")?,
         //         // &mut std::fs::File::open("./demo/assets/zombie.glb")?,
         //         // &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
         //         // &mut std::fs::File::open("./demo/assets/plane.glb")?,
@@ -200,9 +200,9 @@ async fn main() -> Result<()> {
     let mut egui = EguiPass::new(&renderer, &window);
 
     let mut scene = Scene::new(&renderer)?;
-    let sponza = calva::gltf::GltfModel::new(
+    let model = calva::gltf::GltfModel::new(
         &renderer,
-        &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+        &mut std::fs::File::open("./demo/assets/zombie.glb")?,
     )?;
 
     let start_time = Instant::now();
@@ -250,24 +250,25 @@ async fn main() -> Result<()> {
                 scene.update(start_time.elapsed(), dt);
                 scene.lights[0].position = my_app.light_pos;
 
-                for instances in &sponza.instances {
+                for instances in &model.instances {
                     instances.write_buffer(&renderer.queue);
                 }
 
                 match renderer.render(|ctx| {
                     gbuffer.render(ctx, |draw| {
-                        for (mesh, material_index, instances_index) in &sponza.meshes {
-                            let instances = sponza.instances.get(*instances_index).unwrap();
-                            let material = sponza.materials.get(*material_index).unwrap();
-                            draw((instances, mesh, material));
+                        for (mesh, material_index, instances_index) in &model.meshes {
+                            let instances = model.instances.get(*instances_index).unwrap();
+                            let material = model.materials.get(*material_index).unwrap();
+
+                            draw((instances, mesh, material, model.animations.get(0)));
                         }
                     });
 
                     skybox.render(ctx);
                     ambient.render(ctx);
                     shadows.render(ctx, my_app.shadow_light_angle, |draw| {
-                        for (mesh, _, instances_index) in &sponza.meshes {
-                            let instances = sponza.instances.get(*instances_index).unwrap();
+                        for (mesh, _, instances_index) in &model.meshes {
+                            let instances = model.instances.get(*instances_index).unwrap();
                             draw((instances, mesh));
                         }
                     });

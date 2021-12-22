@@ -9,18 +9,15 @@ pub struct Skybox {
 }
 
 impl Skybox {
-    pub fn new(
-        Renderer {
+    pub fn new(renderer: &Renderer, size: u32, pixels: &[u8]) -> Self {
+        let Renderer {
             device,
             queue,
             surface_config,
             camera,
             ..
-        }: &Renderer,
+        } = renderer;
 
-        size: u32,
-        bytes: &[u8],
-    ) -> Self {
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
@@ -36,7 +33,7 @@ impl Skybox {
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
             },
-            bytemuck::cast_slice(bytes),
+            pixels,
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {

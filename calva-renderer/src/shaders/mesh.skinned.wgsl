@@ -28,6 +28,8 @@ struct VertexInput {
     [[location(8)]]  normal: vec3<f32>;
     [[location(9)]]  tangent: vec4<f32>;
     [[location(10)]] uv: vec2<f32>;
+    [[location(11)]] joints: u32;
+    [[location(12)]] weights: vec4<f32>;
 };
 
 struct VertexOutput {
@@ -39,28 +41,67 @@ struct VertexOutput {
     [[location(4)]] uv: vec2<f32>;
 };
 
+struct JointMatrices {
+    matrices: array<mat4x4<f32>, 100>;
+};
+
+[[group(2), binding(0)]] var<uniform> joint_matrices: JointMatrices;
+
+fn get_joint_matrix(joint_index: u32) -> mat4x4<f32> {
+    return joint_matrices.matrices[joint_index];
+}
+
+fn get_skinning_matrix(in: VertexInput) -> mat4x4<f32> {
+    let joints_x: u32 = in.joints >>  0u & 0xFFu;
+    let joints_y: u32 = in.joints >>  8u & 0xFFu;
+    let joints_z: u32 = in.joints >> 16u & 0xFFu;
+    let joints_w: u32 = in.joints >> 24u & 0xFFu;
+
+    let m1 = get_joint_matrix(joints_x) * in.weights.x;
+    let m2 = get_joint_matrix(joints_y) * in.weights.y;
+    let m3 = get_joint_matrix(joints_z) * in.weights.z;
+    let m4 = get_joint_matrix(joints_w) * in.weights.w;
+
+    // TODO: fixme
+    if (true) { return get_joint_matrix(joints_x); }
+
+    return mat4x4<f32>(
+        m1.x + m2.x + m3.x + m4.x,
+        m1.y + m2.y + m3.y + m4.y,
+        m1.z + m2.z + m3.z + m4.z,
+        m1.w + m2.w + m3.w + m4.w,
+    );
+}
+
 [[stage(vertex)]]
 fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
+    let skinning_matrix = get_skinning_matrix(in);
+
     let model_matrix = mat4x4<f32>(
         instance.model_matrix_0,
         instance.model_matrix_1,
         instance.model_matrix_2,
         instance.model_matrix_3,
-    );
+    ) * skinning_matrix;
 
     let view3 = mat3x3<f32>(
         camera.view.x.xyz,
         camera.view.y.xyz,
         camera.view.z.xyz,
     );
+    let skinning_matrix3 = mat3x3<f32>(
+        skinning_matrix.x.xyz,
+        skinning_matrix.y.xyz,
+        skinning_matrix.z.xyz,
+    );
     let normal_matrix = view3 * mat3x3<f32>(
         instance.normal_matrix_0,
         instance.normal_matrix_1,
         instance.normal_matrix_2,
-    );
+    ) * skinning_matrix3;
 
     let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
     let view_pos = camera.view * world_pos;

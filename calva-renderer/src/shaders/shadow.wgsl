@@ -36,10 +36,14 @@ fn vs_main(
     [[location(7)]] position: vec3<f32>,
 ) -> VertexOutput {
     let model_matrix = mat4x4<f32>(
-        instance.model_matrix_0,
-        instance.model_matrix_1,
-        instance.model_matrix_2,
-        instance.model_matrix_3,
+        // instance.model_matrix_0,
+        // instance.model_matrix_1,
+        // instance.model_matrix_2,
+        // instance.model_matrix_3,
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
     );
 
     let light_view_proj = shadow_light.view_proj[view_index];

@@ -1,4 +1,4 @@
-use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer};
+use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, SkinAnimation};
 
 pub struct GeometryBuffer {
     pub albedo_metallic: wgpu::TextureView,
@@ -87,7 +87,7 @@ impl GeometryBuffer {
         let pipeline = {
             let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.skinned.wgsl").into()),
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -95,6 +95,7 @@ impl GeometryBuffer {
                 bind_group_layouts: &[
                     &camera.bind_group_layout,
                     Material::bind_group_layout(device),
+                    SkinAnimation::bind_group_layout(device),
                 ],
                 push_constant_ranges: &[],
             });
@@ -131,6 +132,18 @@ impl GeometryBuffer {
                             array_stride: (std::mem::size_of::<f32>() * 2) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![10 => Float32x2],
+                        },
+                        // Joints
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<u8>() * 4) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![11 => Uint8x4],
+                        },
+                        // Weights
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 4) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![12 => Float32x4],
                         },
                     ],
                 },
@@ -205,19 +218,28 @@ impl GeometryBuffer {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
 
-        cb(&mut |(instances, mesh, material): DrawCallArgs| {
-            rpass.set_bind_group(1, &material.bind_group, &[]);
+        cb(
+            &mut |(instances, mesh, material, animation): DrawCallArgs| {
+                rpass.set_bind_group(1, &material.bind_group, &[]);
 
-            rpass.set_vertex_buffer(0, instances.buffer.slice(..));
-            rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
-            rpass.set_vertex_buffer(2, mesh.normals.slice(..));
-            rpass.set_vertex_buffer(3, mesh.tangents.slice(..));
-            rpass.set_vertex_buffer(4, mesh.uv0.slice(..));
+                rpass.set_vertex_buffer(0, instances.buffer.slice(..));
+                rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
+                rpass.set_vertex_buffer(2, mesh.normals.slice(..));
+                rpass.set_vertex_buffer(3, mesh.tangents.slice(..));
+                rpass.set_vertex_buffer(4, mesh.uv0.slice(..));
 
-            rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
+                if let Some(skin) = mesh.skinning.as_ref() {
+                    rpass.set_bind_group(2, &animation.unwrap().bind_group, &[]);
 
-            rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
-        });
+                    rpass.set_vertex_buffer(5, skin.joint_indices.slice(..));
+                    rpass.set_vertex_buffer(6, skin.joint_weights.slice(..));
+                }
+
+                rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
+
+                rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
+            },
+        );
 
         drop(rpass);
 
@@ -231,4 +253,9 @@ impl GeometryBuffer {
     }
 }
 
-pub type DrawCallArgs<'a> = (&'a MeshInstances, &'a Mesh, &'a Material);
+pub type DrawCallArgs<'a> = (
+    &'a MeshInstances,
+    &'a Mesh,
+    &'a Material,
+    Option<&'a SkinAnimation>,
+);

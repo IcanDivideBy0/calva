@@ -151,8 +151,8 @@ fn fs_main(
 
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    // color = color / (color + 1.0);
-    // color = pow(color, vec3<f32>(1.0 / 2.2));
+    color = color / (color + 1.0);
+    color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, 1.0);
 }

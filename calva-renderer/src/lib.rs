@@ -17,7 +17,7 @@ pub use camera::CameraUniform;
 pub use config::{RendererConfig, RendererConfigData};
 pub use gbuffer::{DrawCallArgs, GeometryBuffer};
 pub use material::Material;
-pub use mesh::{Mesh, MeshInstances};
+pub use mesh::{Mesh, MeshInstances, SkinAnimation, Skinning};
 pub use point_light::{PointLight, PointLights};
 pub use renderer::{RenderContext, Renderer};
 pub use shadow::ShadowLight;

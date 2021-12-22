@@ -1,11 +1,15 @@
 use anyhow::{anyhow, Result};
 use renderer::{
-    util::mipmap::MipmapGenerator,
     wgpu::{self, util::DeviceExt},
-    Material, Mesh, MeshInstances, Renderer,
+    Material, Mesh, MeshInstances, Renderer, SkinAnimation, Skinning,
 };
 use std::collections::HashMap;
 use std::io::Read;
+
+mod animation;
+mod util;
+
+use animation::*;
 
 macro_rules! label {
     ($s: expr, $obj: expr) => {
@@ -18,13 +22,14 @@ macro_rules! label {
 
 fn traverse_nodes<'a>(
     nodes: impl Iterator<Item = gltf::Node<'a>>,
-    parent: glam::Mat4,
+    pwt: glam::Mat4, // parent world transform
     store: &mut HashMap<usize, glam::Mat4>,
 ) {
     for node in nodes {
-        let transform = parent * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-        store.insert(node.index(), transform);
-        traverse_nodes(node.children(), transform, store);
+        let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+        let world_transform = pwt * local_transform;
+        store.insert(node.index(), world_transform);
+        traverse_nodes(node.children(), world_transform, store);
     }
 }
 
@@ -32,6 +37,7 @@ pub struct GltfModel {
     pub meshes: Vec<(Mesh, usize, usize)>,
     pub materials: Vec<Material>,
     pub instances: Vec<MeshInstances>,
+    pub animations: Vec<SkinAnimation>,
 }
 
 impl GltfModel {
@@ -43,84 +49,19 @@ impl GltfModel {
 
         let (doc, buffers, images) = gltf::import_slice(gltf_buffer.as_slice())?;
 
-        let get_buffer_data = |accessor: gltf::Accessor| -> Option<&[u8]> {
+        let get_buffer_data = util::buffer_reader(&buffers);
+        let mut get_accessor_data = |accessor: gltf::Accessor| -> Option<&[u8]> {
             let view = accessor.view()?;
 
             let start = view.offset();
             let end = start + view.length();
 
-            let buffer = buffers.get(view.buffer().index())?;
+            let buffer = get_buffer_data(view.buffer())?;
 
             Some(&buffer[start..end])
         };
-
-        let get_image_data = |texture: gltf::Texture| -> Option<_> {
-            let image_index = texture.source().index();
-
-            let image_data = images.get(image_index)?;
-
-            // 3 channels texture formats are not supported by WebGPU
-            // https://github.com/gpuweb/gpuweb/issues/66
-            if image_data.format == gltf::image::Format::R8G8B8 {
-                let buf = image::ImageBuffer::from_raw(
-                    image_data.width,
-                    image_data.height,
-                    image_data.pixels.clone(),
-                )?;
-
-                Some(image::DynamicImage::ImageRgb8(buf))
-            } else {
-                let buf = image::ImageBuffer::from_raw(
-                    image_data.width,
-                    image_data.height,
-                    image_data.pixels.clone(),
-                )?;
-
-                Some(image::DynamicImage::ImageRgba8(buf))
-            }
-        };
-
-        let mipmap_generator = MipmapGenerator::new(device);
-
-        let make_texture =
-            |label: Option<&str>, format: wgpu::TextureFormat, image: image::DynamicImage| {
-                let buf = image.to_rgba8();
-
-                let size = wgpu::Extent3d {
-                    width: buf.width(),
-                    height: buf.height(),
-                    depth_or_array_layers: 1,
-                };
-
-                let desc = wgpu::TextureDescriptor {
-                    label,
-                    size,
-                    mip_level_count: size.max_mips(),
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::COPY_DST,
-                };
-
-                let texture = device.create_texture(&desc);
-
-                queue.write_texture(
-                    texture.as_image_copy(),
-                    &buf.to_vec(),
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: std::num::NonZeroU32::new(4 * size.width),
-                        rows_per_image: None,
-                    },
-                    size,
-                );
-
-                mipmap_generator.generate_mipmaps(device, queue, &texture, &desc);
-
-                texture
-            };
+        let mut get_image_data = util::image_reader(&images);
+        let mut make_texture = util::texture_builder(device, queue);
 
         let materials: Vec<Material> = doc
             .materials()
@@ -132,7 +73,7 @@ impl GltfModel {
                         .pbr_metallic_roughness()
                         .base_color_texture()
                         .map(|t| t.texture())
-                        .and_then(get_image_data)
+                        .and_then(&mut get_image_data)
                         .ok_or_else(|| anyhow!("Missing base color texture"))?,
                 )
                 .create_view(&wgpu::TextureViewDescriptor::default());
@@ -143,7 +84,7 @@ impl GltfModel {
                     material
                         .normal_texture()
                         .map(|t| t.texture())
-                        .and_then(get_image_data)
+                        .and_then(&mut get_image_data)
                         .unwrap_or_else(|| {
                             let mut buf = image::ImageBuffer::new(1, 1);
                             buf.put_pixel(0, 0, image::Rgba::from([0, 0, 0, 0]));
@@ -159,7 +100,7 @@ impl GltfModel {
                         .pbr_metallic_roughness()
                         .metallic_roughness_texture()
                         .map(|t| t.texture())
-                        .and_then(get_image_data)
+                        .and_then(&mut get_image_data)
                         .unwrap_or_else(|| {
                             let mut buf = image::ImageBuffer::new(1, 1);
                             buf.put_pixel(0, 0, image::Rgba::from([0, 0xFF, 0xFF, 0]));
@@ -172,22 +113,22 @@ impl GltfModel {
             })
             .collect::<Result<_>>()?;
 
-        let mut transforms = HashMap::new();
+        let mut nodes_transforms = HashMap::new();
         for scene in doc.scenes() {
-            traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut transforms);
+            traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut nodes_transforms);
         }
 
         let mut meshes_transforms = vec![Vec::new(); doc.meshes().len()];
         for node in doc.nodes() {
             if let Some(mesh) = node.mesh() {
-                meshes_transforms[mesh.index()].push(transforms[&node.index()])
+                meshes_transforms[mesh.index()].push(nodes_transforms[&node.index()])
             }
         }
 
-        let instances = doc
+        let mut instances = doc
             .meshes()
             .map(|mesh| MeshInstances::new(device, meshes_transforms[mesh.index()].clone()))
-            .collect();
+            .collect::<Vec<_>>();
 
         let primitives_count = doc
             .meshes()
@@ -202,7 +143,7 @@ impl GltfModel {
                             .get(&gltf::Semantic::Positions)
                             .ok_or_else(|| anyhow!("Missing positions accessor"))?;
 
-                        let contents = get_buffer_data(accessor)
+                        let contents = get_accessor_data(accessor)
                             .ok_or_else(|| anyhow!("Missing positions buffer"))?;
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Positions buffer", mesh),
@@ -216,7 +157,7 @@ impl GltfModel {
                             .get(&gltf::Semantic::Normals)
                             .ok_or_else(|| anyhow!("Missing normals accessor"))?;
 
-                        let contents = get_buffer_data(accessor)
+                        let contents = get_accessor_data(accessor)
                             .ok_or_else(|| anyhow!("Missing normals buffer"))?;
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Normals buffer", mesh),
@@ -230,7 +171,7 @@ impl GltfModel {
                             .get(&gltf::Semantic::Tangents)
                             .ok_or_else(|| anyhow!("Missing tangents accessor"))?;
 
-                        let contents = get_buffer_data(accessor)
+                        let contents = get_accessor_data(accessor)
                             .ok_or_else(|| anyhow!("Missing tangents buffer"))?;
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Tangents buffer", mesh),
@@ -244,7 +185,7 @@ impl GltfModel {
                             .get(&gltf::Semantic::TexCoords(0))
                             .ok_or_else(|| anyhow!("Missing texCoords0 accessor"))?;
 
-                        let contents = get_buffer_data(accessor)
+                        let contents = get_accessor_data(accessor)
                             .ok_or_else(|| anyhow!("Missing texCoords0 buffer"))?;
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("TexCoords0 buffer", mesh),
@@ -253,13 +194,44 @@ impl GltfModel {
                         })
                     };
 
+                    let skinning = {
+                        let joint_indices = primitive
+                            .get(&gltf::Semantic::Joints(0))
+                            .and_then(&mut get_accessor_data)
+                            .map(|contents| {
+                                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                    label: label!("Joints buffer", mesh),
+                                    contents,
+                                    usage: wgpu::BufferUsages::VERTEX,
+                                })
+                            });
+
+                        let joint_weights = primitive
+                            .get(&gltf::Semantic::Weights(0))
+                            .and_then(&mut get_accessor_data)
+                            .map(|contents| {
+                                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                    label: label!("Weights buffer", mesh),
+                                    contents,
+                                    usage: wgpu::BufferUsages::VERTEX,
+                                })
+                            });
+
+                        joint_indices
+                            .zip(joint_weights)
+                            .map(|(joint_indices, joint_weights)| Skinning {
+                                joint_indices,
+                                joint_weights,
+                            })
+                    };
+
                     let (indices, num_elements) = {
                         let accessor = primitive
                             .indices()
                             .ok_or_else(|| anyhow!("Missing indices accessor"))?;
                         let num_elements = accessor.count() as u32;
 
-                        let contents = get_buffer_data(accessor)
+                        let contents = get_accessor_data(accessor)
                             .ok_or_else(|| anyhow!("Missing indices buffer"))?;
                         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: label!("Indices buffer", mesh),
@@ -275,6 +247,7 @@ impl GltfModel {
                             normals,
                             tangents,
                             uv0,
+                            skinning,
                             indices,
                             num_elements,
                         },
@@ -290,10 +263,104 @@ impl GltfModel {
             },
         )?;
 
+        let animations: HashMap<String, NodeSamplers> = doc
+            .animations()
+            .map(|animation| {
+                (
+                    animation.name().unwrap().to_owned(),
+                    NodeSamplers::new(animation, &buffers),
+                )
+            })
+            .collect();
+
+        let animations_data = doc
+            .skins()
+            .map(|skin| {
+                // Find the node which use this skin
+                let mesh_node = doc
+                    .nodes()
+                    .find(|node| {
+                        node.skin()
+                            .map(|s| s.index() == skin.index())
+                            .unwrap_or(false)
+                    })
+                    .unwrap();
+
+                let inverse_bind_matrices: Vec<_> = skin
+                    .reader(get_buffer_data.clone())
+                    .read_inverse_bind_matrices()
+                    .unwrap()
+                    .map(|a| glam::Mat4::from_cols_array_2d(&a))
+                    .collect::<Vec<_>>();
+
+                // for (_, samplers) in &animations {}
+                let samplers = &animations["run"];
+
+                let mut animated_nodes_transforms = HashMap::new();
+
+                for scene in doc.scenes() {
+                    fn apply_samplers_transforms<'a>(
+                        samplers: &NodeSamplers,
+                        nodes: impl Iterator<Item = gltf::Node<'a>>,
+                        pwt: glam::Mat4, // parent world transform
+                        store: &mut HashMap<usize, glam::Mat4>,
+                    ) {
+                        for node in nodes {
+                            let local_transform = samplers
+                                .get_node_transform(
+                                    &node.index(),
+                                    &std::time::Duration::from_secs_f32(0.0),
+                                )
+                                .unwrap_or_else(|| {
+                                    glam::Mat4::from_cols_array_2d(&node.transform().matrix())
+                                });
+
+                            let world_transform = pwt * local_transform;
+
+                            store.insert(node.index(), world_transform);
+
+                            apply_samplers_transforms(
+                                samplers,
+                                node.children(),
+                                world_transform,
+                                store,
+                            );
+                        }
+                    }
+
+                    apply_samplers_transforms(
+                        samplers,
+                        scene.nodes(),
+                        glam::Mat4::IDENTITY,
+                        &mut animated_nodes_transforms,
+                    );
+                }
+
+                let mesh_transform = animated_nodes_transforms[&mesh_node.index()];
+                // let mesh_transform = nodes_transforms[&mesh_node.index()];
+                let inv_mesh_transform = mesh_transform.inverse();
+
+                instances[mesh_node.mesh().unwrap().index()].transforms[0] = mesh_transform;
+
+                skin.joints()
+                    .zip(&inverse_bind_matrices)
+                    .map(|(node, &inverse_bind_matrix)| {
+                        // https://www.khronos.org/files/gltf20-reference-guide.pdf
+
+                        let global_joint_transform = animated_nodes_transforms[&node.index()];
+                        // let global_joint_transform = *nodes_transforms[&node.index()];
+
+                        inv_mesh_transform * global_joint_transform * inverse_bind_matrix
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Self {
             meshes,
             materials,
             instances,
+            animations: vec![SkinAnimation::new(device, animations_data)],
         })
     }
 }
