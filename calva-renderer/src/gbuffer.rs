@@ -1,4 +1,4 @@
-use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, SkinAnimation};
+use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimation};
 
 pub struct GeometryBuffer {
     pub albedo_metallic: wgpu::TextureView,
@@ -219,7 +219,7 @@ impl GeometryBuffer {
         rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
 
         cb(
-            &mut |(instances, mesh, material, animation): DrawCallArgs| {
+            &mut |(instances, mesh, material, skinning, animation): DrawCallArgs| {
                 rpass.set_bind_group(1, &material.bind_group, &[]);
 
                 rpass.set_vertex_buffer(0, instances.buffer.slice(..));
@@ -228,7 +228,7 @@ impl GeometryBuffer {
                 rpass.set_vertex_buffer(3, mesh.tangents.slice(..));
                 rpass.set_vertex_buffer(4, mesh.uv0.slice(..));
 
-                if let Some(skin) = mesh.skinning.as_ref() {
+                if let Some(skin) = skinning.as_ref() {
                     rpass.set_bind_group(2, &animation.unwrap().bind_group, &[]);
 
                     rpass.set_vertex_buffer(5, skin.joint_indices.slice(..));
@@ -257,5 +257,6 @@ pub type DrawCallArgs<'a> = (
     &'a MeshInstances,
     &'a Mesh,
     &'a Material,
+    Option<&'a Skin>,
     Option<&'a SkinAnimation>,
 );

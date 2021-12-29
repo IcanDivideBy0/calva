@@ -22,27 +22,42 @@ impl Lerp for glam::Quat {
 
 struct ChannelSampler<T>(BTreeMap<Duration, T>);
 
-impl<T: Lerp + Copy> ChannelSampler<T> {
-    fn get_value(&self, time: &Duration) -> Option<T> {
-        let mut prev: Option<(Duration, T)> = None;
+impl<T: Lerp + Copy + std::fmt::Debug> ChannelSampler<T> {
+    fn first(&self) -> (&Duration, &T) {
+        self.0.range(..).next().unwrap()
+    }
 
-        for (&keyframe, &value) in &self.0 {
-            if keyframe > *time {
-                return match prev {
-                    Some((prev_time, prev_value)) => {
-                        let interval = keyframe.as_secs_f32() - prev_time.as_secs_f32();
-                        let alpha = (time.as_secs_f32() - prev_time.as_secs_f32()) / interval;
+    fn last(&self) -> (&Duration, &T) {
+        self.0.range(..).rev().next().unwrap()
+    }
 
-                        Some(T::lerp(prev_value, value, alpha))
-                    }
-                    None => Some(value),
-                };
-            }
+    fn closest_before(&self, time: &Duration) -> (&Duration, &T) {
+        self.0
+            .range(..time)
+            .next_back()
+            .unwrap_or_else(|| self.first())
+    }
 
-            prev = Some((keyframe, value));
+    fn closest_after(&self, time: &Duration) -> (&Duration, &T) {
+        self.0.range(time..).next().unwrap_or_else(|| self.last())
+    }
+
+    pub fn get_value(&self, time: &Duration) -> T {
+        let before = self.closest_before(time);
+        let after = self.closest_after(time);
+
+        if before.0 == after.0 {
+            return *before.1;
         }
 
-        prev.map(|x| x.1)
+        let alpha = (time.as_secs_f32() - before.0.as_secs_f32())
+            / (after.0.as_secs_f32() - before.0.as_secs_f32());
+
+        T::lerp(*before.1, *after.1, alpha)
+    }
+
+    pub fn get_time_range(&self) -> (Duration, Duration) {
+        (*self.first().0, *self.last().0)
     }
 }
 
@@ -53,7 +68,7 @@ struct NodeSampler {
 }
 
 impl NodeSampler {
-    fn from_node_default(node: gltf::Node) -> Self {
+    pub fn from_node_default(node: gltf::Node) -> Self {
         let (translation, rotation, scale) = node.transform().decomposed();
 
         let translation = glam::Vec3::from(translation);
@@ -69,18 +84,33 @@ impl NodeSampler {
         }
     }
 
-    fn get_transform(&self, time: &Duration) -> glam::Mat4 {
+    pub fn get_transform(&self, time: &Duration) -> glam::Mat4 {
         glam::Mat4::from_scale_rotation_translation(
-            self.scales.get_value(time).unwrap(),
-            self.rotations.get_value(time).unwrap(),
-            self.translations.get_value(time).unwrap(),
+            self.scales.get_value(time),
+            self.rotations.get_value(time),
+            self.translations.get_value(time),
+        )
+    }
+
+    pub fn get_time_range(&self) -> (Duration, Duration) {
+        vec![
+            self.translations.get_time_range(),
+            self.rotations.get_time_range(),
+            self.scales.get_time_range(),
+        ]
+        .drain(..)
+        .fold(
+            (Duration::from_secs_f32(0.0), Duration::from_secs_f32(0.0)),
+            |acc, (start, end)| (acc.0.min(start), acc.1.max(end)),
         )
     }
 }
 
-pub struct NodeSamplers(HashMap<usize, NodeSampler>);
+pub struct Animation {
+    samplers: HashMap<usize, NodeSampler>,
+}
 
-impl NodeSamplers {
+impl Animation {
     pub fn new(animation: gltf::Animation, buffers: &[gltf::buffer::Data]) -> Self {
         let mut samplers: HashMap<usize, NodeSampler> = HashMap::new();
 
@@ -135,14 +165,58 @@ impl NodeSamplers {
             }
         }
 
-        Self(samplers)
+        Self { samplers }
     }
 
-    #[allow(unused)]
-    pub fn get_node_transform(&self, node_index: &usize, time: &Duration) -> Option<glam::Mat4> {
-        self.0
-            .get(node_index)
+    pub fn get_node_transform(&self, node: &gltf::Node, time: &Duration) -> glam::Mat4 {
+        self.samplers
+            .get(&node.index())
             .map(|node_sampler| node_sampler.get_transform(time))
+            .unwrap_or_else(|| glam::Mat4::from_cols_array_2d(&node.transform().matrix()))
+    }
+
+    fn apply_samplers_transforms<'a>(
+        &self,
+        time: &Duration,
+        nodes: impl Iterator<Item = gltf::Node<'a>>,
+        parent_world_transform: glam::Mat4,
+        store: &mut HashMap<usize, glam::Mat4>,
+    ) {
+        for node in nodes {
+            let local_transform = self.get_node_transform(&node, time);
+            let world_transform = parent_world_transform * local_transform;
+
+            store.insert(node.index(), world_transform);
+
+            self.apply_samplers_transforms(time, node.children(), world_transform, store);
+        }
+    }
+
+    pub fn get_nodes_transforms<'a>(
+        &self,
+        time: &Duration,
+        nodes: impl Iterator<Item = gltf::Node<'a>>,
+    ) -> HashMap<usize, glam::Mat4> {
+        let mut frame_nodes_transforms = HashMap::new();
+
+        self.apply_samplers_transforms(
+            time,
+            nodes,
+            glam::Mat4::IDENTITY,
+            &mut frame_nodes_transforms,
+        );
+
+        frame_nodes_transforms
+    }
+
+    pub fn get_time_range(&self) -> (Duration, Duration) {
+        self.samplers
+            .values()
+            .map(NodeSampler::get_time_range)
+            .fold(
+                (Duration::from_secs_f32(0.0), Duration::from_secs_f32(0.0)),
+                |acc, (start, end)| (acc.0.min(start), acc.1.max(end)),
+            )
     }
 }
 

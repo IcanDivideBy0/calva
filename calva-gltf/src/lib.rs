@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu::{self, util::DeviceExt},
-    Material, Mesh, MeshInstances, Renderer, SkinAnimation, Skinning,
+    Material, Mesh, MeshInstances, Renderer, Skin, SkinAnimation,
 };
 use std::collections::HashMap;
 use std::io::Read;
@@ -34,7 +34,7 @@ fn traverse_nodes<'a>(
 }
 
 pub struct GltfModel {
-    pub meshes: Vec<(Mesh, usize, usize)>,
+    pub meshes: Vec<(Mesh, Option<Skin>, usize, usize)>,
     pub materials: Vec<Material>,
     pub instances: Vec<MeshInstances>,
     pub animations: Vec<SkinAnimation>,
@@ -194,7 +194,23 @@ impl GltfModel {
                         })
                     };
 
-                    let skinning = {
+                    let (indices, num_elements) = {
+                        let accessor = primitive
+                            .indices()
+                            .ok_or_else(|| anyhow!("Missing indices accessor"))?;
+                        let num_elements = accessor.count() as u32;
+
+                        let contents = get_accessor_data(accessor)
+                            .ok_or_else(|| anyhow!("Missing indices buffer"))?;
+                        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: label!("Indices buffer", mesh),
+                            contents,
+                            usage: wgpu::BufferUsages::INDEX,
+                        });
+                        (buffer, num_elements)
+                    };
+
+                    let skin = {
                         let joint_indices = primitive
                             .get(&gltf::Semantic::Joints(0))
                             .and_then(&mut get_accessor_data)
@@ -219,26 +235,10 @@ impl GltfModel {
 
                         joint_indices
                             .zip(joint_weights)
-                            .map(|(joint_indices, joint_weights)| Skinning {
+                            .map(|(joint_indices, joint_weights)| Skin {
                                 joint_indices,
                                 joint_weights,
                             })
-                    };
-
-                    let (indices, num_elements) = {
-                        let accessor = primitive
-                            .indices()
-                            .ok_or_else(|| anyhow!("Missing indices accessor"))?;
-                        let num_elements = accessor.count() as u32;
-
-                        let contents = get_accessor_data(accessor)
-                            .ok_or_else(|| anyhow!("Missing indices buffer"))?;
-                        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: label!("Indices buffer", mesh),
-                            contents,
-                            usage: wgpu::BufferUsages::INDEX,
-                        });
-                        (buffer, num_elements)
                     };
 
                     acc.push((
@@ -247,10 +247,10 @@ impl GltfModel {
                             normals,
                             tangents,
                             uv0,
-                            skinning,
                             indices,
                             num_elements,
                         },
+                        skin,
                         primitive
                             .material()
                             .index()
@@ -263,12 +263,12 @@ impl GltfModel {
             },
         )?;
 
-        let animations: HashMap<String, NodeSamplers> = doc
+        let animations: HashMap<String, Animation> = doc
             .animations()
             .map(|animation| {
                 (
                     animation.name().unwrap().to_owned(),
-                    NodeSamplers::new(animation, &buffers),
+                    Animation::new(animation, &buffers),
                 )
             })
             .collect();
@@ -294,50 +294,38 @@ impl GltfModel {
                     .collect::<Vec<_>>();
 
                 // for (_, samplers) in &animations {}
-                let samplers = &animations["run"];
+                let animation = &animations["run"];
 
-                let mut animated_nodes_transforms = HashMap::new();
+                let (mut start, end) = animation.get_time_range();
+                let interval = std::time::Duration::from_secs_f32(1.0 / 60.0);
+                let mut texture_data = vec![];
+                while start < end {
+                    let animated_nodes_transforms = animation
+                        .get_nodes_transforms(&start, doc.default_scene().unwrap().nodes());
 
-                for scene in doc.scenes() {
-                    fn apply_samplers_transforms<'a>(
-                        samplers: &NodeSamplers,
-                        nodes: impl Iterator<Item = gltf::Node<'a>>,
-                        pwt: glam::Mat4, // parent world transform
-                        store: &mut HashMap<usize, glam::Mat4>,
-                    ) {
-                        for node in nodes {
-                            let local_transform = samplers
-                                .get_node_transform(
-                                    &node.index(),
-                                    &std::time::Duration::from_secs_f32(0.0),
-                                )
-                                .unwrap_or_else(|| {
-                                    glam::Mat4::from_cols_array_2d(&node.transform().matrix())
-                                });
+                    let mesh_transform = animated_nodes_transforms[&mesh_node.index()];
+                    let inv_mesh_transform = mesh_transform.inverse();
 
-                            let world_transform = pwt * local_transform;
+                    let mut frame_data = skin
+                        .joints()
+                        .zip(&inverse_bind_matrices)
+                        .map(|(node, &inverse_bind_matrix)| {
+                            let global_joint_transform = animated_nodes_transforms[&node.index()];
+                            inv_mesh_transform * global_joint_transform * inverse_bind_matrix
+                        })
+                        .collect::<Vec<_>>();
 
-                            store.insert(node.index(), world_transform);
+                    texture_data.append(&mut frame_data);
 
-                            apply_samplers_transforms(
-                                samplers,
-                                node.children(),
-                                world_transform,
-                                store,
-                            );
-                        }
-                    }
-
-                    apply_samplers_transforms(
-                        samplers,
-                        scene.nodes(),
-                        glam::Mat4::IDENTITY,
-                        &mut animated_nodes_transforms,
-                    );
+                    start += interval;
                 }
 
+                let animated_nodes_transforms = animation.get_nodes_transforms(
+                    &std::time::Duration::from_secs_f32(0.0),
+                    doc.default_scene().unwrap().nodes(),
+                );
+
                 let mesh_transform = animated_nodes_transforms[&mesh_node.index()];
-                // let mesh_transform = nodes_transforms[&mesh_node.index()];
                 let inv_mesh_transform = mesh_transform.inverse();
 
                 instances[mesh_node.mesh().unwrap().index()].transforms[0] = mesh_transform;
@@ -345,11 +333,7 @@ impl GltfModel {
                 skin.joints()
                     .zip(&inverse_bind_matrices)
                     .map(|(node, &inverse_bind_matrix)| {
-                        // https://www.khronos.org/files/gltf20-reference-guide.pdf
-
                         let global_joint_transform = animated_nodes_transforms[&node.index()];
-                        // let global_joint_transform = *nodes_transforms[&node.index()];
-
                         inv_mesh_transform * global_joint_transform * inverse_bind_matrix
                     })
                     .collect::<Vec<_>>()

@@ -144,7 +144,7 @@ impl Skybox {
                 view: ctx.view,
                 resolve_target: ctx.resolve_target,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: true,
                 },
             }],

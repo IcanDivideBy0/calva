@@ -62,7 +62,7 @@ fn get_skinning_matrix(in: VertexInput) -> mat4x4<f32> {
     let m3 = get_joint_matrix(joints_z) * in.weights.z;
     let m4 = get_joint_matrix(joints_w) * in.weights.w;
 
-    // TODO: fixme
+    // TODO: fixme, weights are wrong ?
     if (true) { return get_joint_matrix(joints_x); }
 
     return mat4x4<f32>(

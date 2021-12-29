@@ -24,33 +24,19 @@ struct InstanceInput {
     [[location(6)]] normal_matrix_2: vec3<f32>;
 };
 
-struct VertexOutput {
-    [[builtin(position)]] position: vec4<f32>;
-    [[location(0)]] depth: f32;
-};
-
 [[stage(vertex)]]
 fn vs_main(
     [[builtin(view_index)]] view_index: i32,
     instance: InstanceInput,
     [[location(7)]] position: vec3<f32>,
-) -> VertexOutput {
+) -> [[builtin(position)]] vec4<f32> {
     let model_matrix = mat4x4<f32>(
-        // instance.model_matrix_0,
-        // instance.model_matrix_1,
-        // instance.model_matrix_2,
-        // instance.model_matrix_3,
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0,
+        instance.model_matrix_0,
+        instance.model_matrix_1,
+        instance.model_matrix_2,
+        instance.model_matrix_3,
     );
 
     let light_view_proj = shadow_light.view_proj[view_index];
-    let position = light_view_proj * model_matrix * vec4<f32>(position, 1.0);
-
-    return VertexOutput(
-        position,
-        position.z
-    );
+    return light_view_proj * model_matrix * vec4<f32>(position, 1.0);
 }

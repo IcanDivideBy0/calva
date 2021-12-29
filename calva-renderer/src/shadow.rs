@@ -1,4 +1,4 @@
-use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer};
+use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimation};
 
 pub struct ShadowLight {
     shadows: ShadowLightDepth,
@@ -206,7 +206,12 @@ impl ShadowLight {
     }
 }
 
-pub type DrawCallArgs<'a> = (&'a MeshInstances, &'a Mesh);
+pub type DrawCallArgs<'a> = (
+    &'a MeshInstances,
+    &'a Mesh,
+    Option<&'a Skin>,
+    Option<&'a SkinAnimation>,
+);
 
 struct ShadowLightDepth {
     depth: wgpu::TextureView,
@@ -280,13 +285,13 @@ impl ShadowLightDepth {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ShadowLight depth render pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout, SkinAnimation::bind_group_layout(device)],
             push_constant_ranges: &[],
         });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("ShadowLight depth shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.skinned.wgsl").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -302,6 +307,18 @@ impl ShadowLightDepth {
                         array_stride: (std::mem::size_of::<f32>() * 3) as _,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &wgpu::vertex_attr_array![7 => Float32x3],
+                    },
+                    // Joints
+                    wgpu::VertexBufferLayout {
+                        array_stride: (std::mem::size_of::<u8>() * 4) as _,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![8 => Uint8x4],
+                    },
+                    // Weights
+                    wgpu::VertexBufferLayout {
+                        array_stride: (std::mem::size_of::<f32>() * 4) as _,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![9 => Float32x4],
                     },
                 ],
             },
@@ -367,14 +384,23 @@ impl ShadowLightDepth {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
 
-        cb(&mut move |(instances, mesh): DrawCallArgs| {
-            rpass.set_vertex_buffer(0, instances.buffer.slice(..));
-            rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
+        cb(
+            &mut move |(instances, mesh, skin, animation): DrawCallArgs| {
+                rpass.set_vertex_buffer(0, instances.buffer.slice(..));
+                rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
 
-            rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
+                rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-            rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count())
-        });
+                if let Some(skin) = skin {
+                    rpass.set_bind_group(1, &animation.unwrap().bind_group, &[]);
+
+                    rpass.set_vertex_buffer(2, skin.joint_indices.slice(..));
+                    rpass.set_vertex_buffer(3, skin.joint_weights.slice(..));
+                }
+
+                rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
+            },
+        );
 
         self.blur.render(ctx, &self.depth);
         self.blur.render(ctx, &self.depth);

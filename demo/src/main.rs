@@ -256,20 +256,26 @@ async fn main() -> Result<()> {
 
                 match renderer.render(|ctx| {
                     gbuffer.render(ctx, |draw| {
-                        for (mesh, material_index, instances_index) in &model.meshes {
+                        for (mesh, skin, material_index, instances_index) in &model.meshes {
                             let instances = model.instances.get(*instances_index).unwrap();
                             let material = model.materials.get(*material_index).unwrap();
 
-                            draw((instances, mesh, material, model.animations.get(0)));
+                            draw((
+                                instances,
+                                mesh,
+                                material,
+                                skin.as_ref(),
+                                model.animations.get(0),
+                            ));
                         }
                     });
 
                     skybox.render(ctx);
                     ambient.render(ctx);
                     shadows.render(ctx, my_app.shadow_light_angle, |draw| {
-                        for (mesh, _, instances_index) in &model.meshes {
+                        for (mesh, skin, _, instances_index) in &model.meshes {
                             let instances = model.instances.get(*instances_index).unwrap();
-                            draw((instances, mesh));
+                            draw((instances, mesh, skin.as_ref(), model.animations.get(0)));
                         }
                     });
 
