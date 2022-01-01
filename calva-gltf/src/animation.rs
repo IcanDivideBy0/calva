@@ -4,6 +4,15 @@ use std::time::Duration;
 
 use super::util;
 
+macro_rules! secs {
+    () => {
+        Duration::from_secs_f32(0.0)
+    };
+    ($f: expr) => {
+        Duration::from_secs_f32($f)
+    };
+}
+
 trait Lerp {
     fn lerp(a: Self, b: Self, alpha: f32) -> Self;
 }
@@ -16,13 +25,13 @@ impl Lerp for glam::Vec3 {
 
 impl Lerp for glam::Quat {
     fn lerp(a: Self, b: Self, alpha: f32) -> Self {
-        glam::Quat::slerp(a, b, alpha)
+        glam::Quat::slerp(if glam::Quat::dot(a, b) < 0.0 { -a } else { a }, b, alpha)
     }
 }
 
 struct ChannelSampler<T>(BTreeMap<Duration, T>);
 
-impl<T: Lerp + Copy + std::fmt::Debug> ChannelSampler<T> {
+impl<T: Lerp + Copy> ChannelSampler<T> {
     fn first(&self) -> (&Duration, &T) {
         self.0.range(..).next().unwrap()
     }
@@ -72,15 +81,13 @@ impl NodeSampler {
         let (translation, rotation, scale) = node.transform().decomposed();
 
         let translation = glam::Vec3::from(translation);
-        let rotation = glam::Quat::from_slice(&rotation);
+        let rotation = glam::Quat::from_array(rotation);
         let scale = glam::Vec3::from(scale);
 
-        let keyframe = Duration::from_secs_f32(0.0);
-
         Self {
-            translations: ChannelSampler([(keyframe, translation)].into()),
-            rotations: ChannelSampler([(keyframe, rotation)].into()),
-            scales: ChannelSampler([(keyframe, scale)].into()),
+            translations: ChannelSampler([(secs!(), translation)].into()),
+            rotations: ChannelSampler([(secs!(), rotation)].into()),
+            scales: ChannelSampler([(secs!(), scale)].into()),
         }
     }
 
@@ -99,18 +106,17 @@ impl NodeSampler {
             self.scales.get_time_range(),
         ]
         .drain(..)
-        .fold(
-            (Duration::from_secs_f32(0.0), Duration::from_secs_f32(0.0)),
-            |acc, (start, end)| (acc.0.min(start), acc.1.max(end)),
-        )
+        .fold((secs!(), secs!()), |acc, (start, end)| {
+            (acc.0.min(start), acc.1.max(end))
+        })
     }
 }
 
-pub struct Animation {
+pub struct AnimationSampler {
     samplers: HashMap<usize, NodeSampler>,
 }
 
-impl Animation {
+impl AnimationSampler {
     pub fn new(animation: gltf::Animation, buffers: &[gltf::buffer::Data]) -> Self {
         let mut samplers: HashMap<usize, NodeSampler> = HashMap::new();
 
@@ -148,7 +154,7 @@ impl Animation {
                         keyframes
                             .iter()
                             .copied()
-                            .zip(it.map(|s| glam::Quat::from_slice(&s)))
+                            .zip(it.map(glam::Quat::from_array))
                             .collect(),
                     );
                 }
@@ -213,10 +219,9 @@ impl Animation {
         self.samplers
             .values()
             .map(NodeSampler::get_time_range)
-            .fold(
-                (Duration::from_secs_f32(0.0), Duration::from_secs_f32(0.0)),
-                |acc, (start, end)| (acc.0.min(start), acc.1.max(end)),
-            )
+            .fold((secs!(), secs!()), |acc, (start, end)| {
+                (acc.0.min(start), acc.1.max(end))
+            })
     }
 }
 
@@ -230,30 +235,28 @@ mod tests {
         let sampler = NodeSampler {
             translations: ChannelSampler(
                 [
-                    (Duration::from_secs_f32(1.0), glam::vec3(10.0, 0.0, 0.0)),
-                    (Duration::from_secs_f32(2.0), glam::vec3(20.0, 0.0, 0.0)),
+                    (secs!(1.0), glam::Vec3::X * 10.0),
+                    (secs!(2.0), glam::Vec3::X * 20.0),
                 ]
                 .into(),
             ),
-            rotations: ChannelSampler(
-                [(Duration::from_secs_f32(0.0), glam::Quat::IDENTITY)].into(),
-            ),
-            scales: ChannelSampler([(Duration::from_secs_f32(0.0), glam::Vec3::ONE)].into()),
+            rotations: ChannelSampler([(secs!(), glam::Quat::IDENTITY)].into()),
+            scales: ChannelSampler([(secs!(), glam::Vec3::ONE)].into()),
         };
 
         assert_eq!(
-            sampler.get_transform(&Duration::from_secs_f32(1.3)),
-            glam::Mat4::from_translation(glam::vec3(13.0, 0.0, 0.0))
+            sampler.get_transform(&secs!(1.3)),
+            glam::Mat4::from_translation(glam::Vec3::X * 13.0)
         );
 
         assert_eq!(
-            sampler.get_transform(&Duration::from_secs_f32(0.0)),
-            glam::Mat4::from_translation(glam::vec3(10.0, 0.0, 0.0))
+            sampler.get_transform(&secs!()),
+            glam::Mat4::from_translation(glam::Vec3::X * 10.0)
         );
 
         assert_eq!(
-            sampler.get_transform(&Duration::from_secs_f32(3.0)),
-            glam::Mat4::from_translation(glam::vec3(20.0, 0.0, 0.0))
+            sampler.get_transform(&secs!(3.0)),
+            glam::Mat4::from_translation(glam::Vec3::X * 20.0)
         );
     }
 }

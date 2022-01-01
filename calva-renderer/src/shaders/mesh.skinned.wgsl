@@ -21,15 +21,17 @@ struct InstanceInput {
     [[location(4)]] normal_matrix_0: vec3<f32>;
     [[location(5)]] normal_matrix_1: vec3<f32>;
     [[location(6)]] normal_matrix_2: vec3<f32>;
+
+    [[location(7)]] animation_frame: u32;
 };
 
 struct VertexInput {
-    [[location(7)]]  position: vec3<f32>;
-    [[location(8)]]  normal: vec3<f32>;
-    [[location(9)]]  tangent: vec4<f32>;
-    [[location(10)]] uv: vec2<f32>;
-    [[location(11)]] joints: u32;
-    [[location(12)]] weights: vec4<f32>;
+    [[location( 8)]] position: vec3<f32>;
+    [[location( 9)]] normal: vec3<f32>;
+    [[location(10)]] tangent: vec4<f32>;
+    [[location(11)]] uv: vec2<f32>;
+    [[location(12)]] joints: u32;
+    [[location(13)]] weights: vec4<f32>;
 };
 
 struct VertexOutput {
@@ -41,29 +43,34 @@ struct VertexOutput {
     [[location(4)]] uv: vec2<f32>;
 };
 
-struct JointMatrices {
-    matrices: array<mat4x4<f32>, 100>;
-};
+[[group(2), binding(0)]] var animation: texture_2d_array<f32>;
 
-[[group(2), binding(0)]] var<uniform> joint_matrices: JointMatrices;
+fn get_joint_matrix(frame: u32, joint_index: u32) -> mat4x4<f32> {
+    let c = vec2<i32>(
+        i32(joint_index),
+        i32(frame),
+    );
 
-fn get_joint_matrix(joint_index: u32) -> mat4x4<f32> {
-    return joint_matrices.matrices[joint_index];
+    return mat4x4<f32>(
+        textureLoad(animation, c, 0, 0),
+        textureLoad(animation, c, 1, 0),
+        textureLoad(animation, c, 2, 0),
+        textureLoad(animation, c, 3, 0),
+    );
 }
 
-fn get_skinning_matrix(in: VertexInput) -> mat4x4<f32> {
-    let joints_x: u32 = in.joints >>  0u & 0xFFu;
-    let joints_y: u32 = in.joints >>  8u & 0xFFu;
-    let joints_z: u32 = in.joints >> 16u & 0xFFu;
-    let joints_w: u32 = in.joints >> 24u & 0xFFu;
+fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
+    let joints = vec4<u32>(
+        in.joints >>  0u & 0xFFu,
+        in.joints >>  8u & 0xFFu,
+        in.joints >> 16u & 0xFFu,
+        in.joints >> 24u & 0xFFu,
+    );
 
-    let m1 = get_joint_matrix(joints_x) * in.weights.x;
-    let m2 = get_joint_matrix(joints_y) * in.weights.y;
-    let m3 = get_joint_matrix(joints_z) * in.weights.z;
-    let m4 = get_joint_matrix(joints_w) * in.weights.w;
-
-    // TODO: fixme, weights are wrong ?
-    if (true) { return get_joint_matrix(joints_x); }
+    let m1 = get_joint_matrix(frame, joints.x) * in.weights.x;
+    let m2 = get_joint_matrix(frame, joints.y) * in.weights.y;
+    let m3 = get_joint_matrix(frame, joints.z) * in.weights.z;
+    let m4 = get_joint_matrix(frame, joints.w) * in.weights.w;
 
     return mat4x4<f32>(
         m1.x + m2.x + m3.x + m4.x,
@@ -73,37 +80,31 @@ fn get_skinning_matrix(in: VertexInput) -> mat4x4<f32> {
     );
 }
 
+fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
+    return mat3x3<f32>(m.x.xyz, m.y.xyz, m.z.xyz);
+}
+
 [[stage(vertex)]]
 fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
-    let skinning_matrix = get_skinning_matrix(in);
+    let skinning_matrix = get_skinning_matrix(instance.animation_frame, in);
 
-    let model_matrix = mat4x4<f32>(
+    let model_matrix =  mat4x4<f32>(
         instance.model_matrix_0,
         instance.model_matrix_1,
         instance.model_matrix_2,
         instance.model_matrix_3,
-    ) * skinning_matrix;
+    );
 
-    let view3 = mat3x3<f32>(
-        camera.view.x.xyz,
-        camera.view.y.xyz,
-        camera.view.z.xyz,
-    );
-    let skinning_matrix3 = mat3x3<f32>(
-        skinning_matrix.x.xyz,
-        skinning_matrix.y.xyz,
-        skinning_matrix.z.xyz,
-    );
-    let normal_matrix = view3 * mat3x3<f32>(
+    let normal_matrix = mat3x3<f32>(
         instance.normal_matrix_0,
         instance.normal_matrix_1,
         instance.normal_matrix_2,
-    ) * skinning_matrix3;
+    );
 
-    let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
+    let world_pos = model_matrix * skinning_matrix * vec4<f32>(in.position, 1.0);
     let view_pos = camera.view * world_pos;
 
     var out: VertexOutput;
@@ -111,8 +112,13 @@ fn vs_main(
     out.clip_position = camera.proj * view_pos;
     out.position = view_pos.xyz / view_pos.w;
 
-    out.normal = normalize(normal_matrix * in.normal);
-    out.tangent = normalize(normal_matrix * in.tangent.xyz);
+    let view_normal_matrix =
+        mat4_to_mat3(camera.view) *
+        normal_matrix *
+        mat4_to_mat3(skinning_matrix);
+
+    out.normal = normalize(view_normal_matrix * in.normal);
+    out.tangent = normalize(view_normal_matrix * in.tangent.xyz);
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;

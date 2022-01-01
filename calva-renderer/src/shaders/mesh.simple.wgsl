@@ -24,10 +24,10 @@ struct InstanceInput {
 };
 
 struct VertexInput {
-    [[location(7)]]  position: vec3<f32>;
-    [[location(8)]]  normal: vec3<f32>;
-    [[location(9)]]  tangent: vec4<f32>;
-    [[location(10)]] uv: vec2<f32>;
+    [[location( 8)]] position: vec3<f32>;
+    [[location( 9)]] normal: vec3<f32>;
+    [[location(10)]] tangent: vec4<f32>;
+    [[location(11)]] uv: vec2<f32>;
 };
 
 struct VertexOutput {

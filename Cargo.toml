@@ -12,3 +12,4 @@ members = [
 opt-level = 3
 
 [patch.crates-io]
+gltf = { git = "https://github.com/IcanDivideBy0/gltf.git", branch = "joints_fixed_size_iterator" }

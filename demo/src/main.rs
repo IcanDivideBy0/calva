@@ -2,7 +2,8 @@ use anyhow::Result;
 use calva::{
     egui::EguiPass,
     renderer::{
-        wgpu, Ambient, GeometryBuffer, PointLight, PointLights, Renderer, ShadowLight, Skybox, Ssao,
+        wgpu, Ambient, GeometryBuffer, PointLight, PointLights, Renderer, RendererConfigData,
+        ShadowLight, Skybox, Ssao,
     },
 };
 use std::time::{Duration, Instant};
@@ -200,10 +201,15 @@ async fn main() -> Result<()> {
     let mut egui = EguiPass::new(&renderer, &window);
 
     let mut scene = Scene::new(&renderer)?;
-    let model = calva::gltf::GltfModel::new(
+    let mut plane = calva::gltf::GltfModel::new(
+        &renderer,
+        &mut std::fs::File::open("./demo/assets/plane.glb")?,
+    )?;
+    let mut zombie = calva::gltf::GltfModel::new(
         &renderer,
         &mut std::fs::File::open("./demo/assets/zombie.glb")?,
     )?;
+    my_app.animations = zombie.animations[0].animations.keys().cloned().collect();
 
     let start_time = Instant::now();
     let mut last_render_time = Instant::now();
@@ -245,27 +251,49 @@ async fn main() -> Result<()> {
                 let dt = last_render_time.elapsed();
                 last_render_time = Instant::now();
 
-                renderer.config.data = my_app.into();
+                renderer.config.data = RendererConfigData::from(&my_app);
                 camera.update(&mut renderer, dt);
                 scene.update(start_time.elapsed(), dt);
                 scene.lights[0].position = my_app.light_pos;
 
-                for instances in &model.instances {
+                for instances in &mut plane.instances {
+                    instances.write_buffer(&renderer.queue);
+                }
+                for instances in &mut zombie.instances {
+                    for instance in instances.iter_mut() {
+                        let (offset, length) = zombie.animations[0].animations[&my_app.animation];
+                        let current_frame = instance.animation_frame.saturating_sub(offset);
+                        instance.animation_frame = offset + (current_frame + 1) % length;
+                    }
+
                     instances.write_buffer(&renderer.queue);
                 }
 
                 match renderer.render(|ctx| {
                     gbuffer.render(ctx, |draw| {
-                        for (mesh, skin, material_index, instances_index) in &model.meshes {
-                            let instances = model.instances.get(*instances_index).unwrap();
-                            let material = model.materials.get(*material_index).unwrap();
+                        for (mesh, skin, material_index, instances_index) in &plane.meshes {
+                            let instances = plane.instances.get(*instances_index).unwrap();
+                            let material = plane.materials.get(*material_index).unwrap();
 
                             draw((
                                 instances,
                                 mesh,
                                 material,
                                 skin.as_ref(),
-                                model.animations.get(0),
+                                plane.animations.get(0),
+                            ));
+                        }
+
+                        for (mesh, skin, material_index, instances_index) in &zombie.meshes {
+                            let instances = zombie.instances.get(*instances_index).unwrap();
+                            let material = zombie.materials.get(*material_index).unwrap();
+
+                            draw((
+                                instances,
+                                mesh,
+                                material,
+                                skin.as_ref(),
+                                zombie.animations.get(0),
                             ));
                         }
                     });
@@ -273,9 +301,13 @@ async fn main() -> Result<()> {
                     skybox.render(ctx);
                     ambient.render(ctx);
                     shadows.render(ctx, my_app.shadow_light_angle, |draw| {
-                        for (mesh, skin, _, instances_index) in &model.meshes {
-                            let instances = model.instances.get(*instances_index).unwrap();
-                            draw((instances, mesh, skin.as_ref(), model.animations.get(0)));
+                        for (mesh, skin, _, instances_index) in &plane.meshes {
+                            let instances = plane.instances.get(*instances_index).unwrap();
+                            draw((instances, mesh, skin.as_ref(), plane.animations.get(0)));
+                        }
+                        for (mesh, skin, _, instances_index) in &zombie.meshes {
+                            let instances = zombie.instances.get(*instances_index).unwrap();
+                            draw((instances, mesh, skin.as_ref(), zombie.animations.get(0)));
                         }
                     });
 

@@ -1,4 +1,4 @@
-use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimation};
+use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimations};
 
 pub struct GeometryBuffer {
     pub albedo_metallic: wgpu::TextureView,
@@ -7,7 +7,9 @@ pub struct GeometryBuffer {
 
     size: wgpu::Extent3d,
     depth_texture: wgpu::Texture,
-    pipeline: wgpu::RenderPipeline,
+
+    simple_mesh_pipeline: wgpu::RenderPipeline,
+    skinned_mesh_pipeline: wgpu::RenderPipeline,
 }
 
 impl GeometryBuffer {
@@ -84,24 +86,23 @@ impl GeometryBuffer {
             ..Default::default()
         });
 
-        let pipeline = {
+        let simple_mesh_pipeline = {
             let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("Geometry shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.skinned.wgsl").into()),
+                label: Some("Geometry[simple] shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.simple.wgsl").into()),
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Geometry render pipeline layout"),
+                label: Some("Geometry[simple] render pipeline layout"),
                 bind_group_layouts: &[
                     &camera.bind_group_layout,
-                    Material::bind_group_layout(device),
-                    SkinAnimation::bind_group_layout(device),
+                    &device.create_bind_group_layout(Material::DESC),
                 ],
                 push_constant_ranges: &[],
             });
 
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Geometry render pipeline"),
+                label: Some("Geometry[simple] render pipeline"),
                 layout: Some(&pipeline_layout),
                 multiview: None,
                 vertex: wgpu::VertexState {
@@ -113,37 +114,108 @@ impl GeometryBuffer {
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![7 => Float32x3],
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
                         },
                         // Normals
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                            attributes: &wgpu::vertex_attr_array![9 => Float32x3],
                         },
                         // Tangents
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 4) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![9 => Float32x4],
+                            attributes: &wgpu::vertex_attr_array![10 => Float32x4],
                         },
                         // UV
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 2) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![10 => Float32x2],
+                            attributes: &wgpu::vertex_attr_array![11 => Float32x2],
+                        },
+                    ],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: GeometryBuffer::RENDER_TARGETS,
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Renderer::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: Renderer::MULTISAMPLE_STATE,
+            })
+        };
+
+        let skinned_mesh_pipeline = {
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("Geometry[skinned] shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.skinned.wgsl").into()),
+            });
+
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Geometry[skinned] render pipeline layout"),
+                bind_group_layouts: &[
+                    &camera.bind_group_layout,
+                    &device.create_bind_group_layout(Material::DESC),
+                    &device.create_bind_group_layout(SkinAnimations::DESC),
+                ],
+                push_constant_ranges: &[],
+            });
+
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Geometry[skinned] render pipeline"),
+                layout: Some(&pipeline_layout),
+                multiview: None,
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[
+                        MeshInstances::LAYOUT,
+                        // Positions
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                        },
+                        // Normals
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![9 => Float32x3],
+                        },
+                        // Tangents
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 4) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![10 => Float32x4],
+                        },
+                        // UV
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 2) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![11 => Float32x2],
                         },
                         // Joints
                         wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<u8>() * 4) as _,
+                            array_stride: (std::mem::size_of::<u32>()) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![11 => Uint8x4],
+                            attributes: &wgpu::vertex_attr_array![12 => Uint32], // Do not use Uint8x4 or it will mess up offsets/strides
                         },
                         // Weights
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 4) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![12 => Float32x4],
+                            attributes: &wgpu::vertex_attr_array![13 => Float32x4],
                         },
                     ],
                 },
@@ -174,7 +246,9 @@ impl GeometryBuffer {
 
             size,
             depth_texture,
-            pipeline,
+
+            simple_mesh_pipeline,
+            skinned_mesh_pipeline,
         }
     }
 
@@ -215,12 +289,19 @@ impl GeometryBuffer {
             }),
         });
 
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
-
         cb(
-            &mut |(instances, mesh, material, skinning, animation): DrawCallArgs| {
+            &mut |(instances, mesh, material, skin, animation): DrawCallArgs| {
+                rpass.set_pipeline(match skin {
+                    Some(_) => &self.skinned_mesh_pipeline,
+                    None => &self.simple_mesh_pipeline,
+                });
+
+                rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
                 rpass.set_bind_group(1, &material.bind_group, &[]);
+
+                if let Some(animation) = animation {
+                    rpass.set_bind_group(2, &animation.bind_group, &[]);
+                }
 
                 rpass.set_vertex_buffer(0, instances.buffer.slice(..));
                 rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
@@ -228,15 +309,12 @@ impl GeometryBuffer {
                 rpass.set_vertex_buffer(3, mesh.tangents.slice(..));
                 rpass.set_vertex_buffer(4, mesh.uv0.slice(..));
 
-                if let Some(skin) = skinning.as_ref() {
-                    rpass.set_bind_group(2, &animation.unwrap().bind_group, &[]);
-
+                if let Some(skin) = skin {
                     rpass.set_vertex_buffer(5, skin.joint_indices.slice(..));
                     rpass.set_vertex_buffer(6, skin.joint_weights.slice(..));
                 }
 
                 rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-
                 rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
             },
         );
@@ -258,5 +336,5 @@ pub type DrawCallArgs<'a> = (
     &'a Mesh,
     &'a Material,
     Option<&'a Skin>,
-    Option<&'a SkinAnimation>,
+    Option<&'a SkinAnimations>,
 );

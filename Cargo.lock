@@ -224,9 +224,9 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "base64"
-version = "0.11.0"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
+checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
 
 [[package]]
 name = "bit-set"
@@ -924,9 +924,8 @@ dependencies = [
 
 [[package]]
 name = "gltf"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6fb0d1d772daf10ea74528c3aeb12215f6d5b820adf2ecfc93a6578d6779c3c"
+version = "0.16.0"
+source = "git+https://github.com/IcanDivideBy0/gltf.git?branch=joints_fixed_size_iterator#901dc7a93ccb041c3cb2d2f6e610dbaf1dde719d"
 dependencies = [
  "base64",
  "byteorder",
@@ -937,9 +936,8 @@ dependencies = [
 
 [[package]]
 name = "gltf-derive"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6636de7bf52227363554f1ca2d9cd180fc666129ddd0933097e1f227dfa7293"
+version = "0.16.0"
+source = "git+https://github.com/IcanDivideBy0/gltf.git?branch=joints_fixed_size_iterator#901dc7a93ccb041c3cb2d2f6e610dbaf1dde719d"
 dependencies = [
  "inflections",
  "proc-macro2",
@@ -949,9 +947,8 @@ dependencies = [
 
 [[package]]
 name = "gltf-json"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3fc3deb81e6fa04bf808f6be7c3983229552a95b77f687ad96af00f6d3e7d6c"
+version = "0.16.0"
+source = "git+https://github.com/IcanDivideBy0/gltf.git?branch=joints_fixed_size_iterator#901dc7a93ccb041c3cb2d2f6e610dbaf1dde719d"
 dependencies = [
  "gltf-derive",
  "serde",

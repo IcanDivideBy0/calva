@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu::{self, util::DeviceExt},
-    Material, Mesh, MeshInstances, Renderer, Skin, SkinAnimation,
+    Renderer,
 };
 use std::collections::HashMap;
 use std::io::Read;
@@ -28,16 +28,18 @@ fn traverse_nodes<'a>(
     for node in nodes {
         let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
         let world_transform = pwt * local_transform;
+
         store.insert(node.index(), world_transform);
+
         traverse_nodes(node.children(), world_transform, store);
     }
 }
 
 pub struct GltfModel {
-    pub meshes: Vec<(Mesh, Option<Skin>, usize, usize)>,
-    pub materials: Vec<Material>,
-    pub instances: Vec<MeshInstances>,
-    pub animations: Vec<SkinAnimation>,
+    pub meshes: Vec<(renderer::Mesh, Option<renderer::Skin>, usize, usize)>,
+    pub materials: Vec<renderer::Material>,
+    pub instances: Vec<renderer::MeshInstances>,
+    pub animations: Vec<renderer::SkinAnimations>,
 }
 
 impl GltfModel {
@@ -63,7 +65,7 @@ impl GltfModel {
         let mut get_image_data = util::image_reader(&images);
         let mut make_texture = util::texture_builder(device, queue);
 
-        let materials: Vec<Material> = doc
+        let materials: Vec<renderer::Material> = doc
             .materials()
             .map(|material| {
                 let albedo = make_texture(
@@ -74,7 +76,11 @@ impl GltfModel {
                         .base_color_texture()
                         .map(|t| t.texture())
                         .and_then(&mut get_image_data)
-                        .ok_or_else(|| anyhow!("Missing base color texture"))?,
+                        .unwrap_or_else(|| {
+                            let mut buf = image::ImageBuffer::new(1, 1);
+                            buf.put_pixel(0, 0, image::Rgba::from([255, 255, 255, 255]));
+                            image::DynamicImage::ImageRgba8(buf)
+                        }),
                 )
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -109,7 +115,12 @@ impl GltfModel {
                 )
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
-                Ok(Material::new(device, &albedo, &normal, &metallic_roughness))
+                Ok(renderer::Material::new(
+                    device,
+                    &albedo,
+                    &normal,
+                    &metallic_roughness,
+                ))
             })
             .collect::<Result<_>>()?;
 
@@ -125,9 +136,23 @@ impl GltfModel {
             }
         }
 
-        let mut instances = doc
+        let instances: Vec<renderer::MeshInstances> = doc
             .meshes()
-            .map(|mesh| MeshInstances::new(device, meshes_transforms[mesh.index()].clone()))
+            .map(|mesh| {
+                let transforms = &meshes_transforms[mesh.index()];
+
+                renderer::MeshInstances::new(
+                    device,
+                    transforms
+                        .iter()
+                        .copied()
+                        .map(|transform| renderer::MeshInstance {
+                            transform,
+                            animation_frame: 0,
+                        })
+                        .collect(),
+                )
+            })
             .collect::<Vec<_>>();
 
         let primitives_count = doc
@@ -210,7 +235,7 @@ impl GltfModel {
                         (buffer, num_elements)
                     };
 
-                    let skin = {
+                    let mesh_skin = {
                         let joint_indices = primitive
                             .get(&gltf::Semantic::Joints(0))
                             .and_then(&mut get_accessor_data)
@@ -235,14 +260,14 @@ impl GltfModel {
 
                         joint_indices
                             .zip(joint_weights)
-                            .map(|(joint_indices, joint_weights)| Skin {
+                            .map(|(joint_indices, joint_weights)| renderer::Skin {
                                 joint_indices,
                                 joint_weights,
                             })
                     };
 
                     acc.push((
-                        Mesh {
+                        renderer::Mesh {
                             vertices,
                             normals,
                             tangents,
@@ -250,7 +275,7 @@ impl GltfModel {
                             indices,
                             num_elements,
                         },
-                        skin,
+                        mesh_skin,
                         primitive
                             .material()
                             .index()
@@ -263,17 +288,17 @@ impl GltfModel {
             },
         )?;
 
-        let animations: HashMap<String, Animation> = doc
+        let animations_samplers: HashMap<String, AnimationSampler> = doc
             .animations()
             .map(|animation| {
                 (
                     animation.name().unwrap().to_owned(),
-                    Animation::new(animation, &buffers),
+                    AnimationSampler::new(animation, &buffers),
                 )
             })
             .collect();
 
-        let animations_data = doc
+        let skin_animations = doc
             .skins()
             .map(|skin| {
                 // Find the node which use this skin
@@ -293,50 +318,46 @@ impl GltfModel {
                     .map(|a| glam::Mat4::from_cols_array_2d(&a))
                     .collect::<Vec<_>>();
 
-                // for (_, samplers) in &animations {}
-                let animation = &animations["run"];
+                let animations = animations_samplers
+                    .iter()
+                    .map(|(name, sampler)| {
+                        let (start, end) = sampler.get_time_range();
+                        let interval = std::time::Duration::from_secs_f32(1.0 / 60.0);
 
-                let (mut start, end) = animation.get_time_range();
-                let interval = std::time::Duration::from_secs_f32(1.0 / 60.0);
-                let mut texture_data = vec![];
-                while start < end {
-                    let animated_nodes_transforms = animation
-                        .get_nodes_transforms(&start, doc.default_scene().unwrap().nodes());
+                        let inv_mesh_transform = nodes_transforms[&mesh_node.index()].inverse();
 
-                    let mesh_transform = animated_nodes_transforms[&mesh_node.index()];
-                    let inv_mesh_transform = mesh_transform.inverse();
+                        let mut animation = renderer::SkinAnimation::new();
+                        let mut time = start;
 
-                    let mut frame_data = skin
-                        .joints()
-                        .zip(&inverse_bind_matrices)
-                        .map(|(node, &inverse_bind_matrix)| {
-                            let global_joint_transform = animated_nodes_transforms[&node.index()];
-                            inv_mesh_transform * global_joint_transform * inverse_bind_matrix
-                        })
-                        .collect::<Vec<_>>();
+                        while time <= end {
+                            let animated_nodes_transforms = sampler
+                                .get_nodes_transforms(&time, doc.default_scene().unwrap().nodes());
 
-                    texture_data.append(&mut frame_data);
+                            // let inv_mesh_transform =
+                            //     animated_nodes_transforms[&mesh_node.index()].inverse();
 
-                    start += interval;
-                }
+                            let frame = skin
+                                .joints()
+                                .zip(&inverse_bind_matrices)
+                                .map(|(node, &inverse_bind_matrix)| {
+                                    let global_joint_transform =
+                                        animated_nodes_transforms[&node.index()];
+                                    inv_mesh_transform
+                                        * global_joint_transform
+                                        * inverse_bind_matrix
+                                })
+                                .collect::<renderer::SkinAnimationFrame>();
 
-                let animated_nodes_transforms = animation.get_nodes_transforms(
-                    &std::time::Duration::from_secs_f32(0.0),
-                    doc.default_scene().unwrap().nodes(),
-                );
+                            animation.push(frame);
 
-                let mesh_transform = animated_nodes_transforms[&mesh_node.index()];
-                let inv_mesh_transform = mesh_transform.inverse();
+                            time += interval;
+                        }
 
-                instances[mesh_node.mesh().unwrap().index()].transforms[0] = mesh_transform;
-
-                skin.joints()
-                    .zip(&inverse_bind_matrices)
-                    .map(|(node, &inverse_bind_matrix)| {
-                        let global_joint_transform = animated_nodes_transforms[&node.index()];
-                        inv_mesh_transform * global_joint_transform * inverse_bind_matrix
+                        (name.clone(), animation)
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<HashMap<_, _>>();
+
+                renderer::SkinAnimations::new(device, queue, animations)
             })
             .collect::<Vec<_>>();
 
@@ -344,7 +365,7 @@ impl GltfModel {
             meshes,
             materials,
             instances,
-            animations: vec![SkinAnimation::new(device, animations_data)],
+            animations: skin_animations,
         })
     }
 }

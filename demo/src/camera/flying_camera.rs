@@ -25,7 +25,7 @@ impl Default for FlyingCamera {
         Self {
             transform: glam::Mat4::default(),
 
-            speed: 8.0,
+            speed: 16.0,
             sensitivity: 0.003,
 
             amount_left: 0.0,

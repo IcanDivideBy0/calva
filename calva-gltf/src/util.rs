@@ -1,22 +1,11 @@
 use renderer::{util::mipmap::MipmapGenerator, wgpu};
+use std::ops::Deref;
 
 pub fn buffer_reader<'a>(
     buffers: &'a [gltf::buffer::Data],
 ) -> impl Clone + Fn(gltf::Buffer) -> Option<&'a [u8]> {
-    |buffer: gltf::Buffer| buffers.get(buffer.index()).map(std::ops::Deref::deref)
+    |buffer: gltf::Buffer| buffers.get(buffer.index()).map(Deref::deref)
 }
-
-// fn get_accessor_data()
-// |accessor: gltf::Accessor| -> Option<&[u8]> {
-//     let view = accessor.view()?;
-
-//     let start = view.offset();
-//     let end = start + view.length();
-
-//     let buffer = buffers.get(view.buffer().index())?;
-
-//     Some(&buffer[start..end])
-// }
 
 pub fn image_reader(
     images: &[gltf::image::Data],

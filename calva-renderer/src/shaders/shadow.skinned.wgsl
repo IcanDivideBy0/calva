@@ -22,37 +22,44 @@ struct InstanceInput {
     [[location(4)]] normal_matrix_0: vec3<f32>;
     [[location(5)]] normal_matrix_1: vec3<f32>;
     [[location(6)]] normal_matrix_2: vec3<f32>;
+
+    [[location(7)]] animation_frame: u32;
 };
 
 struct VertexInput {
-    [[location(7)]] position: vec3<f32>;
-    [[location(8)]] joints: u32;
-    [[location(9)]] weights: vec4<f32>;
+    [[location( 8)]] position: vec3<f32>;
+    [[location( 9)]] joints: u32;
+    [[location(10)]] weights: vec4<f32>;
 };
 
-struct JointMatrices {
-    matrices: array<mat4x4<f32>, 100>;
-};
+[[group(1), binding(0)]] var animation: texture_2d_array<f32>;
 
-[[group(1), binding(0)]] var<uniform> joint_matrices: JointMatrices;
+fn get_joint_matrix(frame: u32, joint_index: u32) -> mat4x4<f32> {
+    let c = vec2<i32>(
+        i32(joint_index),
+        i32(frame),
+    );
 
-fn get_joint_matrix(joint_index: u32) -> mat4x4<f32> {
-    return joint_matrices.matrices[joint_index];
+    return mat4x4<f32>(
+        textureLoad(animation, c, 0, 0),
+        textureLoad(animation, c, 1, 0),
+        textureLoad(animation, c, 2, 0),
+        textureLoad(animation, c, 3, 0),
+    );
 }
 
-fn get_skinning_matrix(in: VertexInput) -> mat4x4<f32> {
-    let joints_x: u32 = in.joints >>  0u & 0xFFu;
-    let joints_y: u32 = in.joints >>  8u & 0xFFu;
-    let joints_z: u32 = in.joints >> 16u & 0xFFu;
-    let joints_w: u32 = in.joints >> 24u & 0xFFu;
+fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
+    let joints = vec4<u32>(
+        in.joints >>  0u & 0xFFu,
+        in.joints >>  8u & 0xFFu,
+        in.joints >> 16u & 0xFFu,
+        in.joints >> 24u & 0xFFu,
+    );
 
-    let m1 = get_joint_matrix(joints_x) * in.weights.x;
-    let m2 = get_joint_matrix(joints_y) * in.weights.y;
-    let m3 = get_joint_matrix(joints_z) * in.weights.z;
-    let m4 = get_joint_matrix(joints_w) * in.weights.w;
-
-    // TODO: fixme, weights are wrong ?
-    if (true) { return get_joint_matrix(joints_x); }
+    let m1 = get_joint_matrix(frame, joints.x) * in.weights.x;
+    let m2 = get_joint_matrix(frame, joints.y) * in.weights.y;
+    let m3 = get_joint_matrix(frame, joints.z) * in.weights.z;
+    let m4 = get_joint_matrix(frame, joints.w) * in.weights.w;
 
     return mat4x4<f32>(
         m1.x + m2.x + m3.x + m4.x,
@@ -68,7 +75,7 @@ fn vs_main(
     instance: InstanceInput,
     in: VertexInput,
 ) -> [[builtin(position)]] vec4<f32> {
-    let skinning_matrix = get_skinning_matrix(in);
+    let skinning_matrix = get_skinning_matrix(instance.animation_frame, in);
 
     let model_matrix = mat4x4<f32>(
         instance.model_matrix_0,

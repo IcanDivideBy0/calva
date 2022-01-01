@@ -1,4 +1,4 @@
-use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimation};
+use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimations};
 
 pub struct ShadowLight {
     shadows: ShadowLightDepth,
@@ -210,7 +210,7 @@ pub type DrawCallArgs<'a> = (
     &'a MeshInstances,
     &'a Mesh,
     Option<&'a Skin>,
-    Option<&'a SkinAnimation>,
+    Option<&'a SkinAnimations>,
 );
 
 struct ShadowLightDepth {
@@ -219,7 +219,9 @@ struct ShadowLightDepth {
     uniform_buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
+
+    simple_mesh_pipeline: wgpu::RenderPipeline,
+    skinned_mesh_pipeline: wgpu::RenderPipeline,
 
     blur: ShadowLightBlur,
 }
@@ -283,64 +285,120 @@ impl ShadowLightDepth {
             }],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("ShadowLight depth render pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout, SkinAnimation::bind_group_layout(device)],
-            push_constant_ranges: &[],
-        });
+        let simple_mesh_pipeline = {
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("ShadowLight[simple] depth shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.simple.wgsl").into()),
+            });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("ShadowLight depth shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.skinned.wgsl").into()),
-        });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ShadowLight[simple] depth render pipeline layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ShadowLight depth render pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[
-                    MeshInstances::LAYOUT,
-                    // Positions
-                    wgpu::VertexBufferLayout {
-                        array_stride: (std::mem::size_of::<f32>() * 3) as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![7 => Float32x3],
-                    },
-                    // Joints
-                    wgpu::VertexBufferLayout {
-                        array_stride: (std::mem::size_of::<u8>() * 4) as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![8 => Uint8x4],
-                    },
-                    // Weights
-                    wgpu::VertexBufferLayout {
-                        array_stride: (std::mem::size_of::<f32>() * 4) as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![9 => Float32x4],
-                    },
-                ],
-            },
-            fragment: None,
-            primitive: wgpu::PrimitiveState {
-                unclipped_depth: true,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: Self::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState {
-                    constant: 2, // corresponds to bilinear filtering
-                    slope_scale: 2.0,
-                    clamp: 0.0,
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ShadowLight[simple] depth render pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[
+                        MeshInstances::LAYOUT,
+                        // Positions
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                        },
+                    ],
                 },
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
-        });
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    unclipped_depth: true,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Self::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2, // corresponds to bilinear filtering
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
+            })
+        };
+
+        let skinned_mesh_pipeline = {
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("ShadowLight[skinned] depth shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("shaders/shadow.skinned.wgsl").into(),
+                ),
+            });
+
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ShadowLight[skinned] depth render pipeline layout"),
+                bind_group_layouts: &[
+                    &bind_group_layout,
+                    &device.create_bind_group_layout(SkinAnimations::DESC),
+                ],
+                push_constant_ranges: &[],
+            });
+
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ShadowLight[skinned] depth render pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[
+                        MeshInstances::LAYOUT,
+                        // Positions
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                        },
+                        // Joints
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<u32>()) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![9 => Uint32],
+                        },
+                        // Weights
+                        wgpu::VertexBufferLayout {
+                            array_stride: (std::mem::size_of::<f32>() * 4) as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![10 => Float32x4],
+                        },
+                    ],
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    unclipped_depth: true,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Self::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2, // corresponds to bilinear filtering
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
+            })
+        };
 
         let blur = ShadowLightBlur::new(device, size, &depth);
 
@@ -350,7 +408,9 @@ impl ShadowLightDepth {
             uniform_buffer,
             bind_group_layout,
             bind_group,
-            pipeline,
+
+            simple_mesh_pipeline,
+            skinned_mesh_pipeline,
 
             blur,
         }
@@ -381,23 +441,28 @@ impl ShadowLightDepth {
             }),
         });
 
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
-
         cb(
             &mut move |(instances, mesh, skin, animation): DrawCallArgs| {
+                rpass.set_pipeline(match skin {
+                    Some(_) => &self.skinned_mesh_pipeline,
+                    None => &self.simple_mesh_pipeline,
+                });
+
+                rpass.set_bind_group(0, &self.bind_group, &[]);
+
+                if let Some(animation) = animation {
+                    rpass.set_bind_group(1, &animation.bind_group, &[]);
+                }
+
                 rpass.set_vertex_buffer(0, instances.buffer.slice(..));
                 rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
 
-                rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-
                 if let Some(skin) = skin {
-                    rpass.set_bind_group(1, &animation.unwrap().bind_group, &[]);
-
                     rpass.set_vertex_buffer(2, skin.joint_indices.slice(..));
                     rpass.set_vertex_buffer(3, skin.joint_weights.slice(..));
                 }
 
+                rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
                 rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
             },
         );

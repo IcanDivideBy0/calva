@@ -9,7 +9,7 @@ mod mesh;
 mod point_light;
 mod renderer;
 mod shadow;
-mod skinning;
+mod skin;
 mod skybox;
 mod ssao;
 
@@ -18,11 +18,11 @@ pub use camera::CameraUniform;
 pub use config::{RendererConfig, RendererConfigData};
 pub use gbuffer::{DrawCallArgs, GeometryBuffer};
 pub use material::Material;
-pub use mesh::{Mesh, MeshInstances};
+pub use mesh::{Mesh, MeshInstance, MeshInstances};
 pub use point_light::{PointLight, PointLights};
 pub use renderer::{RenderContext, Renderer};
 pub use shadow::ShadowLight;
-pub use skinning::{Skin, SkinAnimation};
+pub use skin::{Skin, SkinAnimation, SkinAnimationFrame, SkinAnimations};
 pub use skybox::Skybox;
 pub use ssao::Ssao;
 

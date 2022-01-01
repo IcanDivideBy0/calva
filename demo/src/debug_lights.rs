@@ -86,7 +86,7 @@ impl DebugLights {
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("DebugLights shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/debug_lights.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("debug_lights.wgsl").into()),
             });
 
         let pipeline_layout =

@@ -5,19 +5,32 @@ use wgpu::util::DeviceExt;
 struct InstanceRaw {
     model: [f32; 16],
     normal: [f32; 9],
+    animation_frame: u32,
 }
 
 impl InstanceRaw {
-    fn new(model: glam::Mat4) -> Self {
+    fn new(instance: MeshInstance) -> Self {
+        let MeshInstance {
+            transform,
+            animation_frame,
+        } = instance;
+
         Self {
-            model: model.to_cols_array(),
-            normal: glam::Mat3::from_quat(glam::Quat::from_mat4(&model)).to_cols_array(),
+            model: transform.to_cols_array(),
+            normal: glam::Mat3::from_quat(glam::Quat::from_mat4(&transform)).to_cols_array(),
+            animation_frame,
         }
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct MeshInstance {
+    pub transform: glam::Mat4,
+    pub animation_frame: u32,
+}
+
 pub struct MeshInstances {
-    pub transforms: Vec<glam::Mat4>,
+    pub instances: Vec<MeshInstance>,
     pub buffer: wgpu::Buffer,
 }
 
@@ -38,10 +51,13 @@ impl MeshInstances {
             4 => Float32x3,
             5 => Float32x3,
             6 => Float32x3,
+
+            // Animation frame
+            7 => Uint32,
         ],
     };
 
-    pub fn new(device: &wgpu::Device, transforms: Vec<glam::Mat4>) -> Self {
+    pub fn new(device: &wgpu::Device, instances: Vec<MeshInstance>) -> Self {
         let data = [0u8; MeshInstances::SIZE * 10];
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -50,18 +66,26 @@ impl MeshInstances {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
-        Self { transforms, buffer }
+        Self { instances, buffer }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &MeshInstance> {
+        self.instances.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut MeshInstance> {
+        self.instances.iter_mut()
     }
 
     pub fn count(&self) -> u32 {
-        self.transforms.len() as u32
+        self.instances.len() as u32
     }
 
     pub fn write_buffer(&self, queue: &wgpu::Queue) {
         let data = self
-            .transforms
+            .instances
             .iter()
-            .map(|transform| InstanceRaw::new(*transform))
+            .map(|instance| InstanceRaw::new(*instance))
             .collect::<Vec<_>>();
 
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&data));
@@ -75,5 +99,6 @@ pub struct Mesh {
     pub tangents: wgpu::Buffer,
     pub uv0: wgpu::Buffer,
     pub indices: wgpu::Buffer,
+
     pub num_elements: u32,
 }
