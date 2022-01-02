@@ -60,7 +60,7 @@ impl Scene {
             .map(|_| PointLight {
                 // position: (get_random_vec3() * 2.0 - 1.0) * 5.0,
                 position: glam::vec3(0.0, 0.0, 1.0),
-                radius: 2.0,
+                radius: 12.0,
                 // color: get_random_vec3(),
                 color: glam::Vec3::ONE,
             })

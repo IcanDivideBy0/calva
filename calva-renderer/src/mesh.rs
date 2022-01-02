@@ -15,9 +15,11 @@ impl InstanceRaw {
             animation_frame,
         } = instance;
 
+        let normal_matrix = glam::Mat3::from_mat4(transform.inverse().transpose());
+
         Self {
             model: transform.to_cols_array(),
-            normal: glam::Mat3::from_quat(glam::Quat::from_mat4(&transform)).to_cols_array(),
+            normal: normal_matrix.to_cols_array(),
             animation_frame,
         }
     }

@@ -86,7 +86,7 @@ impl From<RendererConfigData> for MyApp {
             ambient_factor: data.ambient_factor,
 
             animations: vec![],
-            animation: "run".to_owned(),
+            animation: "idle".to_owned(),
         }
     }
 }

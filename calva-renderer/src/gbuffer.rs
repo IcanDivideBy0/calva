@@ -13,7 +13,7 @@ pub struct GeometryBuffer {
 }
 
 impl GeometryBuffer {
-    const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+    const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
     const RENDER_TARGETS: &'static [wgpu::ColorTargetState] = &[

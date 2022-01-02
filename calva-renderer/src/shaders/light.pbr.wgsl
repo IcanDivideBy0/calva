@@ -117,8 +117,8 @@ fn fs_main(
     let NdotL = max(dot(N, L), 0.0);
 
     let dist = distance(in.l_position, frag_pos_view);
-    // let attenuation = 1.0 - smoothStep(0.0, in.radius, dist);
-    let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
+    let attenuation = 1.0 - smoothStep(0.0, in.l_radius, dist);
+    // let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 
     let radiance = in.l_color * attenuation;
 
@@ -137,8 +137,8 @@ fn fs_main(
 
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    color = color / (color + 1.0);
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    // color = color / (color + 1.0);
+    // color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, 1.0);
 }

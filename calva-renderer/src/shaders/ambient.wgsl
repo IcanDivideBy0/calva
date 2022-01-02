@@ -36,5 +36,10 @@ fn fs_main(
 
     let diffuse = textureLoad(albedo, c, i32(msaa_sample)).rgb;
 
-    return vec4<f32>(vec3<f32>(config.ambient_factor * diffuse), 1.0);
+    var color = config.ambient_factor * diffuse;
+
+    // color = color / (color + 1.0);
+    // color = pow(color, vec3<f32>(1.0 / 2.2));
+
+    return vec4<f32>(color, 1.0);
 }
