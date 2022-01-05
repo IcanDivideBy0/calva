@@ -205,10 +205,27 @@ async fn main() -> Result<()> {
         &renderer,
         &mut std::fs::File::open("./demo/assets/plane.glb")?,
     )?;
+
     let mut zombie = calva::gltf::GltfModel::new(
         &renderer,
         &mut std::fs::File::open("./demo/assets/zombie.glb")?,
     )?;
+
+    for mut instances in zombie.instances.iter_mut() {
+        if let Some(instance) = instances.instances.get(0) {
+            instances.instances = zombie.animations[0]
+                .animations
+                .iter()
+                .enumerate()
+                .map(|(i, _)| calva::renderer::MeshInstance {
+                    transform: glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
+                        * instance.transform,
+                    animation_frame: 0,
+                })
+                .collect();
+        }
+    }
+
     my_app.animations = zombie.animations[0].animations.keys().cloned().collect();
 
     let start_time = Instant::now();
@@ -260,8 +277,10 @@ async fn main() -> Result<()> {
                     instances.write_buffer(&renderer.queue);
                 }
                 for instances in &mut zombie.instances {
-                    for instance in instances.iter_mut() {
-                        let (offset, length) = zombie.animations[0].animations[&my_app.animation];
+                    for (i, instance) in instances.iter_mut().enumerate() {
+                        let anim_name = my_app.animations[i].clone();
+
+                        let (offset, length) = zombie.animations[0].animations[&anim_name];
                         let current_frame = instance.animation_frame.saturating_sub(offset);
                         instance.animation_frame = offset + (current_frame + 1) % length;
                     }

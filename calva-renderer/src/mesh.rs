@@ -60,7 +60,7 @@ impl MeshInstances {
     };
 
     pub fn new(device: &wgpu::Device, instances: Vec<MeshInstance>) -> Self {
-        let data = [0u8; MeshInstances::SIZE * 10];
+        let data = [0u8; MeshInstances::SIZE * 100];
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("MeshInstances Buffer"),

@@ -13,25 +13,25 @@ macro_rules! secs {
     };
 }
 
-trait Lerp {
-    fn lerp(a: Self, b: Self, alpha: f32) -> Self;
+trait Interpolate {
+    fn interpolate(a: Self, b: Self, alpha: f32) -> Self;
 }
 
-impl Lerp for glam::Vec3 {
-    fn lerp(a: Self, b: Self, alpha: f32) -> Self {
+impl Interpolate for glam::Vec3 {
+    fn interpolate(a: Self, b: Self, alpha: f32) -> Self {
         glam::Vec3::lerp(a, b, alpha)
     }
 }
 
-impl Lerp for glam::Quat {
-    fn lerp(a: Self, b: Self, alpha: f32) -> Self {
+impl Interpolate for glam::Quat {
+    fn interpolate(a: Self, b: Self, alpha: f32) -> Self {
         glam::Quat::slerp(if glam::Quat::dot(a, b) < 0.0 { -a } else { a }, b, alpha)
     }
 }
 
 struct ChannelSampler<T>(BTreeMap<Duration, T>);
 
-impl<T: Lerp + Copy> ChannelSampler<T> {
+impl<T: Interpolate + Copy> ChannelSampler<T> {
     fn first(&self) -> (&Duration, &T) {
         self.0.range(..).next().unwrap()
     }
@@ -62,7 +62,7 @@ impl<T: Lerp + Copy> ChannelSampler<T> {
         let alpha = (time.as_secs_f32() - before.0.as_secs_f32())
             / (after.0.as_secs_f32() - before.0.as_secs_f32());
 
-        T::lerp(*before.1, *after.1, alpha)
+        T::interpolate(*before.1, *after.1, alpha)
     }
 
     pub fn get_time_range(&self) -> (Duration, Duration) {

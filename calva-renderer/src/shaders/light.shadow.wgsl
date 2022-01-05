@@ -140,7 +140,7 @@ fn fs_main(
     let F  = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
     let NDF = distribution_ggx(N, H, roughness);
-    let G   = geometry_smith(N, V, L, roughness); 
+    let G   = geometry_smith(N, V, L, roughness);
 
     let num      = NDF * G * F;
     let denom    = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;

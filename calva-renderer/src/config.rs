@@ -34,7 +34,7 @@ impl RendererConfig {
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Renderer config buffer"),
-            contents: bytemuck::cast_slice(&[data]),
+            contents: bytemuck::bytes_of(&data),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -71,7 +71,7 @@ impl RendererConfig {
     }
 
     pub(crate) fn update_buffer(&self, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.data]));
+        queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(&self.data));
     }
 }
 

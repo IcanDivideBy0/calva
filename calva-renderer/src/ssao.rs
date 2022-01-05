@@ -54,18 +54,15 @@ pub struct Ssao {
 impl Ssao {
     const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 
-    pub fn new(
-        Renderer {
+    pub fn new(renderer: &Renderer, normal: &wgpu::TextureView, depth: &wgpu::TextureView) -> Self {
+        let Renderer {
             device,
             surface_config,
             config,
             camera,
             ..
-        }: &Renderer,
+        } = renderer;
 
-        normal: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-    ) -> Self {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
@@ -87,7 +84,7 @@ impl Ssao {
 
         let random_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Ssao random data buffer"),
-            contents: bytemuck::cast_slice(&[SsaoUniform::new()]),
+            contents: bytemuck::bytes_of(&SsaoUniform::new()),
             usage: wgpu::BufferUsages::UNIFORM,
         });
 

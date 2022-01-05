@@ -63,7 +63,7 @@ impl CameraUniform {
         let raw = CameraUniformRaw::new(view, proj);
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&[raw]),
+            contents: bytemuck::bytes_of(&raw),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -90,6 +90,6 @@ impl CameraUniform {
 
     pub(crate) fn update_buffer(&self, queue: &wgpu::Queue) {
         let raw = CameraUniformRaw::new(self.view, self.proj);
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[raw]));
+        queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(&raw));
     }
 }

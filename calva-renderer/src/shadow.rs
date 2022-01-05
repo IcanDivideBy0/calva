@@ -422,11 +422,10 @@ impl ShadowLightDepth {
         light_dir: glam::Vec3,
         cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
-        ctx.renderer.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[ShadowLightUniform::new(&ctx.renderer.camera, light_dir)]),
-        );
+        let uniform = ShadowLightUniform::new(&ctx.renderer.camera, light_dir);
+        ctx.renderer
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ShadowLight depth pass"),
