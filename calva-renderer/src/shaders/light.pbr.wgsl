@@ -107,8 +107,8 @@ fn fs_main(
     let roughness = normal_roughness.a;
 
     let z = textureLoad(t_depth, c, i32(msaa_sample));
-    let frag_pos_view = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
-    let frag_pos_view = frag_pos_view.xyz / frag_pos_view.w;
+    let frag_pos_view4 = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
+    let frag_pos_view = frag_pos_view4.xyz / frag_pos_view4.w;
 
     let N = normal;
     let V = normalize(-frag_pos_view);

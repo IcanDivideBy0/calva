@@ -52,9 +52,9 @@ fn vs_main(
     );
 
     let view3 = mat3x3<f32>(
-        camera.view.x.xyz,
-        camera.view.y.xyz,
-        camera.view.z.xyz,
+        camera.view[0].xyz,
+        camera.view[1].xyz,
+        camera.view[2].xyz,
     );
     let normal_matrix = view3 * mat3x3<f32>(
         instance.normal_matrix_0,

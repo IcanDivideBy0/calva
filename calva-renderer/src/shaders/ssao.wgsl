@@ -26,7 +26,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
+fn vs_main([[builtin(vertex_index)]] vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -54,13 +54,13 @@ struct RandomData {
 [[stage(fragment)]]
 fn fs_main(
     [[builtin(sample_index)]] msaa_sample: u32,
-    in: VertexOutput
+    in: VertexOutput,
 ) -> [[location(0)]] f32 {
     let c = vec2<i32>(floor(in.position.xy));
 
     let frag_depth = textureLoad(t_depth, c, 0);
-    let frag_position = camera.inv_proj * vec4<f32>(in.ndc, frag_depth, 1.0);
-    let frag_position = frag_position.xyz / frag_position.w;
+    let frag_position4 = camera.inv_proj * vec4<f32>(in.ndc, frag_depth, 1.0);
+    let frag_position = frag_position4.xyz / frag_position4.w;
 
     let frag_normal = textureLoad(t_normal, c, 0).xyz;
     let random = vec3<f32>(random_data.noise[c.x & 3][c.y & 3], 0.0);

@@ -73,15 +73,15 @@ fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
     let m4 = get_joint_matrix(frame, joints.w) * in.weights.w;
 
     return mat4x4<f32>(
-        m1.x + m2.x + m3.x + m4.x,
-        m1.y + m2.y + m3.y + m4.y,
-        m1.z + m2.z + m3.z + m4.z,
-        m1.w + m2.w + m3.w + m4.w,
+        m1[0] + m2[0] + m3[0] + m4[0],
+        m1[1] + m2[1] + m3[1] + m4[1],
+        m1[2] + m2[2] + m3[2] + m4[2],
+        m1[3] + m2[3] + m3[3] + m4[3],
     );
 }
 
 fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
-    return mat3x3<f32>(m.x.xyz, m.y.xyz, m.z.xyz);
+    return mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
 }
 
 [[stage(vertex)]]

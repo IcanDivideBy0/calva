@@ -35,7 +35,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
+fn vs_main([[builtin(vertex_index)]] vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),

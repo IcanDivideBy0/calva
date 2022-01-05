@@ -19,7 +19,7 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
+fn vs_main([[builtin(vertex_index)]] vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -27,14 +27,14 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> VertexOutput {
 
     let clip = vec4<f32>(tc * 2.0 - 1.0, 1.0, 1.0);
 
-    var view_ray = camera.inv_proj * clip;
-    var view_ray = view_ray.xyz / view_ray.w;
+    var view_ray4 = camera.inv_proj * clip;
+    var view_ray = view_ray4.xyz / view_ray4.w;
 
     // Use rotation only
     let inv_view = mat3x3<f32>(
-        camera.inv_view.x.xyz,
-        camera.inv_view.y.xyz,
-        camera.inv_view.z.xyz,
+        camera.inv_view[0].xyz,
+        camera.inv_view[1].xyz,
+        camera.inv_view[2].xyz,
     );
     let view_dir = inv_view * view_ray; // world space
 
