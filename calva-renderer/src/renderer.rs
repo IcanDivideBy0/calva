@@ -219,23 +219,23 @@ impl Renderer {
     pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<(), wgpu::SurfaceError> {
         self.config.update_buffer(&self.queue);
 
-        let frame = self.surface.get_current_texture()?;
-        let frame_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
         let encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Renderer command encoder"),
             });
 
+        let frame = self.surface.get_current_texture()?;
+        let frame_view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
         let mut ctx = RenderContext {
             renderer: self,
 
+            encoder,
             view: &self.msaa,
             resolve_target: Some(&frame_view),
-            encoder,
         };
 
         cb(&mut ctx);

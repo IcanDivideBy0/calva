@@ -2,8 +2,7 @@ use crate::RenderContext;
 use crate::Renderer;
 
 pub struct Ambient {
-    bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
+    render_bundle: wgpu::RenderBundle,
 }
 
 impl Ambient {
@@ -29,15 +28,6 @@ impl Ambient {
             }],
         });
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Ambient bind group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(albedo),
-            }],
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Ambient pipeline layout"),
             bind_group_layouts: &[&config.bind_group_layout, &bind_group_layout],
@@ -49,10 +39,18 @@ impl Ambient {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ambient.wgsl").into()),
         });
 
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Ambient bind group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(albedo),
+            }],
+        });
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Ambient pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
@@ -76,43 +74,58 @@ impl Ambient {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Renderer::MULTISAMPLE_STATE,
+            multiview: None,
         });
 
-        Self {
-            bind_group,
-            pipeline,
-        }
+        let render_bundle = {
+            let mut encoder =
+                device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
+                    label: Some("Ambient render bundle encoder"),
+                    color_formats: &[surface_config.format],
+                    depth_stencil: Some(wgpu::RenderBundleDepthStencil {
+                        format: Renderer::DEPTH_FORMAT,
+                        depth_read_only: true,
+                        stencil_read_only: true,
+                    }),
+                    sample_count: Renderer::MULTISAMPLE_STATE.count,
+                    multiview: None,
+                });
+
+            encoder.set_pipeline(&pipeline);
+            encoder.set_bind_group(0, &renderer.config.bind_group, &[]);
+            encoder.set_bind_group(1, &bind_group, &[]);
+
+            encoder.draw(0..3, 0..1);
+
+            encoder.finish(&wgpu::RenderBundleDescriptor {
+                label: Some("Ambient render bundle"),
+            })
+        };
+
+        Self { render_bundle }
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
         ctx.encoder.push_debug_group("Ambient");
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Ambient render pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: ctx.view,
-                resolve_target: ctx.resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            }],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &ctx.renderer.depth_stencil,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
+        ctx.encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Ambient render pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: ctx.view,
+                    resolve_target: ctx.resolve_target,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &ctx.renderer.depth_stencil,
+                    depth_ops: None,
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-        });
-
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
-        rpass.set_bind_group(1, &self.bind_group, &[]);
-
-        rpass.draw(0..3, 0..1);
-        drop(rpass);
+            })
+            .execute_bundles(std::iter::once(&self.render_bundle));
 
         ctx.encoder.pop_debug_group();
     }

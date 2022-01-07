@@ -14,7 +14,7 @@ impl MipmapGenerator {
     pub fn new(device: &wgpu::Device) -> Self {
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("MipmapGenerator shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/mipmap.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("mipmap.wgsl").into()),
         });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {

@@ -1,10 +1,7 @@
 use anyhow::Result;
 use calva::{
     egui::EguiPass,
-    renderer::{
-        wgpu, Ambient, GeometryBuffer, PointLight, PointLights, Renderer, RendererConfigData,
-        ShadowLight, Skybox, Ssao,
-    },
+    renderer::{rpass, wgpu, PointLight, Renderer, RendererConfigData},
 };
 use std::time::{Duration, Instant};
 use winit::{
@@ -179,23 +176,23 @@ async fn main() -> Result<()> {
         (size, bytes)
     };
 
-    let mut gbuffer = GeometryBuffer::new(&renderer);
-    let mut skybox = Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
-    let mut ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic);
-    let mut shadows = ShadowLight::new(
+    let mut gbuffer = rpass::Geometry::new(&renderer);
+    let mut skybox = rpass::Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
+    let mut ambient = rpass::Ambient::new(&renderer, &gbuffer.albedo_metallic);
+    let mut shadows = rpass::ShadowLight::new(
         &renderer,
         &gbuffer.albedo_metallic,
         &gbuffer.normal_roughness,
         &gbuffer.depth,
     );
-    let mut point_lights = PointLights::new(
+    let mut point_lights = rpass::PointLights::new(
         &renderer,
         &gbuffer.albedo_metallic,
         &gbuffer.normal_roughness,
         &gbuffer.depth,
     );
     let mut debug_lights = DebugLights::new(&renderer);
-    let mut ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
+    let mut ssao = rpass::Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
 
     let mut my_app: MyApp = renderer.config.data.into();
     let mut egui = EguiPass::new(&renderer, &window);
@@ -236,23 +233,23 @@ async fn main() -> Result<()> {
             ($size: expr) => {{
                 renderer.resize($size);
 
-                gbuffer = GeometryBuffer::new(&renderer);
-                skybox = Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
-                ambient = Ambient::new(&renderer, &gbuffer.albedo_metallic);
-                shadows = ShadowLight::new(
+                gbuffer = rpass::Geometry::new(&renderer);
+                skybox = rpass::Skybox::new(&renderer, skybox_data.0, &skybox_data.1);
+                ambient = rpass::Ambient::new(&renderer, &gbuffer.albedo_metallic);
+                shadows = rpass::ShadowLight::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
                     &gbuffer.normal_roughness,
                     &gbuffer.depth,
                 );
-                point_lights = PointLights::new(
+                point_lights = rpass::PointLights::new(
                     &renderer,
                     &gbuffer.albedo_metallic,
                     &gbuffer.normal_roughness,
                     &gbuffer.depth,
                 );
                 debug_lights = DebugLights::new(&renderer);
-                ssao = Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
+                ssao = rpass::Ssao::new(&renderer, &gbuffer.normal_roughness, &gbuffer.depth);
 
                 camera.resize($size);
             }};

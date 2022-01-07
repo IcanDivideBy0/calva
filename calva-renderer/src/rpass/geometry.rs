@@ -1,6 +1,6 @@
 use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimations};
 
-pub struct GeometryBuffer {
+pub struct Geometry {
     pub albedo_metallic: wgpu::TextureView,
     pub normal_roughness: wgpu::TextureView,
     pub depth: wgpu::TextureView,
@@ -12,7 +12,7 @@ pub struct GeometryBuffer {
     skinned_mesh_pipeline: wgpu::RenderPipeline,
 }
 
-impl GeometryBuffer {
+impl Geometry {
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
@@ -89,7 +89,9 @@ impl GeometryBuffer {
         let simple_mesh_pipeline = {
             let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry[simple] shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.simple.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("shaders/geometry.simple.wgsl").into(),
+                ),
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -139,7 +141,7 @@ impl GeometryBuffer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: GeometryBuffer::RENDER_TARGETS,
+                    targets: Geometry::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     cull_mode: Some(wgpu::Face::Back),
@@ -159,7 +161,9 @@ impl GeometryBuffer {
         let skinned_mesh_pipeline = {
             let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry[skinned] shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.skinned.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("shaders/geometry.skinned.wgsl").into(),
+                ),
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -222,7 +226,7 @@ impl GeometryBuffer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: GeometryBuffer::RENDER_TARGETS,
+                    targets: Geometry::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     cull_mode: Some(wgpu::Face::Back),
@@ -257,10 +261,10 @@ impl GeometryBuffer {
         ctx: &'ctx mut RenderContext,
         cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
-        ctx.encoder.push_debug_group("GeometryBuffer");
+        ctx.encoder.push_debug_group("Geometry");
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("GeometryBuffer render pass"),
+            label: Some("Geometry render pass"),
             color_attachments: &[
                 wgpu::RenderPassColorAttachment {
                     view: &self.albedo_metallic,

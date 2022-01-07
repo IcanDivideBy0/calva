@@ -1,37 +1,43 @@
 use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimations};
 
+pub type DrawCallArgs<'a> = (
+    &'a MeshInstances,
+    &'a Mesh,
+    Option<&'a Skin>,
+    Option<&'a SkinAnimations>,
+);
+
 pub struct ShadowLight {
     shadows: ShadowLightDepth,
-    bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
+    render_bundle: wgpu::RenderBundle,
 }
 
 impl ShadowLight {
     pub fn new(
-        Renderer {
+        renderer: &Renderer,
+        albedo_metallic: &wgpu::TextureView,
+        normal_roughness: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+    ) -> Self {
+        let Renderer {
             device,
             surface_config,
             config,
             camera,
             ..
-        }: &Renderer,
+        } = renderer;
 
-        albedo_metallic: &wgpu::TextureView,
-        normal_roughness: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-    ) -> Self {
         let shadows = ShadowLightDepth::new(device);
 
         let shadows_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
-            // compare: Some(wgpu::CompareFunction::Less),
             ..Default::default()
         });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("ShadowLight shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/light.shadow.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -163,10 +169,32 @@ impl ShadowLight {
             multisample: Renderer::MULTISAMPLE_STATE,
         });
 
+        let render_bundle = {
+            let mut encoder =
+                device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
+                    label: Some("ShadowLight render bundle encoder"),
+                    color_formats: &[surface_config.format],
+                    depth_stencil: None,
+                    sample_count: Renderer::MULTISAMPLE_STATE.count,
+                    multiview: None,
+                });
+
+            encoder.set_pipeline(&pipeline);
+            encoder.set_bind_group(0, &config.bind_group, &[]);
+            encoder.set_bind_group(1, &camera.bind_group, &[]);
+            encoder.set_bind_group(2, &shadows.bind_group, &[]);
+            encoder.set_bind_group(3, &bind_group, &[]);
+
+            encoder.draw(0..3, 0..1);
+
+            encoder.finish(&wgpu::RenderBundleDescriptor {
+                label: Some("ShadowLight render bundle"),
+            })
+        };
+
         Self {
             shadows,
-            bind_group,
-            pipeline,
+            render_bundle,
         }
     }
 
@@ -180,38 +208,24 @@ impl ShadowLight {
 
         self.shadows.render(ctx, direction, cb);
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("ShadowLight lighting pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: ctx.view,
-                resolve_target: ctx.resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            }],
-            depth_stencil_attachment: None,
-        });
-
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.renderer.config.bind_group, &[]);
-        rpass.set_bind_group(1, &ctx.renderer.camera.bind_group, &[]);
-        rpass.set_bind_group(2, &self.shadows.bind_group, &[]);
-        rpass.set_bind_group(3, &self.bind_group, &[]);
-
-        rpass.draw(0..3, 0..1);
-        drop(rpass);
+        ctx.encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ShadowLight lighting pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: ctx.view,
+                    resolve_target: ctx.resolve_target,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: None,
+            })
+            .execute_bundles(std::iter::once(&self.render_bundle));
 
         ctx.encoder.pop_debug_group();
     }
 }
-
-pub type DrawCallArgs<'a> = (
-    &'a MeshInstances,
-    &'a Mesh,
-    Option<&'a Skin>,
-    Option<&'a SkinAnimations>,
-);
 
 struct ShadowLightDepth {
     depth: wgpu::TextureView,
@@ -223,7 +237,7 @@ struct ShadowLightDepth {
     simple_mesh_pipeline: wgpu::RenderPipeline,
     skinned_mesh_pipeline: wgpu::RenderPipeline,
 
-    blur: ShadowLightBlur,
+    blur: blur::ShadowLightBlur,
 }
 
 impl ShadowLightDepth {
@@ -400,7 +414,7 @@ impl ShadowLightDepth {
             })
         };
 
-        let blur = ShadowLightBlur::new(device, size, &depth);
+        let blur = blur::ShadowLightBlur::new(device, size, &depth);
 
         Self {
             depth,
@@ -602,194 +616,184 @@ impl ShadowLightUniform {
     }
 }
 
-struct ShadowLightBlur {
-    depth: wgpu::TextureView,
+mod blur {
+    use super::ShadowLightDepth;
+    use crate::RenderContext;
 
-    h_bind_group: wgpu::BindGroup,
-    h_pipeline: wgpu::RenderPipeline,
+    enum Direction {
+        Horizontal,
+        Vertical,
+    }
 
-    v_bind_group: wgpu::BindGroup,
-    v_pipeline: wgpu::RenderPipeline,
-}
-
-impl ShadowLightBlur {
-    fn new(device: &wgpu::Device, size: wgpu::Extent3d, output: &wgpu::TextureView) -> Self {
-        let depth = device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("ShadowLight blur depth temp texture"),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: ShadowLightDepth::DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+    impl std::fmt::Display for Direction {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                Direction::Horizontal => "horizontal",
+                Direction::Vertical => "vertical",
             })
-            .create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                array_layer_count: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
-                ..Default::default()
-            });
-
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("ShadowLight blur shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.blur.wgsl").into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ShadowLight blur bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    sample_type: wgpu::TextureSampleType::Depth,
-                },
-                count: None,
-            }],
-        });
-
-        let (h_bind_group, h_pipeline) = {
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ShadowLight blur horizontal bind group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(output),
-                }],
-            });
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ShadowLight blur horizontal pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ShadowLight blur horizontal pipeline"),
-                layout: Some(&pipeline_layout),
-                multiview: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main_horizontal",
-                    targets: &[],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: ShadowLightDepth::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Always,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-            });
-
-            (bind_group, pipeline)
-        };
-
-        let (v_bind_group, v_pipeline) = {
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ShadowLight blur vertical bind group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&depth),
-                }],
-            });
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ShadowLight blur vertical pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ShadowLight blur vertical pipeline"),
-                layout: Some(&pipeline_layout),
-                multiview: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main_vertical",
-                    targets: &[],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: ShadowLightDepth::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Always,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-            });
-
-            (bind_group, pipeline)
-        };
-
-        Self {
-            depth,
-
-            h_bind_group,
-            h_pipeline,
-
-            v_bind_group,
-            v_pipeline,
         }
     }
 
-    fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
-        // horizontal pass
-        {
-            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ShadowLight blur horizontal pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
+    pub struct ShadowLightBlur {
+        temp: wgpu::TextureView,
+
+        h_render_bundle: wgpu::RenderBundle,
+        v_render_bundle: wgpu::RenderBundle,
+    }
+
+    impl ShadowLightBlur {
+        pub fn new(
+            device: &wgpu::Device,
+            size: wgpu::Extent3d,
+            output: &wgpu::TextureView,
+        ) -> Self {
+            let temp = device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("ShadowLightBlur temp texture"),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: ShadowLightDepth::DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                })
+                .create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    array_layer_count: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
+                    ..Default::default()
+                });
+
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("ShadowLightBlur shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.blur.wgsl").into()),
             });
 
-            rpass.set_pipeline(&self.h_pipeline);
-            rpass.set_bind_group(0, &self.h_bind_group, &[]);
+            let bind_group_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("ShadowLightBlur bind group layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            sample_type: wgpu::TextureSampleType::Depth,
+                        },
+                        count: None,
+                    }],
+                });
 
-            rpass.draw(0..3, 0..1);
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ShadowLightBlur pipeline layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+            let make_render_bundle = |direction: Direction| {
+                let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(format!("ShadowLightBlur {} bind group", direction).as_str()),
+                    layout: &bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(match direction {
+                            Direction::Horizontal => output,
+                            Direction::Vertical => &temp,
+                        }),
+                    }],
+                });
+
+                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(format!("ShadowLightBlur {} pipeline", direction).as_str()),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: "vs_main",
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: format!("fs_main_{}", direction).as_str(),
+                        targets: &[],
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: ShadowLightDepth::DEPTH_FORMAT,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Always,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
+                    }),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
+                });
+
+                let mut encoder =
+                    device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
+                        label: Some(
+                            format!("ShadowLightBlur {} render bundle encoder", direction).as_str(),
+                        ),
+                        color_formats: &[],
+                        depth_stencil: Some(wgpu::RenderBundleDepthStencil {
+                            format: ShadowLightDepth::DEPTH_FORMAT,
+                            depth_read_only: false,
+                            stencil_read_only: false,
+                        }),
+                        sample_count: 1,
+                        multiview: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
+                    });
+
+                encoder.set_pipeline(&pipeline);
+                encoder.set_bind_group(0, &bind_group, &[]);
+
+                encoder.draw(0..3, 0..1);
+
+                encoder.finish(&wgpu::RenderBundleDescriptor {
+                    label: Some(format!("ShadowLightBlur {} render bundle", direction).as_str()),
+                })
+            };
+
+            let h_render_bundle = make_render_bundle(Direction::Horizontal);
+            let v_render_bundle = make_render_bundle(Direction::Vertical);
+
+            Self {
+                temp,
+
+                h_render_bundle,
+                v_render_bundle,
+            }
         }
 
-        // vertical pass
-        {
-            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ShadowLight blur vertical pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: output,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+        pub fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
+            ctx.encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("ShadowLightBlur horizontal pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.temp,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: true,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-            });
+                })
+                .execute_bundles(std::iter::once(&self.h_render_bundle));
 
-            rpass.set_pipeline(&self.v_pipeline);
-            rpass.set_bind_group(0, &self.v_bind_group, &[]);
-
-            rpass.draw(0..3, 0..1);
+            ctx.encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("ShadowLightBlur vertical pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: output,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    }),
+                })
+                .execute_bundles(std::iter::once(&self.v_render_bundle));
         }
     }
 }

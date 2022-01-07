@@ -3,7 +3,7 @@
 //
 
 [[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] vec4<f32> {
+fn vs_main([[builtin(vertex_index)]] vertex_index: u32) -> [[builtin(position)]] vec4<f32> {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -23,14 +23,6 @@ fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
 
     var result: f32 = 0.0;
 
-    // result = result + textureLoad(input, c + vec2<i32>(-2) * direction, 0).r;
-    // result = result + textureLoad(input, c + vec2<i32>(-1) * direction, 0).r;
-    // result = result + textureLoad(input, c + vec2<i32>( 0) * direction, 0).r;
-    // result = result + textureLoad(input, c + vec2<i32>( 1) * direction, 0).r;
-    // result = result + textureLoad(input, c + vec2<i32>(-2) * direction, 0).r;
-
-    // return result / 5.0;
-    
     result = result + textureLoad(input, c + vec2<i32>(-3) * direction, 0).r * ( 1.0 / 64.0);
     result = result + textureLoad(input, c + vec2<i32>(-2) * direction, 0).r * ( 6.0 / 64.0);
     result = result + textureLoad(input, c + vec2<i32>(-1) * direction, 0).r * (15.0 / 64.0);

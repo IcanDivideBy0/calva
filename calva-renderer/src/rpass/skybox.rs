@@ -4,8 +4,7 @@ use crate::RenderContext;
 use crate::Renderer;
 
 pub struct Skybox {
-    bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
+    render_bundle: wgpu::RenderBundle,
 }
 
 impl Skybox {
@@ -89,15 +88,15 @@ impl Skybox {
             ],
         });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("Skybox shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/skybox.wgsl").into()),
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox render pipeline layout"),
             bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
             push_constant_ranges: &[],
+        });
+
+        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Skybox shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/skybox.wgsl").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -129,41 +128,55 @@ impl Skybox {
             multisample: Renderer::MULTISAMPLE_STATE,
         });
 
-        Self {
-            bind_group,
-            pipeline,
-        }
+        let render_bundle = {
+            let mut encoder =
+                device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
+                    label: Some("Skybox render bundle encoder"),
+                    color_formats: &[surface_config.format],
+                    depth_stencil: Some(wgpu::RenderBundleDepthStencil {
+                        format: Renderer::DEPTH_FORMAT,
+                        depth_read_only: true,
+                        stencil_read_only: true,
+                    }),
+                    sample_count: Renderer::MULTISAMPLE_STATE.count,
+                    multiview: None,
+                });
+
+            encoder.set_pipeline(&pipeline);
+            encoder.set_bind_group(0, &renderer.camera.bind_group, &[]);
+            encoder.set_bind_group(1, &bind_group, &[]);
+
+            encoder.draw(0..3, 0..1);
+
+            encoder.finish(&wgpu::RenderBundleDescriptor {
+                label: Some("Skybox render bundle"),
+            })
+        };
+
+        Self { render_bundle }
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
         ctx.encoder.push_debug_group("Skybox");
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Skybox render pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: ctx.view,
-                resolve_target: ctx.resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: true,
-                },
-            }],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &ctx.renderer.depth_stencil,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
+        ctx.encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Skybox render pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: ctx.view,
+                    resolve_target: ctx.resolve_target,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &ctx.renderer.depth_stencil,
+                    depth_ops: None,
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-        });
-
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
-        rpass.set_bind_group(1, &self.bind_group, &[]);
-
-        rpass.draw(0..3, 0..1);
-        drop(rpass);
+            })
+            .execute_bundles(std::iter::once(&self.render_bundle));
 
         ctx.encoder.pop_debug_group();
     }
