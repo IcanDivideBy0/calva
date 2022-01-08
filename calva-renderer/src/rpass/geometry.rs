@@ -1,4 +1,7 @@
-use crate::{Material, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimations};
+use crate::{
+    Instance, Material, Mesh, MeshInstance, MeshInstances, RenderContext, Renderer, Skin,
+    SkinAnimationInstance, SkinAnimationInstances, SkinAnimations,
+};
 
 pub struct Geometry {
     pub albedo_metallic: wgpu::TextureView,
@@ -111,7 +114,7 @@ impl Geometry {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        MeshInstances::LAYOUT,
+                        MeshInstance::LAYOUT,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
@@ -184,7 +187,8 @@ impl Geometry {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        MeshInstances::LAYOUT,
+                        MeshInstance::LAYOUT,
+                        SkinAnimationInstance::LAYOUT,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
@@ -294,7 +298,7 @@ impl Geometry {
         });
 
         cb(
-            &mut |(instances, mesh, material, skin, animation): DrawCallArgs| {
+            &mut |(mesh_instances, mesh, material, skin, animation_instances, animation): DrawCallArgs| {
                 rpass.set_pipeline(match skin {
                     Some(_) => &self.skinned_mesh_pipeline,
                     None => &self.simple_mesh_pipeline,
@@ -307,19 +311,31 @@ impl Geometry {
                     rpass.set_bind_group(2, &animation.bind_group, &[]);
                 }
 
-                rpass.set_vertex_buffer(0, instances.buffer.slice(..));
-                rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
-                rpass.set_vertex_buffer(2, mesh.normals.slice(..));
-                rpass.set_vertex_buffer(3, mesh.tangents.slice(..));
-                rpass.set_vertex_buffer(4, mesh.uv0.slice(..));
+                let mut idx_iter = 0..;
+                macro_rules! idx {
+                    () => {
+                        idx_iter.next().unwrap()
+                    };
+                }
+
+
+                rpass.set_vertex_buffer(idx!(), mesh_instances.buffer.slice(..));
+                if let Some(animation_instances) = animation_instances {
+                    rpass.set_vertex_buffer(idx!(), animation_instances.buffer.slice(..));
+                }
+
+                rpass.set_vertex_buffer(idx!(), mesh.vertices.slice(..));
+                rpass.set_vertex_buffer(idx!(), mesh.normals.slice(..));
+                rpass.set_vertex_buffer(idx!(), mesh.tangents.slice(..));
+                rpass.set_vertex_buffer(idx!(), mesh.uv0.slice(..));
 
                 if let Some(skin) = skin {
-                    rpass.set_vertex_buffer(5, skin.joint_indices.slice(..));
-                    rpass.set_vertex_buffer(6, skin.joint_weights.slice(..));
+                    rpass.set_vertex_buffer(idx!(), skin.joint_indices.slice(..));
+                    rpass.set_vertex_buffer(idx!(), skin.joint_weights.slice(..));
                 }
 
                 rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-                rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
+                rpass.draw_indexed(0..mesh.num_elements, 0, 0..mesh_instances.count());
             },
         );
 
@@ -340,5 +356,6 @@ pub type DrawCallArgs<'a> = (
     &'a Mesh,
     &'a Material,
     Option<&'a Skin>,
+    Option<&'a SkinAnimationInstances>,
     Option<&'a SkinAnimations>,
 );

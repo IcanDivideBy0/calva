@@ -38,7 +38,10 @@ fn traverse_nodes<'a>(
 pub struct GltfModel {
     pub meshes: Vec<(renderer::Mesh, Option<renderer::Skin>, usize, usize)>,
     pub materials: Vec<renderer::Material>,
-    pub instances: Vec<renderer::MeshInstances>,
+    pub instances: Vec<(
+        renderer::Instances<renderer::MeshInstance>,
+        Option<renderer::Instances<renderer::SkinAnimationInstance>>,
+    )>,
     pub animations: Vec<renderer::SkinAnimations>,
 }
 
@@ -129,31 +132,29 @@ impl GltfModel {
             traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut nodes_transforms);
         }
 
-        let mut meshes_transforms = vec![Vec::new(); doc.meshes().len()];
+        use renderer::{
+            Instances, MeshInstance, MeshInstances, SkinAnimationInstance, SkinAnimationInstances,
+        };
+
+        let mut instances: Vec<(MeshInstances, Option<SkinAnimationInstances>)> = doc
+            .meshes()
+            .map(|_| (Instances::new(device), None))
+            .collect();
+
         for node in doc.nodes() {
             if let Some(mesh) = node.mesh() {
-                meshes_transforms[mesh.index()].push(nodes_transforms[&node.index()])
+                instances[mesh.index()]
+                    .0
+                    .push(MeshInstance::from(&nodes_transforms[&node.index()]));
+
+                if node.skin().is_some() {
+                    instances[mesh.index()]
+                        .1
+                        .get_or_insert_with(|| Instances::new(device))
+                        .push(SkinAnimationInstance { frame: 0 });
+                }
             }
         }
-
-        let instances: Vec<renderer::MeshInstances> = doc
-            .meshes()
-            .map(|mesh| {
-                let transforms = &meshes_transforms[mesh.index()];
-
-                renderer::MeshInstances::new(
-                    device,
-                    transforms
-                        .iter()
-                        .copied()
-                        .map(|transform| renderer::MeshInstance {
-                            transform,
-                            animation_frame: 0,
-                        })
-                        .collect(),
-                )
-            })
-            .collect::<Vec<_>>();
 
         let primitives_count = doc
             .meshes()

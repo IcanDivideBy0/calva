@@ -2,44 +2,14 @@ use wgpu::util::DeviceExt;
 
 use crate::{util::icosphere::Icosphere, PointLight, RenderContext, Renderer};
 
-struct PointLightMesh {
-    vertices: wgpu::Buffer,
-    indices: wgpu::Buffer,
-    num_elements: u32,
-}
-
-impl PointLightMesh {
-    pub fn new(device: &wgpu::Device) -> Self {
-        let icosphere = Icosphere::new(1);
-
-        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("PointLightMesh vertices buffer"),
-            contents: bytemuck::cast_slice(&icosphere.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("PointLightMesh indices buffer"),
-            contents: bytemuck::cast_slice(&icosphere.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        Self {
-            vertices,
-            indices,
-            num_elements: icosphere.count,
-        }
-    }
-}
-
 pub struct PointLights {
+    draw_indirect: wgpu::util::DrawIndexedIndirect,
+    draw_indirect_buffer: wgpu::Buffer,
+
     instances_buffer: wgpu::Buffer,
-    mesh: PointLightMesh,
 
-    stencil_pipeline: wgpu::RenderPipeline,
-
-    lighting_bind_group: wgpu::BindGroup,
-    lighting_pipeline: wgpu::RenderPipeline,
+    stencil_render_bundle: wgpu::RenderBundle,
+    lighting_render_bundle: wgpu::RenderBundle,
 }
 
 impl PointLights {
@@ -58,13 +28,21 @@ impl PointLights {
             ..
         } = renderer;
 
-        let instances_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("PointLights instances buffer"),
-            contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        let icosphere = Icosphere::new(1);
+
+        let vertices_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLights mesh vertices buffer"),
+            contents: bytemuck::cast_slice(&icosphere.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let mesh = PointLightMesh::new(device);
+        let indices_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLights mesh indices buffer"),
+            contents: bytemuck::cast_slice(&icosphere.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let vertex_count = icosphere.count;
 
         let vertex_buffers_layout = [
             PointLight::DESC,
@@ -75,27 +53,42 @@ impl PointLights {
             },
         ];
 
-        let stencil_pipeline = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("PointLights stencil shader"),
-                source: wgpu::ShaderSource::Wgsl(
-                    include_str!("shaders/point_lights.stencil.wgsl").into(),
-                ),
-            });
+        let draw_indirect = wgpu::util::DrawIndexedIndirect {
+            vertex_count,
+            ..Default::default()
+        };
 
+        let draw_indirect_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLights draw indirect buffer"),
+            contents: draw_indirect.as_bytes(),
+            usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let instances_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("PointLights instances buffer"),
+            contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("PointLights shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/point_lights.wgsl").into()),
+        });
+
+        let stencil_render_bundle = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights stencil pipeline layout"),
                 bind_group_layouts: &[&camera.bind_group_layout],
                 push_constant_ranges: &[],
             });
 
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("PointLights stencil pipeline"),
                 layout: Some(&pipeline_layout),
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: "vs_main_stencil",
                     buffers: &vertex_buffers_layout,
                 },
                 fragment: None,
@@ -123,15 +116,36 @@ impl PointLights {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: Renderer::MULTISAMPLE_STATE,
+            });
+
+            let mut encoder =
+                device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
+                    label: Some("PointLights stencil render bundle encoder"),
+                    color_formats: &[],
+                    depth_stencil: Some(wgpu::RenderBundleDepthStencil {
+                        format: Renderer::DEPTH_FORMAT,
+                        depth_read_only: true,
+                        stencil_read_only: false,
+                    }),
+                    sample_count: Renderer::MULTISAMPLE_STATE.count,
+                    multiview: None,
+                });
+
+            encoder.set_pipeline(&pipeline);
+            encoder.set_bind_group(0, &camera.bind_group, &[]);
+
+            encoder.set_vertex_buffer(0, instances_buffer.slice(..));
+            encoder.set_vertex_buffer(1, vertices_buffer.slice(..));
+            encoder.set_index_buffer(indices_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            encoder.draw_indexed_indirect(&draw_indirect_buffer, 0);
+
+            encoder.finish(&wgpu::RenderBundleDescriptor {
+                label: Some("PointLights stencil render bundle"),
             })
         };
 
-        let (lighting_bind_group, lighting_pipeline) = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("PointLights lighting shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/point_lights.wgsl").into()),
-            });
-
+        let lighting_render_bundle = {
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("PointLights lighting bind group layout"),
@@ -200,15 +214,14 @@ impl PointLights {
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("PointLights lighting pipeline"),
                 layout: Some(&pipeline_layout),
-                multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: "vs_main_lighting",
                     buffers: &vertex_buffers_layout,
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: "fs_main_lighting",
                     targets: &[wgpu::ColorTargetState {
                         format: surface_config.format,
                         blend: Some(wgpu::BlendState {
@@ -253,60 +266,81 @@ impl PointLights {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: Renderer::MULTISAMPLE_STATE,
+                multiview: None,
             });
 
-            (bind_group, pipeline)
+            let mut encoder =
+                device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
+                    label: Some("PointLights lighting render bundle encoder"),
+                    color_formats: &[surface_config.format],
+                    depth_stencil: Some(wgpu::RenderBundleDepthStencil {
+                        format: Renderer::DEPTH_FORMAT,
+                        depth_read_only: true,
+                        stencil_read_only: true,
+                    }),
+                    sample_count: Renderer::MULTISAMPLE_STATE.count,
+                    multiview: None,
+                });
+
+            encoder.set_pipeline(&pipeline);
+            encoder.set_bind_group(0, &camera.bind_group, &[]);
+            encoder.set_bind_group(1, &bind_group, &[]);
+
+            encoder.set_vertex_buffer(0, instances_buffer.slice(..));
+            encoder.set_vertex_buffer(1, vertices_buffer.slice(..));
+            encoder.set_index_buffer(indices_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            encoder.draw_indexed_indirect(&draw_indirect_buffer, 0);
+
+            encoder.finish(&wgpu::RenderBundleDescriptor {
+                label: Some("PointLights lighting render bundle"),
+            })
         };
 
         Self {
+            draw_indirect,
+            draw_indirect_buffer,
             instances_buffer,
-            mesh,
 
-            stencil_pipeline,
-
-            lighting_bind_group,
-            lighting_pipeline,
+            stencil_render_bundle,
+            lighting_render_bundle,
         }
     }
 
     pub fn render(&self, ctx: &mut RenderContext, lights: &[PointLight]) {
         ctx.encoder.push_debug_group("PointLights");
 
+        ctx.renderer.queue.write_buffer(
+            &self.draw_indirect_buffer,
+            0,
+            wgpu::util::DrawIndexedIndirect {
+                instance_count: lights.len() as u32,
+                ..self.draw_indirect
+            }
+            .as_bytes(),
+        );
+
         ctx.renderer
             .queue
             .write_buffer(&self.instances_buffer, 0, bytemuck::cast_slice(lights));
 
-        // Stencil pass
-        {
-            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        ctx.encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights stencil pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &ctx.renderer.depth_stencil,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    }),
+                    depth_ops: None,
                     stencil_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(0),
                         store: true,
                     }),
                 }),
-            });
+            })
+            .execute_bundles(std::iter::once(&self.stencil_render_bundle));
 
-            rpass.set_pipeline(&self.stencil_pipeline);
-            rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
-
-            rpass.set_vertex_buffer(0, self.instances_buffer.slice(..));
-            rpass.set_vertex_buffer(1, self.mesh.vertices.slice(..));
-            rpass.set_index_buffer(self.mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-
-            rpass.draw_indexed(0..self.mesh.num_elements, 0, 0..lights.len() as u32);
-        }
-
-        // lighting pass
-        {
-            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        ctx.encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights lighting pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: ctx.view,
@@ -318,27 +352,11 @@ impl PointLights {
                 }],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &ctx.renderer.depth_stencil,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    }),
-                    stencil_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    }),
+                    depth_ops: None,
+                    stencil_ops: None,
                 }),
-            });
-
-            rpass.set_pipeline(&self.lighting_pipeline);
-            rpass.set_bind_group(0, &ctx.renderer.camera.bind_group, &[]);
-            rpass.set_bind_group(1, &self.lighting_bind_group, &[]);
-
-            rpass.set_vertex_buffer(0, self.instances_buffer.slice(..));
-            rpass.set_vertex_buffer(1, self.mesh.vertices.slice(..));
-            rpass.set_index_buffer(self.mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-
-            rpass.draw_indexed(0..self.mesh.num_elements, 0, 0..lights.len() as u32);
-        }
+            })
+            .execute_bundles(std::iter::once(&self.lighting_render_bundle));
 
         ctx.encoder.pop_debug_group();
     }

@@ -8,10 +8,6 @@ struct Camera {
 
 [[group(0), binding(0)]] var<uniform> camera: Camera;
 
-//
-// Vertex shader
-//
-
 struct InstanceInput {
     [[location(0)]] position: vec3<f32>;
     [[location(1)]] radius: f32;
@@ -21,6 +17,30 @@ struct InstanceInput {
 struct VertexInput {
     [[location(3)]] position: vec3<f32>;
 };
+
+fn get_clip_pos(
+    instance: InstanceInput,
+    in: VertexInput,
+) -> vec4<f32> {
+    let world_pos = 1.1 * in.position * instance.radius + instance.position;
+    return camera.view_proj * vec4<f32>(world_pos, 1.0);
+}
+
+//
+// Stencil pass
+//
+
+[[stage(vertex)]]
+fn vs_main_stencil(
+    instance: InstanceInput,
+    in: VertexInput,
+) -> [[builtin(position)]] vec4<f32> {
+    return get_clip_pos(instance, in);
+}
+
+//
+// Lighting pass
+//
 
 struct VertexOutput {
     [[builtin(position)]] position: vec4<f32>;
@@ -32,12 +52,11 @@ struct VertexOutput {
 };
 
 [[stage(vertex)]]
-fn vs_main(
+fn vs_main_lighting(
     instance: InstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
-    let world_pos = 1.1 * in.position * instance.radius + instance.position;
-    let clip_pos = camera.proj * camera.view * vec4<f32>(world_pos, 1.0);
+    let clip_pos = get_clip_pos(instance, in);
 
     return VertexOutput (
         clip_pos,
@@ -92,7 +111,7 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
 }
 
 [[stage(fragment)]]
-fn fs_main(
+fn fs_main_lighting(
     [[builtin(sample_index)]] msaa_sample: u32,
     in: VertexOutput,
 ) -> [[location(0)]] vec4<f32> {

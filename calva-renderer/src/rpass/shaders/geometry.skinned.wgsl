@@ -21,8 +21,10 @@ struct InstanceInput {
     [[location(4)]] normal_matrix_0: vec3<f32>;
     [[location(5)]] normal_matrix_1: vec3<f32>;
     [[location(6)]] normal_matrix_2: vec3<f32>;
+};
 
-    [[location(7)]] animation_frame: u32;
+struct SkinAnimationInstanceInput {
+    [[location(7)]] frame: u32;
 };
 
 struct VertexInput {
@@ -87,9 +89,10 @@ fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
 [[stage(vertex)]]
 fn vs_main(
     instance: InstanceInput,
+    skin_animation_instance: SkinAnimationInstanceInput,
     in: VertexInput,
 ) -> VertexOutput {
-    let skinning_matrix = get_skinning_matrix(instance.animation_frame, in);
+    let skinning_matrix = get_skinning_matrix(skin_animation_instance.frame, in);
 
     let model_matrix =  mat4x4<f32>(
         instance.model_matrix_0,

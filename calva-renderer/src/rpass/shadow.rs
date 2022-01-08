@@ -1,9 +1,13 @@
-use crate::{CameraUniform, Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimations};
+use crate::{
+    CameraUniform, Instance, Mesh, MeshInstance, MeshInstances, RenderContext, Renderer, Skin,
+    SkinAnimationInstance, SkinAnimationInstances, SkinAnimations,
+};
 
 pub type DrawCallArgs<'a> = (
     &'a MeshInstances,
     &'a Mesh,
     Option<&'a Skin>,
+    Option<&'a SkinAnimationInstances>,
     Option<&'a SkinAnimations>,
 );
 
@@ -318,7 +322,7 @@ impl ShadowLightDepth {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        MeshInstances::LAYOUT,
+                        MeshInstance::LAYOUT,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
@@ -372,7 +376,8 @@ impl ShadowLightDepth {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        MeshInstances::LAYOUT,
+                        MeshInstance::LAYOUT,
+                        SkinAnimationInstance::LAYOUT,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
@@ -455,7 +460,7 @@ impl ShadowLightDepth {
         });
 
         cb(
-            &mut move |(instances, mesh, skin, animation): DrawCallArgs| {
+            &mut move |(mesh_instances, mesh, skin, animation_instances, animation): DrawCallArgs| {
                 rpass.set_pipeline(match skin {
                     Some(_) => &self.skinned_mesh_pipeline,
                     None => &self.simple_mesh_pipeline,
@@ -467,16 +472,28 @@ impl ShadowLightDepth {
                     rpass.set_bind_group(1, &animation.bind_group, &[]);
                 }
 
-                rpass.set_vertex_buffer(0, instances.buffer.slice(..));
-                rpass.set_vertex_buffer(1, mesh.vertices.slice(..));
+
+                let mut idx_iter = 0..;
+                macro_rules! idx {
+                    () => {
+                        idx_iter.next().unwrap()
+                    };
+                }
+
+                rpass.set_vertex_buffer(idx!(), mesh_instances.buffer.slice(..));
+                if let Some(animation_instances) = animation_instances {
+                    rpass.set_vertex_buffer(idx!(), animation_instances.buffer.slice(..));
+                }
+
+                rpass.set_vertex_buffer(idx!(), mesh.vertices.slice(..));
 
                 if let Some(skin) = skin {
-                    rpass.set_vertex_buffer(2, skin.joint_indices.slice(..));
-                    rpass.set_vertex_buffer(3, skin.joint_weights.slice(..));
+                    rpass.set_vertex_buffer(idx!(), skin.joint_indices.slice(..));
+                    rpass.set_vertex_buffer(idx!(), skin.joint_weights.slice(..));
                 }
 
                 rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-                rpass.draw_indexed(0..mesh.num_elements, 0, 0..instances.count());
+                rpass.draw_indexed(0..mesh.num_elements, 0, 0..mesh_instances.count());
             },
         );
 

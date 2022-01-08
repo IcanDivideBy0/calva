@@ -208,18 +208,27 @@ async fn main() -> Result<()> {
         &mut std::fs::File::open("./demo/assets/zombie.glb")?,
     )?;
 
-    for mut instances in zombie.instances.iter_mut() {
-        if let Some(instance) = instances.instances.get(0) {
-            instances.instances = zombie.animations[0]
+    for (mesh_instances, skin_animation_instances) in zombie.instances.iter_mut() {
+        if let Some(mesh_instance) = mesh_instances.get(0) {
+            **mesh_instances = zombie.animations[0]
                 .animations
                 .iter()
                 .enumerate()
-                .map(|(i, _)| calva::renderer::MeshInstance {
-                    transform: glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
-                        * instance.transform,
-                    animation_frame: 0,
+                .map(|(i, _)| {
+                    let transform = glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
+                        * glam::Mat4::from(mesh_instance);
+
+                    (&transform).into()
                 })
                 .collect();
+
+            if let Some(skin_animation_instances) = skin_animation_instances {
+                **skin_animation_instances = zombie.animations[0]
+                    .animations
+                    .iter()
+                    .map(|_| calva::renderer::SkinAnimationInstance { frame: 0 })
+                    .collect();
+            }
         }
     }
 
@@ -270,19 +279,27 @@ async fn main() -> Result<()> {
                 scene.update(start_time.elapsed(), dt);
                 scene.lights[0].position = my_app.light_pos;
 
-                for instances in &mut plane.instances {
-                    instances.write_buffer(&renderer.queue);
+                for (mesh_instances, _) in &mut plane.instances {
+                    mesh_instances.write_buffer(&renderer.queue);
                 }
-                for instances in &mut zombie.instances {
-                    for (i, instance) in instances.iter_mut().enumerate() {
-                        let anim_name = my_app.animations[i].clone();
 
-                        let (offset, length) = zombie.animations[0].animations[&anim_name];
-                        let current_frame = instance.animation_frame.saturating_sub(offset);
-                        instance.animation_frame = offset + (current_frame + 1) % length;
+                for (mesh_instances, skin_animation_instances) in zombie.instances.iter_mut() {
+                    mesh_instances.write_buffer(&renderer.queue);
+
+                    if let Some(skin_animation_instances) = skin_animation_instances {
+                        for (i, skin_animation_instance) in
+                            skin_animation_instances.iter_mut().enumerate()
+                        {
+                            let anim_name = my_app.animations[i].clone();
+
+                            let (offset, length) = zombie.animations[0].animations[&anim_name];
+                            let current_frame =
+                                skin_animation_instance.frame.saturating_sub(offset);
+
+                            skin_animation_instance.frame = offset + (current_frame + 1) % length;
+                        }
+                        skin_animation_instances.write_buffer(&renderer.queue);
                     }
-
-                    instances.write_buffer(&renderer.queue);
                 }
 
                 match renderer.render(|ctx| {
@@ -292,10 +309,11 @@ async fn main() -> Result<()> {
                             let material = plane.materials.get(*material_index).unwrap();
 
                             draw((
-                                instances,
+                                &instances.0,
                                 mesh,
                                 material,
                                 skin.as_ref(),
+                                instances.1.as_ref(),
                                 plane.animations.get(0),
                             ));
                         }
@@ -305,10 +323,11 @@ async fn main() -> Result<()> {
                             let material = zombie.materials.get(*material_index).unwrap();
 
                             draw((
-                                instances,
+                                &instances.0,
                                 mesh,
                                 material,
                                 skin.as_ref(),
+                                instances.1.as_ref(),
                                 zombie.animations.get(0),
                             ));
                         }
@@ -319,11 +338,23 @@ async fn main() -> Result<()> {
                     shadows.render(ctx, my_app.shadow_light_angle, |draw| {
                         for (mesh, skin, _, instances_index) in &plane.meshes {
                             let instances = plane.instances.get(*instances_index).unwrap();
-                            draw((instances, mesh, skin.as_ref(), plane.animations.get(0)));
+                            draw((
+                                &instances.0,
+                                mesh,
+                                skin.as_ref(),
+                                instances.1.as_ref(),
+                                plane.animations.get(0),
+                            ));
                         }
                         for (mesh, skin, _, instances_index) in &zombie.meshes {
                             let instances = zombie.instances.get(*instances_index).unwrap();
-                            draw((instances, mesh, skin.as_ref(), zombie.animations.get(0)));
+                            draw((
+                                &instances.0,
+                                mesh,
+                                skin.as_ref(),
+                                instances.1.as_ref(),
+                                zombie.animations.get(0),
+                            ));
                         }
                     });
 

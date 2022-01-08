@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
+use crate::Instance;
+
 #[derive(Debug)]
 pub struct Skin {
     pub joint_indices: wgpu::Buffer,
@@ -101,3 +103,21 @@ impl SkinAnimations {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkinAnimationInstance {
+    pub frame: u32,
+}
+
+impl Instance for SkinAnimationInstance {
+    const SIZE: usize = std::mem::size_of::<Self>();
+
+    const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: Self::SIZE as _,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array![7 => Uint32],
+    };
+}
+
+pub type SkinAnimationInstances = crate::Instances<SkinAnimationInstance>;
