@@ -3,6 +3,15 @@ use crate::{
     SkinAnimationInstance, SkinAnimationInstances, SkinAnimations,
 };
 
+pub type DrawCallArgs<'a> = (
+    &'a MeshInstances,
+    &'a Mesh,
+    &'a Material,
+    Option<&'a Skin>,
+    Option<&'a SkinAnimationInstances>,
+    Option<&'a SkinAnimations>,
+);
+
 pub struct Geometry {
     pub albedo_metallic: wgpu::TextureView,
     pub normal_roughness: wgpu::TextureView,
@@ -144,7 +153,7 @@ impl Geometry {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: Geometry::RENDER_TARGETS,
+                    targets: Self::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     cull_mode: Some(wgpu::Face::Back),
@@ -230,7 +239,7 @@ impl Geometry {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: Geometry::RENDER_TARGETS,
+                    targets: Self::RENDER_TARGETS,
                 }),
                 primitive: wgpu::PrimitiveState {
                     cull_mode: Some(wgpu::Face::Back),
@@ -318,7 +327,6 @@ impl Geometry {
                     };
                 }
 
-
                 rpass.set_vertex_buffer(idx!(), mesh_instances.buffer.slice(..));
                 if let Some(animation_instances) = animation_instances {
                     rpass.set_vertex_buffer(idx!(), animation_instances.buffer.slice(..));
@@ -350,12 +358,3 @@ impl Geometry {
         ctx.encoder.pop_debug_group();
     }
 }
-
-pub type DrawCallArgs<'a> = (
-    &'a MeshInstances,
-    &'a Mesh,
-    &'a Material,
-    Option<&'a Skin>,
-    Option<&'a SkinAnimationInstances>,
-    Option<&'a SkinAnimations>,
-);

@@ -1,5 +1,5 @@
 use calva::renderer::{
-    rpass::PointLights,
+    graph::PointLights,
     wgpu::{self, util::DeviceExt},
     PointLight, RenderContext, Renderer,
 };

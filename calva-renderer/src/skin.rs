@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 use wgpu::util::DeviceExt;
 
 use crate::Instance;
@@ -19,6 +20,12 @@ pub struct SkinAnimations {
 }
 
 impl SkinAnimations {
+    // pub const SAMPLE_RATE: Duration = Duration::from_secs_f32(1.0 / 60.0);
+
+    pub fn sample_rate() -> Duration {
+        Duration::from_secs_f32(1.0 / 60.0)
+    }
+
     pub const DESC: &'static wgpu::BindGroupLayoutDescriptor<'static> =
         &wgpu::BindGroupLayoutDescriptor {
             label: Some("Animation bind group layout"),
@@ -101,6 +108,20 @@ impl SkinAnimations {
             animations,
             bind_group,
         }
+    }
+
+    pub fn get_frame(&self, name: &str, t: Duration, looping: bool) -> Option<u32> {
+        let (offset, length) = self.animations.get(name)?;
+
+        let mut frame_index = (t.as_secs_f32() / Self::sample_rate().as_secs_f32()) as u32;
+
+        frame_index = if looping {
+            frame_index % length
+        } else {
+            frame_index.min(*length)
+        };
+
+        Some(offset + frame_index)
     }
 }
 

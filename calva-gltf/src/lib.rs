@@ -323,7 +323,6 @@ impl GltfModel {
                     .iter()
                     .map(|(name, sampler)| {
                         let (start, end) = sampler.get_time_range();
-                        let interval = std::time::Duration::from_secs_f32(1.0 / 60.0);
 
                         let inv_mesh_transform = nodes_transforms[&mesh_node.index()].inverse();
 
@@ -351,7 +350,7 @@ impl GltfModel {
 
                             animation.push(frame);
 
-                            time += interval;
+                            time += renderer::SkinAnimations::sample_rate();
                         }
 
                         (name.clone(), animation)
