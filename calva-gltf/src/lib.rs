@@ -84,7 +84,7 @@ impl GltfModel {
                             buf.put_pixel(0, 0, image::Rgba::from([255, 255, 255, 255]));
                             image::DynamicImage::ImageRgba8(buf)
                         }),
-                )
+                )?
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let normal = make_texture(
@@ -99,7 +99,7 @@ impl GltfModel {
                             buf.put_pixel(0, 0, image::Rgba::from([0, 0, 0, 0]));
                             image::DynamicImage::ImageRgba8(buf)
                         }),
-                )
+                )?
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let metallic_roughness = make_texture(
@@ -115,7 +115,7 @@ impl GltfModel {
                             buf.put_pixel(0, 0, image::Rgba::from([0, 0xFF, 0xFF, 0]));
                             image::DynamicImage::ImageRgba8(buf)
                         }),
-                )
+                )?
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
                 Ok(renderer::Material::new(

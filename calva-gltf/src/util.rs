@@ -1,3 +1,4 @@
+use anyhow::Result;
 use renderer::{util::mipmap::MipmapGenerator, wgpu};
 use std::ops::Deref;
 
@@ -40,7 +41,8 @@ pub fn image_reader(
 pub fn texture_builder<'a>(
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
-) -> impl FnMut(Option<&str>, wgpu::TextureFormat, image::DynamicImage) -> wgpu::Texture + 'a {
+) -> impl FnMut(Option<&str>, wgpu::TextureFormat, image::DynamicImage) -> Result<wgpu::Texture> + 'a
+{
     let mipmap_generator = MipmapGenerator::new(device);
 
     move |label: Option<&str>, format: wgpu::TextureFormat, image: image::DynamicImage| {
@@ -77,8 +79,8 @@ pub fn texture_builder<'a>(
             size,
         );
 
-        mipmap_generator.generate_mipmaps(device, queue, &texture, &desc);
+        mipmap_generator.generate_mipmaps(device, queue, &texture, &desc)?;
 
-        texture
+        Ok(texture)
     }
 }

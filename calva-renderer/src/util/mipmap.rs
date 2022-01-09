@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Error, Result};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
@@ -99,8 +100,8 @@ impl MipmapGenerator {
         queue: &wgpu::Queue,
         texture: &wgpu::Texture,
         desc: &wgpu::TextureDescriptor,
-    ) {
-        let mut pipelines_read = self.pipelines.read().unwrap();
+    ) -> Result<()> {
+        let pipelines_read = self.pipelines.read().map_err(|err| anyhow!("{}", err))?;
 
         let pipeline = match pipelines_read.get(&desc.format) {
             Some(pipeline) => pipeline,
@@ -109,11 +110,10 @@ impl MipmapGenerator {
 
                 self.pipelines
                     .write()
-                    .unwrap()
+                    .map_err(|err| anyhow!("{}", err))?
                     .insert(desc.format, self.create_pipeline(device, desc.format));
 
-                pipelines_read = self.pipelines.read().unwrap();
-                pipelines_read.get(&desc.format).unwrap()
+                return self.generate_mipmaps(device, queue, texture, desc);
             }
         };
 
@@ -131,7 +131,9 @@ impl MipmapGenerator {
             })
             .collect::<Vec<_>>();
 
-        for [input, output] in mips.windows(2).map(<&[_; 2]>::try_from).map(Result::unwrap) {
+        for res in mips.windows(2).map(<&[_; 2]>::try_from) {
+            let [input, output] = res?;
+
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("MipmapGenerator bind group"),
                 layout: &self.bind_group_layout,
@@ -166,5 +168,7 @@ impl MipmapGenerator {
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+
+        Ok(())
     }
 }

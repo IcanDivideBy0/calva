@@ -287,8 +287,8 @@ async fn main() -> Result<()> {
                         |draw| {
                             for model in &models {
                                 for (mesh, skin, material_index, instances_index) in &model.meshes {
-                                    let instances = model.instances.get(*instances_index).unwrap();
-                                    let material = model.materials.get(*material_index).unwrap();
+                                    let instances = &model.instances[*instances_index];
+                                    let material = &model.materials[*material_index];
 
                                     draw((
                                         &instances.0,
@@ -304,7 +304,8 @@ async fn main() -> Result<()> {
                         |draw| {
                             for model in &models {
                                 for (mesh, skin, _, instances_index) in &model.meshes {
-                                    let instances = model.instances.get(*instances_index).unwrap();
+                                    let instances = &model.instances[*instances_index];
+
                                     draw((
                                         &instances.0,
                                         mesh,
