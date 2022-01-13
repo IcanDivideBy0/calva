@@ -189,37 +189,39 @@ async fn main() -> Result<()> {
             &mut std::fs::File::open("./demo/assets/plane.glb")?,
         )?;
 
-        let mut zombie = calva::gltf::GltfModel::new(
-            &renderer,
-            &mut std::fs::File::open("./demo/assets/zombie.glb")?,
-        )?;
+        // let mut zombie = calva::gltf::GltfModel::new(
+        //     &renderer,
+        //     &mut std::fs::File::open("./demo/assets/zombie.glb")?,
+        // )?;
 
-        for (mesh_instances, skin_animation_instances) in zombie.instances.iter_mut() {
-            if let Some(mesh_instance) = mesh_instances.get(0) {
-                **mesh_instances = zombie.animations[0]
-                    .animations
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| {
-                        let transform =
-                            glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
-                                * glam::Mat4::from(mesh_instance);
+        // for (mesh_instances, skin_animation_instances) in zombie.instances.iter_mut() {
+        //     if let Some(mesh_instance) = mesh_instances.get(0) {
+        //         **mesh_instances = zombie.animations[0]
+        //             .animations
+        //             .iter()
+        //             .enumerate()
+        //             .map(|(i, _)| {
+        //                 let transform =
+        //                     glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
+        //                         * glam::Mat4::from(mesh_instance);
 
-                        (&transform).into()
-                    })
-                    .collect();
+        //                 (&transform).into()
+        //             })
+        //             .collect();
 
-                if let Some(skin_animation_instances) = skin_animation_instances {
-                    **skin_animation_instances = zombie.animations[0]
-                        .animations
-                        .iter()
-                        .map(|_| calva::renderer::SkinAnimationInstance { frame: 0 })
-                        .collect();
-                }
-            }
-        }
+        //         if let Some(skin_animation_instances) = skin_animation_instances {
+        //             **skin_animation_instances = zombie.animations[0]
+        //                 .animations
+        //                 .iter()
+        //                 .map(|_| calva::renderer::SkinAnimationInstance { frame: 0 })
+        //                 .collect();
+        //         }
+        //     }
+        // }
 
-        vec![plane, zombie]
+        // vec![plane, zombie]
+
+        vec![plane]
     };
 
     let mut my_app: MyApp = renderer.config.data.into();
@@ -316,6 +318,7 @@ async fn main() -> Result<()> {
                                 }
                             }
                         },
+                        [5.0, 25.0, 64.0],
                         &scene.lights,
                     );
 

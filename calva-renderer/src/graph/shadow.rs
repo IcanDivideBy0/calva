@@ -1,6 +1,5 @@
 use crate::{
-    CameraUniform, Instance, Mesh, MeshInstance, MeshInstances, RenderContext, Renderer, Skin,
-    SkinAnimationInstance, SkinAnimationInstances, SkinAnimations,
+    Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimationInstances, SkinAnimations,
 };
 
 pub type DrawCallArgs<'a> = (
@@ -12,11 +11,24 @@ pub type DrawCallArgs<'a> = (
 );
 
 pub struct ShadowLight {
-    shadows: ShadowLightDepth,
+    uniform: uniform::ShadowLightUniform,
+    depth_pass: depth::ShadowLightDepth,
+    blur_pass: blur::ShadowLightBlur,
+
     render_bundle: wgpu::RenderBundle,
 }
 
 impl ShadowLight {
+    const CASCADES: usize = 3;
+
+    const TEXTURE_SIZE: wgpu::Extent3d = wgpu::Extent3d {
+        width: 1024,
+        height: 1024,
+        depth_or_array_layers: Self::CASCADES as _,
+    };
+
+    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+
     pub fn new(
         renderer: &Renderer,
         albedo_metallic: &wgpu::TextureView,
@@ -31,7 +43,9 @@ impl ShadowLight {
             ..
         } = renderer;
 
-        let shadows = ShadowLightDepth::new(device);
+        let uniform = uniform::ShadowLightUniform::new(device);
+        let depth_pass = depth::ShadowLightDepth::new(device, &uniform);
+        let blur_pass = blur::ShadowLightBlur::new(device, &depth_pass.depth);
 
         let shadows_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
@@ -119,7 +133,7 @@ impl ShadowLight {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&shadows.depth),
+                    resource: wgpu::BindingResource::TextureView(&depth_pass.depth),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -133,7 +147,7 @@ impl ShadowLight {
             bind_group_layouts: &[
                 &config.bind_group_layout,
                 &camera.bind_group_layout,
-                &shadows.bind_group_layout,
+                &uniform.bind_group_layout,
                 &bind_group_layout,
             ],
             push_constant_ranges: &[],
@@ -186,7 +200,7 @@ impl ShadowLight {
             encoder.set_pipeline(&pipeline);
             encoder.set_bind_group(0, &config.bind_group, &[]);
             encoder.set_bind_group(1, &camera.bind_group, &[]);
-            encoder.set_bind_group(2, &shadows.bind_group, &[]);
+            encoder.set_bind_group(2, &uniform.bind_group, &[]);
             encoder.set_bind_group(3, &bind_group, &[]);
 
             encoder.draw(0..3, 0..1);
@@ -197,7 +211,9 @@ impl ShadowLight {
         };
 
         Self {
-            shadows,
+            uniform,
+            depth_pass,
+            blur_pass,
             render_bundle,
         }
     }
@@ -205,12 +221,24 @@ impl ShadowLight {
     pub fn render<'ctx, 'data: 'ctx>(
         &self,
         ctx: &'ctx mut RenderContext,
-        direction: glam::Vec3,
+        splits: [f32; Self::CASCADES],
+        light_dir: glam::Vec3,
         cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
         ctx.encoder.push_debug_group("ShadowLight");
 
-        self.shadows.render(ctx, direction, cb);
+        self.uniform.update_buffer(
+            &ctx.renderer.queue,
+            ctx.renderer.camera.view,
+            ctx.renderer.camera.proj,
+            splits,
+            light_dir,
+        );
+
+        self.depth_pass.render(ctx, &self.uniform, cb);
+
+        self.blur_pass.render(ctx, &self.depth_pass.depth);
+        self.blur_pass.render(ctx, &self.depth_pass.depth);
 
         ctx.encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -231,410 +259,413 @@ impl ShadowLight {
     }
 }
 
-struct ShadowLightDepth {
-    depth: wgpu::TextureView,
+mod uniform {
+    const CASCADES: usize = super::ShadowLight::CASCADES;
 
-    uniform_buffer: wgpu::Buffer,
-    bind_group_layout: wgpu::BindGroupLayout,
-    bind_group: wgpu::BindGroup,
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+    struct ShadowLightUniformRaw {
+        color: [f32; 4],
+        direction: [f32; 4], // camera view space
+        view_proj: [[f32; 16]; CASCADES],
+        splits: [f32; CASCADES],
 
-    simple_mesh_pipeline: wgpu::RenderPipeline,
-    skinned_mesh_pipeline: wgpu::RenderPipeline,
+        _padding: [f32; 4 - CASCADES % 4],
+    }
 
-    blur: blur::ShadowLightBlur,
-}
+    impl ShadowLightUniformRaw {
+        pub fn new(
+            color: glam::Vec4,
+            direction: glam::Vec4,
+            view_proj: Vec<glam::Mat4>,
+            splits: [f32; CASCADES],
+        ) -> Self {
+            let view_proj = TryFrom::try_from(
+                view_proj[0..CASCADES]
+                    .iter()
+                    .map(glam::Mat4::to_cols_array)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
 
-impl ShadowLightDepth {
-    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-    const TEXTURE_SIZE: u32 = 1024;
-    const CASCADES: usize = 4;
-
-    pub fn new(device: &wgpu::Device) -> Self {
-        let size = wgpu::Extent3d {
-            width: Self::TEXTURE_SIZE,
-            height: Self::TEXTURE_SIZE,
-            depth_or_array_layers: Self::CASCADES as _,
-        };
-
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("ShadowLight depth texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        });
-
-        let depth = depth_texture.create_view(&wgpu::TextureViewDescriptor {
-            aspect: wgpu::TextureAspect::DepthOnly,
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: core::num::NonZeroU32::new(Self::CASCADES as _),
-            ..Default::default()
-        });
-
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ShadowLight depth buffer"),
-            size: std::mem::size_of::<ShadowLightUniform>() as _,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ShadowLight depth bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ShadowLight depth bind group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
-
-        let simple_mesh_pipeline = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("ShadowLight[simple] depth shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.simple.wgsl").into()),
-            });
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ShadowLight[simple] depth render pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ShadowLight[simple] depth render pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[
-                        MeshInstance::LAYOUT,
-                        // Positions
-                        wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
-                        },
-                    ],
-                },
-                fragment: None,
-                primitive: wgpu::PrimitiveState {
-                    unclipped_depth: true,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Self::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState {
-                        constant: 2, // corresponds to bilinear filtering
-                        slope_scale: 2.0,
-                        clamp: 0.0,
-                    },
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
-            })
-        };
-
-        let skinned_mesh_pipeline = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("ShadowLight[skinned] depth shader"),
-                source: wgpu::ShaderSource::Wgsl(
-                    include_str!("shaders/shadow.skinned.wgsl").into(),
-                ),
-            });
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ShadowLight[skinned] depth render pipeline layout"),
-                bind_group_layouts: &[
-                    &bind_group_layout,
-                    &device.create_bind_group_layout(SkinAnimations::DESC),
-                ],
-                push_constant_ranges: &[],
-            });
-
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ShadowLight[skinned] depth render pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[
-                        MeshInstance::LAYOUT,
-                        SkinAnimationInstance::LAYOUT,
-                        // Positions
-                        wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 3) as _,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
-                        },
-                        // Joints
-                        wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<u32>()) as _,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![9 => Uint32],
-                        },
-                        // Weights
-                        wgpu::VertexBufferLayout {
-                            array_stride: (std::mem::size_of::<f32>() * 4) as _,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![10 => Float32x4],
-                        },
-                    ],
-                },
-                fragment: None,
-                primitive: wgpu::PrimitiveState {
-                    unclipped_depth: true,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Self::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState {
-                        constant: 2, // corresponds to bilinear filtering
-                        slope_scale: 2.0,
-                        clamp: 0.0,
-                    },
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview: core::num::NonZeroU32::new(Self::CASCADES as _),
-            })
-        };
-
-        let blur = blur::ShadowLightBlur::new(device, size, &depth);
-
-        Self {
-            depth,
-
-            uniform_buffer,
-            bind_group_layout,
-            bind_group,
-
-            simple_mesh_pipeline,
-            skinned_mesh_pipeline,
-
-            blur,
+            Self {
+                color: color.to_array(),
+                direction: direction.to_array(),
+                view_proj,
+                splits,
+                ..Default::default()
+            }
         }
     }
 
-    pub fn render<'ctx, 'data: 'ctx>(
-        &self,
-        ctx: &'ctx mut RenderContext,
-        light_dir: glam::Vec3,
-        cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
-    ) {
-        let uniform = ShadowLightUniform::new(&ctx.renderer.camera, light_dir);
-        ctx.renderer
-            .queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+    impl ShadowLightUniformRaw {}
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("ShadowLight depth pass"),
-            color_attachments: &[],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
-                }),
-                stencil_ops: None,
-            }),
-        });
+    pub struct ShadowLightUniform {
+        buffer: wgpu::Buffer,
 
-        cb(
-            &mut move |(mesh_instances, mesh, skin, animation_instances, animation): DrawCallArgs| {
-                rpass.set_pipeline(match skin {
-                    Some(_) => &self.skinned_mesh_pipeline,
-                    None => &self.simple_mesh_pipeline,
+        pub bind_group_layout: wgpu::BindGroupLayout,
+        pub bind_group: wgpu::BindGroup,
+    }
+
+    impl ShadowLightUniform {
+        pub fn new(device: &wgpu::Device) -> Self {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("ShadowLightUniform buffer"),
+                size: std::mem::size_of::<ShadowLightUniformRaw>() as _,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            let bind_group_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("ShadowLightUniform bind group layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
                 });
 
-                rpass.set_bind_group(0, &self.bind_group, &[]);
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("ShadowLightUniform bind group"),
+                layout: &bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
 
-                if let Some(animation) = animation {
-                    rpass.set_bind_group(1, &animation.bind_group, &[]);
-                }
+            Self {
+                buffer,
+                bind_group_layout,
+                bind_group,
+            }
+        }
 
+        pub fn update_buffer(
+            &self,
+            queue: &wgpu::Queue,
+            camera_view: glam::Mat4,
+            camera_proj: glam::Mat4,
+            mut splits: [f32; CASCADES],
+            light_dir: glam::Vec3,
+        ) {
+            #[rustfmt::skip]
+            const CAMERA_FRUSTRUM: [glam::Vec3; 8] = [
+                // near
+                glam::const_vec3!([-1.0,  1.0, 0.0]), // top left
+                glam::const_vec3!([ 1.0,  1.0, 0.0]), // top right
+                glam::const_vec3!([-1.0, -1.0, 0.0]), // bottom left
+                glam::const_vec3!([ 1.0, -1.0, 0.0]), // bottom right
+                // far
+                glam::const_vec3!([-1.0,  1.0, 1.0]), // top left
+                glam::const_vec3!([ 1.0,  1.0, 1.0]), // top right
+                glam::const_vec3!([-1.0, -1.0, 1.0]), // bottom left
+                glam::const_vec3!([ 1.0, -1.0, 1.0]), // bottom right
+            ];
 
-                let mut idx_iter = 0..;
-                macro_rules! idx {
-                    () => {
-                        idx_iter.next().unwrap()
-                    };
-                }
+            let light_dir = light_dir.normalize();
+            let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
-                rpass.set_vertex_buffer(idx!(), mesh_instances.buffer.slice(..));
-                if let Some(animation_instances) = animation_instances {
-                    rpass.set_vertex_buffer(idx!(), animation_instances.buffer.slice(..));
-                }
+            let transform = light_view * (camera_proj * camera_view).inverse();
 
-                rpass.set_vertex_buffer(idx!(), mesh.vertices.slice(..));
+            for split in &mut splits {
+                let v = camera_proj * glam::vec4(0.0, 0.0, -*split, 1.0);
+                *split = (v.z / v.w) * 0.5 + 0.5
+            }
 
-                if let Some(skin) = skin {
-                    rpass.set_vertex_buffer(idx!(), skin.joint_indices.slice(..));
-                    rpass.set_vertex_buffer(idx!(), skin.joint_weights.slice(..));
-                }
+            let split_transforms = (0..CASCADES)
+                .map(|cascade_index| {
+                    let corners = CAMERA_FRUSTRUM
+                        .iter()
+                        .map(|v| {
+                            let mut v = *v;
 
-                rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
-                rpass.draw_indexed(0..mesh.num_elements, 0, 0..mesh_instances.count());
-            },
-        );
+                            v.z = cascade_index
+                                .checked_sub(if v.z <= 0.0 { 1 } else { 0 })
+                                .map(|idx| splits[idx])
+                                .unwrap_or(0.0);
 
-        self.blur.render(ctx, &self.depth);
-        self.blur.render(ctx, &self.depth);
+                            let v = transform * v.extend(1.0);
+                            v.truncate() / v.w
+                        })
+                        .collect::<Vec<_>>();
+
+                    // Frustrum center in world space
+                    let mut center = corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v)
+                        / corners.len() as f32;
+
+                    // Radius of the camera frustrum slice bounding sphere
+                    let mut radius = corners
+                        .iter()
+                        .fold(0.0_f32, |acc, &v| acc.max(v.distance(center)));
+
+                    // Avoid shadow swimming:
+                    // Prevent small radius changes due to float precision
+                    radius = (radius * 16.0).ceil() / 16.0;
+                    // Shadow texel size in light view space
+                    let texel_size = radius * 2.0 / super::ShadowLight::TEXTURE_SIZE.width as f32;
+                    // Allow center changes only in texel size increments
+                    center = (center / texel_size).ceil() * texel_size;
+
+                    let min = center - glam::Vec3::splat(radius);
+                    let max = center + glam::Vec3::splat(radius);
+
+                    let light_proj = glam::Mat4::orthographic_rh(
+                        min.x,  // left
+                        max.x,  // right
+                        min.y,  // bottom
+                        max.y,  // top
+                        -max.z, // near
+                        -min.z, // far
+                    );
+
+                    light_proj * light_view
+                })
+                .collect::<Vec<_>>();
+
+            let light_dir_view_space = glam::Quat::from_mat4(&camera_view) * light_dir;
+
+            queue.write_buffer(
+                &self.buffer,
+                0,
+                bytemuck::bytes_of(&ShadowLightUniformRaw::new(
+                    glam::Vec4::ONE,
+                    light_dir_view_space.extend(1.0),
+                    split_transforms,
+                    splits,
+                )),
+            );
+        }
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct ShadowLightUniform {
-    color: glam::Vec4,
-    direction: glam::Vec4, // camera view space
-    view_proj: [glam::Mat4; ShadowLightDepth::CASCADES],
-    splits: [f32; ShadowLightDepth::CASCADES],
-}
+mod depth {
+    use super::{uniform::ShadowLightUniform, DrawCallArgs, ShadowLight};
+    use crate::{Instance, MeshInstance, RenderContext, SkinAnimationInstance, SkinAnimations};
 
-impl ShadowLightUniform {
-    #[rustfmt::skip]
-    const CAMERA_FRUSTRUM: [glam::Vec3; 8] = [
-        // near
-        glam::const_vec3!([-1.0,  1.0, 0.0]), // top left
-        glam::const_vec3!([ 1.0,  1.0, 0.0]), // top right
-        glam::const_vec3!([-1.0, -1.0, 0.0]), // bottom left
-        glam::const_vec3!([ 1.0, -1.0, 0.0]), // bottom right
-        // far
-        glam::const_vec3!([-1.0,  1.0, 1.0]), // top left
-        glam::const_vec3!([ 1.0,  1.0, 1.0]), // top right
-        glam::const_vec3!([-1.0, -1.0, 1.0]), // bottom left
-        glam::const_vec3!([ 1.0, -1.0, 1.0]), // bottom right
-    ];
+    pub struct ShadowLightDepth {
+        pub depth: wgpu::TextureView,
 
-    // https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp#L639-L716
-    fn new(camera: &CameraUniform, light_dir: glam::Vec3) -> Self {
-        let light_dir = light_dir.normalize();
-        let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
+        simple_mesh_pipeline: wgpu::RenderPipeline,
+        skinned_mesh_pipeline: wgpu::RenderPipeline,
+    }
 
-        let inv_proj = camera.proj.inverse();
-        let near = inv_proj * glam::Vec3::ZERO.extend(1.0);
-        let near = -near.z / near.w;
-        let far = inv_proj * glam::Vec3::Z.extend(1.0);
-        let far = -far.z / far.w;
+    impl ShadowLightDepth {
+        pub fn new(device: &wgpu::Device, uniform: &ShadowLightUniform) -> Self {
+            let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("ShadowLightDepth texture"),
+                size: ShadowLight::TEXTURE_SIZE,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: ShadowLight::DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+            });
 
-        // let ratio = far / near;
-        // let lambda = 0.95;
-        // let mut splits = (0..ShadowLightDepth::CASCADES)
-        //     .map(|cascade| {
-        //         let p = (cascade + 1) as f32 / ShadowLightDepth::CASCADES as f32;
-        //         let log = near * ratio.powf(p);
-        //         let uniform = near + (far - near) * p;
-        //         let d = lambda * (log - uniform) + uniform;
-        //         1.0 - (d - near) / (far - near) / 2.0
-        //     })
-        //     .collect::<Vec<_>>();
+            let depth = depth_texture.create_view(&wgpu::TextureViewDescriptor {
+                aspect: wgpu::TextureAspect::DepthOnly,
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                array_layer_count: core::num::NonZeroU32::new(ShadowLight::CASCADES as _),
+                ..Default::default()
+            });
 
-        // splits.insert(0, 0.0);
-        // dbg!(&splits);
+            let simple_mesh_pipeline = {
+                let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                    label: Some("ShadowLight[simple] depth shader"),
+                    source: wgpu::ShaderSource::Wgsl(
+                        include_str!("shaders/shadow.simple.wgsl").into(),
+                    ),
+                });
 
-        let splits = (0..=ShadowLightDepth::CASCADES)
-            .map(|cascade| {
-                if cascade == 0 {
-                    return 0.0;
-                };
+                let pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("ShadowLight[simple] depth render pipeline layout"),
+                        bind_group_layouts: &[&uniform.bind_group_layout],
+                        push_constant_ranges: &[],
+                    });
 
-                let z = cascade as f32 / ShadowLightDepth::CASCADES as f32 * (far - near);
-                let v = camera.proj * glam::vec4(0.0, 0.0, -z, 1.0);
-                v.z / v.w
-            })
-            .collect::<Vec<_>>();
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("ShadowLight[simple] depth render pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: "vs_main",
+                        buffers: &[
+                            MeshInstance::LAYOUT,
+                            // Positions
+                            wgpu::VertexBufferLayout {
+                                array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                                step_mode: wgpu::VertexStepMode::Vertex,
+                                attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                            },
+                        ],
+                    },
+                    fragment: None,
+                    primitive: wgpu::PrimitiveState {
+                        unclipped_depth: true,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: ShadowLight::DEPTH_FORMAT,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState {
+                            constant: 2, // corresponds to bilinear filtering
+                            slope_scale: 2.0,
+                            clamp: 0.0,
+                        },
+                    }),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: core::num::NonZeroU32::new(ShadowLight::CASCADES as _),
+                })
+            };
 
-        // let mut ratio = 1.0;
-        // let mut splits = (0..ShadowLightDepth::CASCADES)
-        //     .map(|_| {
-        //         let z = ratio * (far - near);
-        //         let v = camera.proj * glam::vec4(0.0, 0.0, -z, 1.0);
-        //         ratio /= 2.0;
+            let skinned_mesh_pipeline = {
+                let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                    label: Some("ShadowLight[skinned] depth shader"),
+                    source: wgpu::ShaderSource::Wgsl(
+                        include_str!("shaders/shadow.skinned.wgsl").into(),
+                    ),
+                });
 
-        //         v.z / v.w
-        //     })
-        //     .collect::<Vec<_>>();
-        // splits.push(0.0);
-        // splits.reverse();
+                let pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("ShadowLight[skinned] depth render pipeline layout"),
+                        bind_group_layouts: &[
+                            &uniform.bind_group_layout,
+                            &device.create_bind_group_layout(SkinAnimations::DESC),
+                        ],
+                        push_constant_ranges: &[],
+                    });
 
-        let transform = light_view * (camera.proj * camera.view).inverse();
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("ShadowLight[skinned] depth render pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: "vs_main",
+                        buffers: &[
+                            MeshInstance::LAYOUT,
+                            SkinAnimationInstance::LAYOUT,
+                            // Positions
+                            wgpu::VertexBufferLayout {
+                                array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                                step_mode: wgpu::VertexStepMode::Vertex,
+                                attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                            },
+                            // Joints
+                            wgpu::VertexBufferLayout {
+                                array_stride: (std::mem::size_of::<u32>()) as _,
+                                step_mode: wgpu::VertexStepMode::Vertex,
+                                attributes: &wgpu::vertex_attr_array![9 => Uint32],
+                            },
+                            // Weights
+                            wgpu::VertexBufferLayout {
+                                array_stride: (std::mem::size_of::<f32>() * 4) as _,
+                                step_mode: wgpu::VertexStepMode::Vertex,
+                                attributes: &wgpu::vertex_attr_array![10 => Float32x4],
+                            },
+                        ],
+                    },
+                    fragment: None,
+                    primitive: wgpu::PrimitiveState {
+                        unclipped_depth: true,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: ShadowLight::DEPTH_FORMAT,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState {
+                            constant: 2, // corresponds to bilinear filtering
+                            slope_scale: 2.0,
+                            clamp: 0.0,
+                        },
+                    }),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: core::num::NonZeroU32::new(ShadowLight::CASCADES as _),
+                })
+            };
 
-        let split_transforms = (0..ShadowLightDepth::CASCADES)
-            .map(|cascade_index| {
-                let corners = Self::CAMERA_FRUSTRUM
-                    .iter()
-                    .map(|v| {
-                        let mut v = *v;
-                        v.z = splits[cascade_index + v.z as usize];
-                        let v = transform * v.extend(1.0);
-                        v.truncate() / v.w
-                    })
-                    .collect::<Vec<_>>();
+            Self {
+                depth,
 
-                // Frustrum center in world space
-                let mut center =
-                    corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
+                simple_mesh_pipeline,
+                skinned_mesh_pipeline,
+            }
+        }
 
-                // Radius of the camera frustrum slice bounding sphere
-                let mut radius = corners
-                    .iter()
-                    .fold(0.0_f32, |acc, &v| acc.max(v.distance(center)));
+        pub fn render<'ctx, 'data: 'ctx>(
+            &self,
+            ctx: &'ctx mut RenderContext,
+            uniform: &ShadowLightUniform,
+            cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
+        ) {
+            let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ShadowLightDepth pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
+            });
 
-                // Avoid shadow swimming
-                // Prevent small radius changes due to float precision
-                radius = (radius * 16.0).ceil() / 16.0;
-                // Shadow texel size in light view space
-                let texel_size = radius * 2.0 / ShadowLightDepth::TEXTURE_SIZE as f32;
-                // Center can only change in texel size increments
-                center = (center / texel_size).ceil() * texel_size;
+            cb(
+                &mut move |(mesh_instances, mesh, skin, animation_instances, animation): DrawCallArgs| {
+                    rpass.set_pipeline(match skin {
+                        Some(_) => &self.skinned_mesh_pipeline,
+                        None => &self.simple_mesh_pipeline,
+                    });
 
-                let min = center - glam::Vec3::splat(radius);
-                let max = center + glam::Vec3::splat(radius);
+                    rpass.set_bind_group(0, &uniform.bind_group, &[]);
 
-                let light_proj = glam::Mat4::orthographic_rh(
-                    min.x,  // left
-                    max.x,  // right
-                    min.y,  // bottom
-                    max.y,  // top
-                    -max.z, // near
-                    -min.z, // far
-                );
+                    if let Some(animation) = animation {
+                        rpass.set_bind_group(1, &animation.bind_group, &[]);
+                    }
 
-                light_proj * light_view
-            })
-            .collect::<Vec<_>>();
 
-        Self {
-            color: glam::Vec4::ONE,
-            direction: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(1.0), // use only rotation component from camera view
-            view_proj: TryFrom::try_from(split_transforms).unwrap(),
-            splits: TryFrom::try_from(&splits[0..ShadowLightDepth::CASCADES]).unwrap(),
+                    let mut idx_iter = 0..;
+                    macro_rules! idx {
+                        () => {
+                            idx_iter.next().unwrap()
+                        };
+                    }
+
+                    rpass.set_vertex_buffer(idx!(), mesh_instances.buffer.slice(..));
+                    if let Some(animation_instances) = animation_instances {
+                        rpass.set_vertex_buffer(idx!(), animation_instances.buffer.slice(..));
+                    }
+
+                    rpass.set_vertex_buffer(idx!(), mesh.vertices.slice(..));
+
+                    if let Some(skin) = skin {
+                        rpass.set_vertex_buffer(idx!(), skin.joint_indices.slice(..));
+                        rpass.set_vertex_buffer(idx!(), skin.joint_weights.slice(..));
+                    }
+
+                    rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
+                    rpass.draw_indexed(0..mesh.num_elements, 0, 0..mesh_instances.count());
+                },
+            );
         }
     }
 }
 
 mod blur {
-    use super::ShadowLightDepth;
+    use super::ShadowLight;
     use crate::RenderContext;
 
     enum Direction {
@@ -659,25 +690,21 @@ mod blur {
     }
 
     impl ShadowLightBlur {
-        pub fn new(
-            device: &wgpu::Device,
-            size: wgpu::Extent3d,
-            output: &wgpu::TextureView,
-        ) -> Self {
+        pub fn new(device: &wgpu::Device, output: &wgpu::TextureView) -> Self {
             let temp = device
                 .create_texture(&wgpu::TextureDescriptor {
                     label: Some("ShadowLightBlur temp texture"),
-                    size,
+                    size: ShadowLight::TEXTURE_SIZE,
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: ShadowLightDepth::DEPTH_FORMAT,
+                    format: ShadowLight::DEPTH_FORMAT,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                 })
                 .create_view(&wgpu::TextureViewDescriptor {
                     dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    array_layer_count: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
+                    array_layer_count: core::num::NonZeroU32::new(ShadowLight::CASCADES as _),
                     ..Default::default()
                 });
 
@@ -735,14 +762,14 @@ mod blur {
                     }),
                     primitive: wgpu::PrimitiveState::default(),
                     depth_stencil: Some(wgpu::DepthStencilState {
-                        format: ShadowLightDepth::DEPTH_FORMAT,
+                        format: ShadowLight::DEPTH_FORMAT,
                         depth_write_enabled: true,
                         depth_compare: wgpu::CompareFunction::Always,
                         stencil: wgpu::StencilState::default(),
                         bias: wgpu::DepthBiasState::default(),
                     }),
                     multisample: wgpu::MultisampleState::default(),
-                    multiview: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
+                    multiview: core::num::NonZeroU32::new(ShadowLight::CASCADES as _),
                 });
 
                 let mut encoder =
@@ -752,12 +779,12 @@ mod blur {
                         ),
                         color_formats: &[],
                         depth_stencil: Some(wgpu::RenderBundleDepthStencil {
-                            format: ShadowLightDepth::DEPTH_FORMAT,
+                            format: ShadowLight::DEPTH_FORMAT,
                             depth_read_only: false,
                             stencil_read_only: false,
                         }),
                         sample_count: 1,
-                        multiview: core::num::NonZeroU32::new(ShadowLightDepth::CASCADES as _),
+                        multiview: core::num::NonZeroU32::new(ShadowLight::CASCADES as _),
                     });
 
                 encoder.set_pipeline(&pipeline);

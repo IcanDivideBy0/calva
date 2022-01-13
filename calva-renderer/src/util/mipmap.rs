@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::RwLock;
 

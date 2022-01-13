@@ -1,4 +1,4 @@
-let CASCADES: u32 = 4u;
+let CASCADES: u32 = 3u;
 struct ShadowLight {
     color: vec4<f32>;
     direction: vec4<f32>; // camera view space

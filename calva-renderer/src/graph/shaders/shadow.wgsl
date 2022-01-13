@@ -13,7 +13,7 @@ struct Camera {
     inv_proj: mat4x4<f32>;
 };
 
-let CASCADES: u32 = 4u;
+let CASCADES: u32 = 3u;
 struct ShadowLight {
     color: vec4<f32>;
     direction: vec4<f32>; // camera view space
@@ -110,9 +110,9 @@ fn fs_main(
     frag_pos_view = frag_pos_view / frag_pos_view.w;
 
     var cascade_index = 0u;
-    for (var i: u32 = 0u; i < CASCADES; i = i + 1u) {
+    for (var i: u32 = 0u; i < CASCADES - 1u; i = i + 1u) {
         if (z > shadow_light.splits[i]) {
-            cascade_index = i;
+            cascade_index = i + 1u;
         }
     }
 
@@ -150,6 +150,10 @@ fn fs_main(
     let kD = (1.0 - kS) * (1.0 - metallic);
 
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
+
+    // if (cascade_index == 0u) { return vec4<f32>(1.0, 0.0, 0.0, 1.0); }
+    // if (cascade_index == 1u) { return vec4<f32>(0.0, 1.0, 0.0, 1.0); }
+    // if (cascade_index == 2u) { return vec4<f32>(0.0, 0.0, 1.0, 1.0); }
 
     // color = color / (color + 1.0);
     // color = pow(color, vec3<f32>(1.0 / 2.2));

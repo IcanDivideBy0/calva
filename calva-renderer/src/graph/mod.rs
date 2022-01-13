@@ -58,6 +58,7 @@ impl DefaultGraph {
 
         draw_geometry: impl FnOnce(&mut dyn FnMut(geometry::DrawCallArgs<'data>)),
         draw_shadows: impl FnOnce(&mut dyn FnMut(shadow::DrawCallArgs<'data>)),
+        splits: [f32; 3],
         lights: &[PointLight],
     ) {
         self.gbuffer.render(ctx, draw_geometry);
@@ -65,7 +66,7 @@ impl DefaultGraph {
         self.skybox.render(ctx);
         self.ambient.render(ctx);
         self.shadows
-            .render(ctx, glam::vec3(0.5, -1.0, 0.0), draw_shadows);
+            .render(ctx, splits, glam::vec3(0.0, -1.0, -1.0), draw_shadows);
 
         self.point_lights.render(ctx, lights);
         self.ssao.render(ctx);

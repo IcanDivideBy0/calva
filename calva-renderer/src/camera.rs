@@ -11,16 +11,7 @@ struct CameraUniformRaw {
 }
 
 impl CameraUniformRaw {
-    pub const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::const_mat4!(
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.5, 0.0],
-        [0.0, 0.0, 0.5, 1.0]
-    );
-
     fn new(view: glam::Mat4, proj: glam::Mat4) -> Self {
-        let proj = Self::OPENGL_TO_WGPU_MATRIX * proj;
-
         Self {
             view,
             proj,
