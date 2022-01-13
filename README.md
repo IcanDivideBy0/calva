@@ -1,6 +1,10 @@
 # Calva
 
-```sh
-cargo run demo
-cargo watch -x "run demo"
-```
+* PBR
+* GlTF loading
+* Skletal animations (w/ instancing)
+* Directional lights (w/ shadows)
+* Point lights (deferred rendering)
+* Skybox
+* MSAA
+* SSAO
