@@ -256,12 +256,12 @@ impl GltfModel {
                                 })
                             });
 
-                        joint_indices
-                            .zip(joint_weights)
-                            .map(|(joint_indices, joint_weights)| renderer::Skin {
+                        Option::zip(joint_indices, joint_weights).map(
+                            |(joint_indices, joint_weights)| renderer::Skin {
                                 joint_indices,
                                 joint_weights,
-                            })
+                            },
+                        )
                     };
 
                     acc.push((

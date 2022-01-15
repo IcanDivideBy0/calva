@@ -116,27 +116,6 @@ impl Scene {
                 light.position.z = limit;
             }
         }
-
-        // for mesh in self.models[0].meshes_mut() {
-        //     let instances = mesh.instances_mut();
-
-        //     instances.transforms[0] = glam::Mat4::from_scale_rotation_translation(
-        //         glam::Vec3::ONE,
-        //         glam::Quat::from_euler(glam::EulerRot::XYZ, t.as_secs_f32(), 0.0, 0.0),
-        //         glam::Vec3::Y * 2.0,
-        //     );
-        // }
-
-        // let cube: Box<&mut dyn std::any::Any> = Box::new(&mut self.models[0].as_mut());
-        // if let Some(Model::Simple(m)) = cube.downcast_mut::<Model>() {
-        //     m.instances.transforms[0] = glam::Mat4::from_scale_rotation_translation(
-        //         glam::Vec3::ONE,
-        //         glam::Quat::from_euler(glam::EulerRot::XYZ, dt.as_secs_f32(), 0.0, 0.0),
-        //         glam::Vec3::Y * 2.0,
-        //     );
-        // } else {
-        //     dbg!("nocube");
-        // }
     }
 }
 
@@ -281,30 +260,6 @@ async fn main() -> Result<()> {
                 camera.update(&mut renderer, dt);
                 scene.update(start_time.elapsed(), dt);
                 scene.lights[0].position = my_app.light_pos;
-
-                // for model in &mut models {
-                //     for (mesh_instances, skin_animation_instances) in model.instances.iter_mut() {
-                //         if let Some(skin_animation_instances) = skin_animation_instances {
-                //             for (i, skin_animation_instance) in
-                //                 skin_animation_instances.iter_mut().enumerate()
-                //             {
-                //                 skin_animation_instance.frame = model.animations[0]
-                //                     .animations
-                //                     .keys()
-                //                     .nth(i)
-                //                     .and_then(|anim_name| {
-                //                         model.animations[0].get_frame(
-                //                             anim_name,
-                //                             start_time.elapsed(),
-                //                             true,
-                //                         )
-                //                     })
-                //                     .unwrap_or(0);
-                //             }
-                //             skin_animation_instances.write_buffer(&renderer.queue);
-                //         }
-                //     }
-                // }
 
                 match renderer.render(|ctx| {
                     particles.run(ctx, &models[1].animations[0]);
