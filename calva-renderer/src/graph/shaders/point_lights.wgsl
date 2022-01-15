@@ -8,7 +8,7 @@ struct Camera {
 
 [[group(0), binding(0)]] var<uniform> camera: Camera;
 
-struct InstanceInput {
+struct LightInstance {
     [[location(0)]] position: vec3<f32>;
     [[location(1)]] radius: f32;
     [[location(2)]] color: vec3<f32>;
@@ -19,7 +19,7 @@ struct VertexInput {
 };
 
 fn get_clip_pos(
-    instance: InstanceInput,
+    instance: LightInstance,
     in: VertexInput,
 ) -> vec4<f32> {
     let world_pos = 1.1 * in.position * instance.radius + instance.position;
@@ -32,7 +32,7 @@ fn get_clip_pos(
 
 [[stage(vertex)]]
 fn vs_main_stencil(
-    instance: InstanceInput,
+    instance: LightInstance,
     in: VertexInput,
 ) -> [[builtin(position)]] vec4<f32> {
     return get_clip_pos(instance, in);
@@ -53,7 +53,7 @@ struct VertexOutput {
 
 [[stage(vertex)]]
 fn vs_main_lighting(
-    instance: InstanceInput,
+    instance: LightInstance,
     in: VertexInput,
 ) -> VertexOutput {
     let clip_pos = get_clip_pos(instance, in);

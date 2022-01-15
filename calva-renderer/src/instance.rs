@@ -17,7 +17,9 @@ impl<T: Instance> Instances<T> {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instances Buffer"),
             contents: &vec![0u8; T::SIZE * Self::MAX_INSTANCES],
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
         });
 
         Self {

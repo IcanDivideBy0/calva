@@ -12,28 +12,25 @@ struct Camera {
 // Vertex shader
 //
 
-struct InstanceInput {
+struct MeshInstance {
     [[location(0)]] model_matrix_0: vec4<f32>;
     [[location(1)]] model_matrix_1: vec4<f32>;
     [[location(2)]] model_matrix_2: vec4<f32>;
     [[location(3)]] model_matrix_3: vec4<f32>;
-
-    [[location(4)]] normal_matrix_0: vec3<f32>;
-    [[location(5)]] normal_matrix_1: vec3<f32>;
-    [[location(6)]] normal_matrix_2: vec3<f32>;
+    [[location(4)]] normal_quat: vec4<f32>;
 };
 
-struct SkinAnimationInstanceInput {
-    [[location(7)]] frame: u32;
+struct SkinAnimationInstance {
+    [[location(5)]] frame: u32;
 };
 
 struct VertexInput {
-    [[location( 8)]] position: vec3<f32>;
-    [[location( 9)]] normal: vec3<f32>;
-    [[location(10)]] tangent: vec4<f32>;
-    [[location(11)]] uv: vec2<f32>;
-    [[location(12)]] joints: u32;
-    [[location(13)]] weights: vec4<f32>;
+    [[location( 6)]] position: vec3<f32>;
+    [[location( 7)]] normal: vec3<f32>;
+    [[location( 8)]] tangent: vec4<f32>;
+    [[location( 9)]] uv: vec2<f32>;
+    [[location(10)]] joints: u32;
+    [[location(11)]] weights: vec4<f32>;
 };
 
 struct VertexOutput {
@@ -86,10 +83,44 @@ fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
     return mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
 }
 
+fn rotate(quat: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    return v + 2.0 * cross(quat.xyz, cross(quat.xyz, v) + quat.w * v);
+}
+
+fn quat_to_mat3(q: vec4<f32>) -> mat3x3<f32> {
+    let qxx = q.x * q.x;
+    let qyy = q.y * q.y;
+    let qzz = q.z * q.z;
+    let qxz = q.x * q.z;
+    let qxy = q.x * q.y;
+    let qyz = q.y * q.z;
+    let qwx = q.w * q.x;
+    let qwy = q.w * q.y;
+    let qwz = q.w * q.z;
+
+    return mat3x3<f32>(
+        vec3<f32>(
+            1.0 - 2.0 * (qyy +  qzz),
+            2.0 * (qxy + qwz),
+            2.0 * (qxz - qwy),
+        ),
+        vec3<f32>(
+            2.0 * (qxy - qwz),
+            1.0 - 2.0 * (qxx +  qzz),
+            2.0 * (qyz + qwx),
+        ),
+        vec3<f32>(
+            2.0 * (qxz + qwy),
+            2.0 * (qyz - qwx),
+            1.0 - 2.0 * (qxx +  qyy),
+        ),
+    );
+}
+
 [[stage(vertex)]]
 fn vs_main(
-    instance: InstanceInput,
-    skin_animation_instance: SkinAnimationInstanceInput,
+    instance: MeshInstance,
+    skin_animation_instance: SkinAnimationInstance,
     in: VertexInput,
 ) -> VertexOutput {
     let skinning_matrix = get_skinning_matrix(skin_animation_instance.frame, in);
@@ -99,12 +130,6 @@ fn vs_main(
         instance.model_matrix_1,
         instance.model_matrix_2,
         instance.model_matrix_3,
-    );
-
-    let normal_matrix = mat3x3<f32>(
-        instance.normal_matrix_0,
-        instance.normal_matrix_1,
-        instance.normal_matrix_2,
     );
 
     let world_pos = model_matrix * skinning_matrix * vec4<f32>(in.position, 1.0);
@@ -117,11 +142,11 @@ fn vs_main(
 
     let view_normal_matrix =
         mat4_to_mat3(camera.view) *
-        normal_matrix *
+        quat_to_mat3(instance.normal_quat) *
         mat4_to_mat3(skinning_matrix);
 
-    out.normal = normalize(view_normal_matrix * in.normal);
-    out.tangent = normalize(view_normal_matrix * in.tangent.xyz);
+    out.normal = view_normal_matrix * in.normal;
+    out.tangent = view_normal_matrix * in.tangent.xyz;
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;
@@ -171,7 +196,11 @@ fn get_tbn(in: VertexOutput) -> mat3x3<f32> {
     // no tangents
     // return compute_tbn(in);
 
-    return mat3x3<f32>(in.tangent, in.bitangent, in.normal);
+    return mat3x3<f32>(
+        normalize(in.tangent),
+        normalize(in.bitangent),
+        normalize(in.normal)
+    );
 }
 
 fn get_normal(in: VertexOutput) -> vec3<f32> {

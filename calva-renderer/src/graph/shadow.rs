@@ -503,7 +503,7 @@ mod depth {
                             wgpu::VertexBufferLayout {
                                 array_stride: (std::mem::size_of::<f32>() * 3) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                                attributes: &wgpu::vertex_attr_array![5 => Float32x3],
                             },
                         ],
                     },
@@ -559,19 +559,19 @@ mod depth {
                             wgpu::VertexBufferLayout {
                                 array_stride: (std::mem::size_of::<f32>() * 3) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                                attributes: &wgpu::vertex_attr_array![6 => Float32x3],
                             },
                             // Joints
                             wgpu::VertexBufferLayout {
                                 array_stride: (std::mem::size_of::<u32>()) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![9 => Uint32],
+                                attributes: &wgpu::vertex_attr_array![7 => Uint32],
                             },
                             // Weights
                             wgpu::VertexBufferLayout {
                                 array_stride: (std::mem::size_of::<f32>() * 4) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![10 => Float32x4],
+                                attributes: &wgpu::vertex_attr_array![8 => Float32x4],
                             },
                         ],
                     },

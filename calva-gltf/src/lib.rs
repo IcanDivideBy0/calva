@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu::{self, util::DeviceExt},
-    Renderer,
+    Instances, MeshInstance, MeshInstances, Renderer, SkinAnimationInstance,
+    SkinAnimationInstances,
 };
 use std::collections::HashMap;
 use std::io::Read;
@@ -131,10 +132,6 @@ impl GltfModel {
         for scene in doc.scenes() {
             traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut nodes_transforms);
         }
-
-        use renderer::{
-            Instances, MeshInstance, MeshInstances, SkinAnimationInstance, SkinAnimationInstances,
-        };
 
         let mut instances: Vec<(MeshInstances, Option<SkinAnimationInstances>)> = doc
             .meshes()

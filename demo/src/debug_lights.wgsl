@@ -13,7 +13,7 @@ var<uniform> camera: Camera;
 // Vertex shader
 //
 
-struct InstanceInput {
+struct MeshInstance {
     [[location(0)]] position: vec3<f32>;
     [[location(1)]] radius: f32;
     [[location(2)]] color: vec3<f32>;
@@ -26,7 +26,7 @@ struct VertexOutput {
 
 [[stage(vertex)]]
 fn vs_main(
-    instance: InstanceInput,
+    instance: MeshInstance,
     [[location(3)]] position: vec3<f32>,
 ) -> VertexOutput {
     let scale = instance.radius / 100.0;

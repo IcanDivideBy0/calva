@@ -13,25 +13,22 @@ var<uniform> shadow_light: ShadowLight;
 // Vertex shader
 //
 
-struct InstanceInput {
+struct MeshInstance {
     [[location(0)]] model_matrix_0: vec4<f32>;
     [[location(1)]] model_matrix_1: vec4<f32>;
     [[location(2)]] model_matrix_2: vec4<f32>;
     [[location(3)]] model_matrix_3: vec4<f32>;
-
-    [[location(4)]] normal_matrix_0: vec3<f32>;
-    [[location(5)]] normal_matrix_1: vec3<f32>;
-    [[location(6)]] normal_matrix_2: vec3<f32>;
+    [[location(4)]] normal_quat: vec4<f32>;
 };
 
 struct VertexInput {
-    [[location(8)]] position: vec3<f32>;
+    [[location(5)]] position: vec3<f32>;
 };
 
 [[stage(vertex)]]
 fn vs_main(
     [[builtin(view_index)]] view_index: i32,
-    instance: InstanceInput,
+    instance: MeshInstance,
     in: VertexInput,
 ) -> [[builtin(position)]] vec4<f32> {
     let model_matrix = mat4x4<f32>(

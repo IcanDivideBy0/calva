@@ -13,25 +13,22 @@ var<uniform> shadow_light: ShadowLight;
 // Vertex shader
 //
 
-struct InstanceInput {
+struct MeshInstance {
     [[location(0)]] model_matrix_0: vec4<f32>;
     [[location(1)]] model_matrix_1: vec4<f32>;
     [[location(2)]] model_matrix_2: vec4<f32>;
     [[location(3)]] model_matrix_3: vec4<f32>;
-
-    [[location(4)]] normal_matrix_0: vec3<f32>;
-    [[location(5)]] normal_matrix_1: vec3<f32>;
-    [[location(6)]] normal_matrix_2: vec3<f32>;
+    [[location(4)]] normal_quat: vec4<f32>;
 };
 
-struct SkinAnimationInstanceInput {
-    [[location(7)]] frame: u32;
+struct SkinAnimationInstance {
+    [[location(5)]] frame: u32;
 };
 
 struct VertexInput {
-    [[location( 8)]] position: vec3<f32>;
-    [[location( 9)]] joints: u32;
-    [[location(10)]] weights: vec4<f32>;
+    [[location(6)]] position: vec3<f32>;
+    [[location(7)]] joints: u32;
+    [[location(8)]] weights: vec4<f32>;
 };
 
 [[group(1), binding(0)]] var animation: texture_2d_array<f32>;
@@ -74,8 +71,8 @@ fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
 [[stage(vertex)]]
 fn vs_main(
     [[builtin(view_index)]] view_index: i32,
-    instance: InstanceInput,
-    skin_animation_instance: SkinAnimationInstanceInput,
+    instance: MeshInstance,
+    skin_animation_instance: SkinAnimationInstance,
     in: VertexInput,
 ) -> [[builtin(position)]] vec4<f32> {
     let skinning_matrix = get_skinning_matrix(skin_animation_instance.frame, in);

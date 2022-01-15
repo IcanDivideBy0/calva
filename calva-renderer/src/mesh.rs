@@ -14,22 +14,24 @@ pub struct Mesh {
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshInstance {
-    model: [f32; 16],
-    normal: [f32; 9],
+    model: glam::Mat4,
+    normal: glam::Quat,
 }
 
 impl From<&glam::Mat4> for MeshInstance {
     fn from(transform: &glam::Mat4) -> Self {
+        let normal_matrix = glam::Mat3::from_mat4(transform.inverse().transpose());
+
         Self {
-            model: transform.to_cols_array(),
-            normal: glam::Mat3::from_mat4(transform.inverse().transpose()).to_cols_array(),
+            model: *transform,
+            normal: glam::Quat::from_mat3(&normal_matrix).normalize(),
         }
     }
 }
 
 impl From<&MeshInstance> for glam::Mat4 {
     fn from(instance: &MeshInstance) -> Self {
-        glam::Mat4::from_cols_array(&instance.model)
+        instance.model
     }
 }
 
@@ -45,11 +47,8 @@ impl Instance for MeshInstance {
             1 => Float32x4,
             2 => Float32x4,
             3 => Float32x4,
-
-            // Normal matrix
-            4 => Float32x3,
-            5 => Float32x3,
-            6 => Float32x3,
+            // Normal quaternion
+            4 => Float32x4,
         ],
     };
 }

@@ -121,7 +121,7 @@ impl MipmapGenerator {
             label: Some("MipmapGenerator command encoder"),
         });
 
-        let mips = (0..desc.size.max_mips())
+        let mips = (0..desc.size.max_mips(desc.dimension))
             .map(|mip_level| {
                 texture.create_view(&wgpu::TextureViewDescriptor {
                     base_mip_level: mip_level,

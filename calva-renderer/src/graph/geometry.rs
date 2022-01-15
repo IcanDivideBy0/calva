@@ -128,25 +128,25 @@ impl Geometry {
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                            attributes: &wgpu::vertex_attr_array![5 => Float32x3],
                         },
                         // Normals
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![9 => Float32x3],
+                            attributes: &wgpu::vertex_attr_array![6 => Float32x3],
                         },
                         // Tangents
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 4) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![10 => Float32x4],
+                            attributes: &wgpu::vertex_attr_array![7 => Float32x4],
                         },
                         // UV
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 2) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![11 => Float32x2],
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x2],
                         },
                     ],
                 },
@@ -202,37 +202,37 @@ impl Geometry {
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![8 => Float32x3],
+                            attributes: &wgpu::vertex_attr_array![6 => Float32x3],
                         },
                         // Normals
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 3) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![9 => Float32x3],
+                            attributes: &wgpu::vertex_attr_array![7 => Float32x3],
                         },
                         // Tangents
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 4) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![10 => Float32x4],
+                            attributes: &wgpu::vertex_attr_array![8 => Float32x4],
                         },
                         // UV
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 2) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![11 => Float32x2],
+                            attributes: &wgpu::vertex_attr_array![9 => Float32x2],
                         },
                         // Joints
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<u32>()) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![12 => Uint32], // Do not use Uint8x4 or it will mess up offsets/strides
+                            attributes: &wgpu::vertex_attr_array![10 => Uint32], // Do not use Uint8x4 or it will mess up offsets/strides
                         },
                         // Weights
                         wgpu::VertexBufferLayout {
                             array_stride: (std::mem::size_of::<f32>() * 4) as _,
                             step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![13 => Float32x4],
+                            attributes: &wgpu::vertex_attr_array![11 => Float32x4],
                         },
                     ],
                 },

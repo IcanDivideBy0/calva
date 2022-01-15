@@ -13,11 +13,13 @@ use winit::{
 mod camera;
 mod debug_lights;
 mod my_app;
+mod particle;
 // mod shapes;
 
 use camera::MyCamera;
 use debug_lights::DebugLights;
 use my_app::*;
+use particle::*;
 
 struct Scene {
     // models: Vec<Box<dyn DrawModel>>,
@@ -184,45 +186,68 @@ async fn main() -> Result<()> {
     let mut scene = Scene::new(&renderer)?;
 
     let mut models = {
+        // let sponza = calva::gltf::GltfModel::new(
+        //     &renderer,
+        //     &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+        // )?;
+
         let plane = calva::gltf::GltfModel::new(
             &renderer,
             &mut std::fs::File::open("./demo/assets/plane.glb")?,
         )?;
 
-        // let mut zombie = calva::gltf::GltfModel::new(
-        //     &renderer,
-        //     &mut std::fs::File::open("./demo/assets/zombie.glb")?,
-        // )?;
+        let mut zombie = calva::gltf::GltfModel::new(
+            &renderer,
+            &mut std::fs::File::open("./demo/assets/zombie.glb")?,
+        )?;
 
-        // for (mesh_instances, skin_animation_instances) in zombie.instances.iter_mut() {
-        //     if let Some(mesh_instance) = mesh_instances.get(0) {
-        //         **mesh_instances = zombie.animations[0]
-        //             .animations
-        //             .iter()
-        //             .enumerate()
-        //             .map(|(i, _)| {
-        //                 let transform =
-        //                     glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
-        //                         * glam::Mat4::from(mesh_instance);
+        for (mesh_instances, skin_animation_instances) in zombie.instances.iter_mut() {
+            if let Some(mesh_instance) = mesh_instances.get(0) {
+                **mesh_instances = zombie.animations[0]
+                    .animations
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        let transform =
+                            glam::Mat4::from_translation(glam::Vec3::X * 3.0 * i as f32)
+                                * glam::Mat4::from(mesh_instance);
 
-        //                 (&transform).into()
-        //             })
-        //             .collect();
+                        (&transform).into()
+                    })
+                    .collect();
 
-        //         if let Some(skin_animation_instances) = skin_animation_instances {
-        //             **skin_animation_instances = zombie.animations[0]
-        //                 .animations
-        //                 .iter()
-        //                 .map(|_| calva::renderer::SkinAnimationInstance { frame: 0 })
-        //                 .collect();
-        //         }
-        //     }
-        // }
+                if let Some(skin_animation_instances) = skin_animation_instances {
+                    **skin_animation_instances = zombie.animations[0]
+                        .animations
+                        .iter()
+                        .map(|(_, (offset, _))| calva::renderer::SkinAnimationInstance {
+                            frame: *offset,
+                        })
+                        .collect();
+                }
+            }
+        }
 
-        // vec![plane, zombie]
-
-        vec![plane]
+        // vec![sponza, zombie]
+        vec![plane, zombie]
+        // vec![plane]
     };
+
+    for model in &mut models {
+        for (mesh_instances, skin_animation_instances) in model.instances.iter_mut() {
+            mesh_instances.write_buffer(&renderer.queue);
+
+            if let Some(skin_animation_instances) = skin_animation_instances {
+                skin_animation_instances.write_buffer(&renderer.queue);
+            }
+        }
+    }
+
+    let particles = Particles::new(
+        &renderer.device,
+        &models[1].instances[0].0,
+        models[1].instances[0].1.as_ref().unwrap(),
+    );
 
     let mut my_app: MyApp = renderer.config.data.into();
 
@@ -257,33 +282,33 @@ async fn main() -> Result<()> {
                 scene.update(start_time.elapsed(), dt);
                 scene.lights[0].position = my_app.light_pos;
 
-                for model in &mut models {
-                    for (mesh_instances, skin_animation_instances) in model.instances.iter_mut() {
-                        mesh_instances.write_buffer(&renderer.queue);
-
-                        if let Some(skin_animation_instances) = skin_animation_instances {
-                            for (i, skin_animation_instance) in
-                                skin_animation_instances.iter_mut().enumerate()
-                            {
-                                skin_animation_instance.frame = model.animations[0]
-                                    .animations
-                                    .keys()
-                                    .nth(i)
-                                    .and_then(|anim_name| {
-                                        model.animations[0].get_frame(
-                                            anim_name,
-                                            start_time.elapsed(),
-                                            true,
-                                        )
-                                    })
-                                    .unwrap_or(0);
-                            }
-                            skin_animation_instances.write_buffer(&renderer.queue);
-                        }
-                    }
-                }
+                // for model in &mut models {
+                //     for (mesh_instances, skin_animation_instances) in model.instances.iter_mut() {
+                //         if let Some(skin_animation_instances) = skin_animation_instances {
+                //             for (i, skin_animation_instance) in
+                //                 skin_animation_instances.iter_mut().enumerate()
+                //             {
+                //                 skin_animation_instance.frame = model.animations[0]
+                //                     .animations
+                //                     .keys()
+                //                     .nth(i)
+                //                     .and_then(|anim_name| {
+                //                         model.animations[0].get_frame(
+                //                             anim_name,
+                //                             start_time.elapsed(),
+                //                             true,
+                //                         )
+                //                     })
+                //                     .unwrap_or(0);
+                //             }
+                //             skin_animation_instances.write_buffer(&renderer.queue);
+                //         }
+                //     }
+                // }
 
                 match renderer.render(|ctx| {
+                    particles.run(ctx, &models[1].animations[0]);
+
                     rgraph.render(
                         ctx,
                         |draw| {

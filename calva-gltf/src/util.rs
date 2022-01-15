@@ -54,12 +54,13 @@ pub fn texture_builder<'a>(
             depth_or_array_layers: 1,
         };
 
+        let dimension = wgpu::TextureDimension::D2;
         let desc = wgpu::TextureDescriptor {
             label,
             size,
-            mip_level_count: size.max_mips(),
+            mip_level_count: size.max_mips(dimension),
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+            dimension,
             format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::RENDER_ATTACHMENT

@@ -12,22 +12,19 @@ struct Camera {
 // Vertex shader
 //
 
-struct InstanceInput {
+struct MeshInstance {
     [[location(0)]] model_matrix_0: vec4<f32>;
     [[location(1)]] model_matrix_1: vec4<f32>;
     [[location(2)]] model_matrix_2: vec4<f32>;
     [[location(3)]] model_matrix_3: vec4<f32>;
-
-    [[location(4)]] normal_matrix_0: vec3<f32>;
-    [[location(5)]] normal_matrix_1: vec3<f32>;
-    [[location(6)]] normal_matrix_2: vec3<f32>;
+    [[location(4)]] normal_quat: vec4<f32>;
 };
 
 struct VertexInput {
-    [[location( 8)]] position: vec3<f32>;
-    [[location( 9)]] normal: vec3<f32>;
-    [[location(10)]] tangent: vec4<f32>;
-    [[location(11)]] uv: vec2<f32>;
+    [[location(5)]] position: vec3<f32>;
+    [[location(6)]] normal: vec3<f32>;
+    [[location(7)]] tangent: vec4<f32>;
+    [[location(8)]] uv: vec2<f32>;
 };
 
 struct VertexOutput {
@@ -39,9 +36,13 @@ struct VertexOutput {
     [[location(4)]] uv: vec2<f32>;
 };
 
+fn rotate(quat: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    return v + 2.0 * cross(quat.xyz, cross(quat.xyz, v) + quat.w * v);
+}
+
 [[stage(vertex)]]
 fn vs_main(
-    instance: InstanceInput,
+    instance: MeshInstance,
     in: VertexInput,
 ) -> VertexOutput {
     let model_matrix = mat4x4<f32>(
@@ -56,11 +57,11 @@ fn vs_main(
         camera.view[1].xyz,
         camera.view[2].xyz,
     );
-    let normal_matrix = view3 * mat3x3<f32>(
-        instance.normal_matrix_0,
-        instance.normal_matrix_1,
-        instance.normal_matrix_2,
-    );
+    // let normal_matrix = view3 * mat3x3<f32>(
+    //     instance.normal_matrix_0.xyz,
+    //     instance.normal_matrix_1.xyz,
+    //     instance.normal_matrix_2.xyz,
+    // );
 
     let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
     let view_pos = camera.view * world_pos;
@@ -70,8 +71,8 @@ fn vs_main(
     out.clip_position = camera.proj * view_pos;
     out.position = view_pos.xyz / view_pos.w;
 
-    out.normal = normalize(normal_matrix * in.normal);
-    out.tangent = normalize(normal_matrix * in.tangent.xyz);
+    out.normal = view3 * rotate(instance.normal_quat, in.normal);
+    out.tangent = view3 * rotate(instance.normal_quat, in.tangent.xyz);
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;
@@ -121,7 +122,11 @@ fn get_tbn(in: VertexOutput) -> mat3x3<f32> {
     // no tangents
     // return compute_tbn(in);
 
-    return mat3x3<f32>(in.tangent, in.bitangent, in.normal);
+    return mat3x3<f32>(
+        normalize(in.tangent),
+        normalize(in.bitangent),
+        normalize(in.normal)
+    );
 }
 
 fn get_normal(in: VertexOutput) -> vec3<f32> {

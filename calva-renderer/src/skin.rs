@@ -11,7 +11,6 @@ pub struct Skin {
 }
 
 pub type SkinAnimationFrame = Vec<glam::Mat4>;
-
 pub type SkinAnimation = Vec<SkinAnimationFrame>;
 
 pub struct SkinAnimations {
@@ -28,17 +27,29 @@ impl SkinAnimations {
 
     pub const DESC: &'static wgpu::BindGroupLayoutDescriptor<'static> =
         &wgpu::BindGroupLayoutDescriptor {
-            label: Some("Animation bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            label: Some("Animations bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
         };
 
     pub fn new(
@@ -79,7 +90,7 @@ impl SkinAnimations {
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
-                label: Some("Animation texture"),
+                label: Some("Animations texture"),
                 size,
                 mip_level_count: 1,
                 sample_count: 1,
@@ -95,13 +106,30 @@ impl SkinAnimations {
             ..Default::default()
         });
 
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Animations buffer"),
+            contents: bytemuck::cast_slice(
+                &animations
+                    .values()
+                    .map(|(offset, length)| [*offset, *length])
+                    .collect::<Vec<_>>(),
+            ),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Animation bind group"),
+            label: Some("Animations bind group"),
             layout: &device.create_bind_group_layout(Self::DESC),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: buffer.as_entire_binding(),
+                },
+            ],
         });
 
         Self {
@@ -137,7 +165,7 @@ impl Instance for SkinAnimationInstance {
     const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
         array_stride: Self::SIZE as _,
         step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &wgpu::vertex_attr_array![7 => Uint32],
+        attributes: &wgpu::vertex_attr_array![5 => Uint32],
     };
 }
 
