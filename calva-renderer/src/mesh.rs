@@ -14,24 +14,24 @@ pub struct Mesh {
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshInstance {
-    model: glam::Mat4,
-    normal: glam::Quat,
+    model_matrix: glam::Mat4,
+    normal_quat: glam::Quat,
 }
 
 impl From<&glam::Mat4> for MeshInstance {
     fn from(transform: &glam::Mat4) -> Self {
-        let normal_matrix = glam::Mat3::from_mat4(transform.inverse().transpose());
+        let (_, quat, _) = transform.to_scale_rotation_translation();
 
         Self {
-            model: *transform,
-            normal: glam::Quat::from_mat3(&normal_matrix).normalize(),
+            model_matrix: *transform,
+            normal_quat: quat.normalize(),
         }
     }
 }
 
 impl From<&MeshInstance> for glam::Mat4 {
     fn from(instance: &MeshInstance) -> Self {
-        instance.model
+        instance.model_matrix
     }
 }
 

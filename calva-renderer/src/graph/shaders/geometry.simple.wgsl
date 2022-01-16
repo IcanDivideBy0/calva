@@ -52,17 +52,6 @@ fn vs_main(
         instance.model_matrix_3,
     );
 
-    let view3 = mat3x3<f32>(
-        camera.view[0].xyz,
-        camera.view[1].xyz,
-        camera.view[2].xyz,
-    );
-    // let normal_matrix = view3 * mat3x3<f32>(
-    //     instance.normal_matrix_0.xyz,
-    //     instance.normal_matrix_1.xyz,
-    //     instance.normal_matrix_2.xyz,
-    // );
-
     let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
     let view_pos = camera.view * world_pos;
 
@@ -71,6 +60,11 @@ fn vs_main(
     out.clip_position = camera.proj * view_pos;
     out.position = view_pos.xyz / view_pos.w;
 
+    let view3 = mat3x3<f32>(
+        camera.view[0].xyz,
+        camera.view[1].xyz,
+        camera.view[2].xyz,
+    );
     out.normal = view3 * rotate(instance.normal_quat, in.normal);
     out.tangent = view3 * rotate(instance.normal_quat, in.tangent.xyz);
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
@@ -131,7 +125,7 @@ fn get_tbn(in: VertexOutput) -> mat3x3<f32> {
 
 fn get_normal(in: VertexOutput) -> vec3<f32> {
     // no normal mapping
-    // return get_vert_normal(in);
+    // return normalize(get_vert_normal(in));
 
     let tbn = get_tbn(in);
     let n = textureSample(t_normal, t_sampler, in.uv).rgb * 2.0 - 1.0;

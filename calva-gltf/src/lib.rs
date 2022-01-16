@@ -129,7 +129,7 @@ impl GltfModel {
             .collect::<Result<_>>()?;
 
         let mut nodes_transforms = HashMap::new();
-        for scene in doc.scenes() {
+        if let Some(scene) = doc.default_scene() {
             traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut nodes_transforms);
         }
 
@@ -140,15 +140,15 @@ impl GltfModel {
 
         for node in doc.nodes() {
             if let Some(mesh) = node.mesh() {
-                instances[mesh.index()]
-                    .0
-                    .push(MeshInstance::from(&nodes_transforms[&node.index()]));
+                if let Some(transform) = nodes_transforms.get(&node.index()) {
+                    instances[mesh.index()].0.push(transform.into());
 
-                if node.skin().is_some() {
-                    instances[mesh.index()]
-                        .1
-                        .get_or_insert_with(|| Instances::new(device))
-                        .push(SkinAnimationInstance { frame: 0 });
+                    if node.skin().is_some() {
+                        instances[mesh.index()]
+                            .1
+                            .get_or_insert_with(|| Instances::new(device))
+                            .push(SkinAnimationInstance { frame: 0 });
+                    }
                 }
             }
         }

@@ -170,6 +170,11 @@ async fn main() -> Result<()> {
         //     &mut std::fs::File::open("./demo/assets/sponza.glb")?,
         // )?;
 
+        let dungeon = calva::gltf::GltfModel::new(
+            &renderer,
+            &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
+        )?;
+
         let plane = calva::gltf::GltfModel::new(
             &renderer,
             &mut std::fs::File::open("./demo/assets/plane.glb")?,
@@ -208,7 +213,7 @@ async fn main() -> Result<()> {
         }
 
         // vec![sponza, zombie]
-        vec![plane, zombie]
+        vec![dungeon, zombie]
         // vec![plane]
     };
 

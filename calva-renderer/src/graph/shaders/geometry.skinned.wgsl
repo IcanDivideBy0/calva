@@ -205,7 +205,7 @@ fn get_tbn(in: VertexOutput) -> mat3x3<f32> {
 
 fn get_normal(in: VertexOutput) -> vec3<f32> {
     // no normal mapping
-    // return get_vert_normal(in);
+    // return normalize(get_vert_normal(in));
 
     let tbn = get_tbn(in);
     let n = textureSample(t_normal, t_sampler, in.uv).rgb * 2.0 - 1.0;
