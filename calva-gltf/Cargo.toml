@@ -9,7 +9,7 @@ edition = "2021"
 renderer = { package = "calva-renderer", path = "../calva-renderer" }
 anyhow = "1.0"
 glam = { version = "0.20", features = ["serde", "bytemuck"] }
-gltf = { version = "0.16.0", features = ["utils"] }
+gltf = { version = "0.16.0", features = ["utils", "KHR_lights_punctual"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 byteorder = "1.3"

@@ -625,6 +625,8 @@ mod depth {
 
             cb(
                 &mut move |(mesh_instances, mesh, skin, animation_instances, animation): DrawCallArgs| {
+                    if mesh_instances.count() == 0 { return; }
+
                     rpass.set_pipeline(match skin {
                         Some(_) => &self.skinned_mesh_pipeline,
                         None => &self.simple_mesh_pipeline,

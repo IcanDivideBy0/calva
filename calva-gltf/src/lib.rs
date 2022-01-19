@@ -1,9 +1,5 @@
 use anyhow::{anyhow, Result};
-use renderer::{
-    wgpu::{self, util::DeviceExt},
-    Instances, MeshInstance, MeshInstances, Renderer, SkinAnimationInstance,
-    SkinAnimationInstances,
-};
+use renderer::wgpu::{self, util::DeviceExt};
 use std::collections::HashMap;
 use std::io::Read;
 
@@ -21,21 +17,6 @@ macro_rules! label {
     };
 }
 
-fn traverse_nodes<'a>(
-    nodes: impl Iterator<Item = gltf::Node<'a>>,
-    pwt: glam::Mat4, // parent world transform
-    store: &mut HashMap<usize, glam::Mat4>,
-) {
-    for node in nodes {
-        let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-        let world_transform = pwt * local_transform;
-
-        store.insert(node.index(), world_transform);
-
-        traverse_nodes(node.children(), world_transform, store);
-    }
-}
-
 pub struct GltfModel {
     pub meshes: Vec<(renderer::Mesh, Option<renderer::Skin>, usize, usize)>,
     pub materials: Vec<renderer::Material>,
@@ -44,11 +25,12 @@ pub struct GltfModel {
         Option<renderer::Instances<renderer::SkinAnimationInstance>>,
     )>,
     pub animations: Vec<renderer::SkinAnimations>,
+    pub point_lights: Vec<renderer::PointLight>,
 }
 
 impl GltfModel {
-    pub fn new(renderer: &Renderer, reader: &mut dyn Read) -> Result<Self> {
-        let Renderer { device, queue, .. } = renderer;
+    pub fn new(renderer: &renderer::Renderer, reader: &mut dyn Read) -> Result<Self> {
+        let renderer::Renderer { device, queue, .. } = renderer;
 
         let mut gltf_buffer = Vec::new();
         reader.read_to_end(&mut gltf_buffer)?;
@@ -129,28 +111,63 @@ impl GltfModel {
             .collect::<Result<_>>()?;
 
         let mut nodes_transforms = HashMap::new();
-        if let Some(scene) = doc.default_scene() {
-            traverse_nodes(scene.nodes(), glam::Mat4::IDENTITY, &mut nodes_transforms);
-        }
-
-        let mut instances: Vec<(MeshInstances, Option<SkinAnimationInstances>)> = doc
+        let mut instances: Vec<(
+            renderer::MeshInstances,
+            Option<renderer::SkinAnimationInstances>,
+        )> = doc
             .meshes()
-            .map(|_| (Instances::new(device), None))
+            .map(|_| (renderer::Instances::new(device), None))
             .collect();
+        let mut point_lights = Vec::new();
 
-        for node in doc.nodes() {
-            if let Some(mesh) = node.mesh() {
-                if let Some(transform) = nodes_transforms.get(&node.index()) {
-                    instances[mesh.index()].0.push(transform.into());
+        if let Some(scene) = doc.default_scene() {
+            util::traverse_nodes(
+                scene.nodes(),
+                &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
+                    let local_transform =
+                        glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+                    let global_transform = *parent_transform * local_transform;
 
-                    if node.skin().is_some() {
-                        instances[mesh.index()]
-                            .1
-                            .get_or_insert_with(|| Instances::new(device))
-                            .push(SkinAnimationInstance { frame: 0 });
+                    if let Some(mesh) = node.mesh() {
+                        let (mesh_instances, skin_animation_instances) =
+                            &mut instances[mesh.index()];
+
+                        mesh_instances.push((&global_transform).into());
+
+                        if node.skin().is_some() {
+                            skin_animation_instances
+                                .get_or_insert_with(|| renderer::Instances::new(device))
+                                .push(renderer::SkinAnimationInstance { frame: 0 });
+                        }
                     }
-                }
-            }
+
+                    if let Some(light) = node.light() {
+                        use gltf::khr_lights_punctual::Kind;
+
+                        match light.kind() {
+                            Kind::Directional => {
+                                unimplemented!();
+                            }
+                            Kind::Point => {
+                                point_lights.push(renderer::PointLight {
+                                    color: light.color().into(),
+                                    position: global_transform.transform_point3(glam::Vec3::ZERO),
+                                    radius: light
+                                        .range()
+                                        .unwrap_or_else(|| light.intensity().sqrt()),
+                                });
+                            }
+                            Kind::Spot { .. } => {
+                                unimplemented!();
+                            }
+                        }
+                    }
+
+                    nodes_transforms.insert(node.index(), global_transform);
+                    global_transform
+                },
+                glam::Mat4::IDENTITY,
+            )
         }
 
         let primitives_count = doc
@@ -363,6 +380,7 @@ impl GltfModel {
             materials,
             instances,
             animations: skin_animations,
+            point_lights,
         })
     }
 }
