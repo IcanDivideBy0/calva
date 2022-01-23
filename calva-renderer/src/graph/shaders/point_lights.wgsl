@@ -6,16 +6,16 @@ struct Camera {
     inv_proj: mat4x4<f32>;
 };
 
-[[group(0), binding(0)]] var<uniform> camera: Camera;
+@group(0) @binding(0) var<uniform> camera: Camera;
 
 struct LightInstance {
-    [[location(0)]] position: vec3<f32>;
-    [[location(1)]] radius: f32;
-    [[location(2)]] color: vec3<f32>;
+    @location(0) position: vec3<f32>;
+    @location(1) radius: f32;
+    @location(2) color: vec3<f32>;
 };
 
 struct VertexInput {
-    [[location(3)]] position: vec3<f32>;
+    @location(3) position: vec3<f32>;
 };
 
 fn get_clip_pos(
@@ -30,11 +30,11 @@ fn get_clip_pos(
 // Stencil pass
 //
 
-[[stage(vertex)]]
+@stage(vertex)
 fn vs_main_stencil(
     instance: LightInstance,
     in: VertexInput,
-) -> [[builtin(position)]] vec4<f32> {
+) -> @builtin(position) vec4<f32> {
     return get_clip_pos(instance, in);
 }
 
@@ -43,15 +43,15 @@ fn vs_main_stencil(
 //
 
 struct VertexOutput {
-    [[builtin(position)]] position: vec4<f32>;
-    [[location(0)]] ndc: vec2<f32>;
+    @builtin(position) position: vec4<f32>;
+    @location(0) ndc: vec2<f32>;
 
-    [[location(1)]] l_position: vec3<f32>;
-    [[location(2)]] l_radius: f32;
-    [[location(3)]] l_color: vec3<f32>;
+    @location(1) l_position: vec3<f32>;
+    @location(2) l_radius: f32;
+    @location(3) l_color: vec3<f32>;
 };
 
-[[stage(vertex)]]
+@stage(vertex)
 fn vs_main_lighting(
     instance: LightInstance,
     in: VertexInput,
@@ -72,9 +72,9 @@ fn vs_main_lighting(
 // Fragment shader
 //
 
-[[group(1), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
-[[group(1), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
-[[group(1), binding(2)]] var t_depth: texture_depth_multisampled_2d;
+@group(1) @binding(0) var t_albedo_metallic: texture_multisampled_2d<f32>;
+@group(1) @binding(1) var t_normal_roughness: texture_multisampled_2d<f32>;
+@group(1) @binding(2) var t_depth: texture_depth_multisampled_2d;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -110,11 +110,11 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
     return ggx1 * ggx2;
 }
 
-[[stage(fragment)]]
+@stage(fragment)
 fn fs_main_lighting(
-    [[builtin(sample_index)]] msaa_sample: u32,
+    @builtin(sample_index) msaa_sample: u32,
     in: VertexOutput,
-) -> [[location(0)]] vec4<f32> {
+) -> @location(0) vec4<f32> {
     let c = vec2<i32>(floor(in.position.xy));
 
     let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));

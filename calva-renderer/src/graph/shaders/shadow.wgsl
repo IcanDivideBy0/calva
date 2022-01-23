@@ -21,21 +21,21 @@ struct ShadowLight {
     splits: array<f32, CASCADES>;
 };
 
-[[group(0), binding(0)]] var<uniform> config: Config;
-[[group(1), binding(0)]] var<uniform> camera: Camera;
-[[group(2), binding(0)]] var<uniform> shadow_light: ShadowLight;
+@group(0) @binding(0) var<uniform> config: Config;
+@group(1) @binding(0) var<uniform> camera: Camera;
+@group(2) @binding(0) var<uniform> shadow_light: ShadowLight;
 
 //
 // Vertex shader
 //
 
 struct VertexOutput {
-    [[builtin(position)]] position: vec4<f32>;
-    [[location(0)]] ndc: vec2<f32>;
+    @builtin(position) position: vec4<f32>;
+    @location(0) ndc: vec2<f32>;
 };
 
-[[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index: u32) -> VertexOutput {
+@stage(vertex)
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -49,12 +49,12 @@ fn vs_main([[builtin(vertex_index)]] vertex_index: u32) -> VertexOutput {
 // Fragment shader
 //
 
-[[group(3), binding(0)]] var t_albedo_metallic: texture_multisampled_2d<f32>;
-[[group(3), binding(1)]] var t_normal_roughness: texture_multisampled_2d<f32>;
-[[group(3), binding(2)]] var t_depth: texture_depth_multisampled_2d;
+@group(3) @binding(0) var t_albedo_metallic: texture_multisampled_2d<f32>;
+@group(3) @binding(1) var t_normal_roughness: texture_multisampled_2d<f32>;
+@group(3) @binding(2) var t_depth: texture_depth_multisampled_2d;
 
-[[group(3), binding(3)]] var t_shadows: texture_depth_2d_array;
-[[group(3), binding(4)]] var s_shadows: sampler;
+@group(3) @binding(3) var t_shadows: texture_depth_2d_array;
+@group(3) @binding(4) var s_shadows: sampler;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -90,11 +90,11 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
     return ggx1 * ggx2;
 }
 
-[[stage(fragment)]]
+@stage(fragment)
 fn fs_main(
-    [[builtin(sample_index)]] msaa_sample: u32,
+    @builtin(sample_index) msaa_sample: u32,
     in: VertexOutput,
-) -> [[location(0)]] vec4<f32> {
+) -> @location(0) vec4<f32> {
     let c = vec2<i32>(floor(in.position.xy));
 
     let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));

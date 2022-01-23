@@ -13,8 +13,8 @@ struct SkinAnimationInstances {
     data: array<SkinAnimationInstance>;
 };
 
-[[group(0), binding(0)]] var<storage, read_write> mesh_instances: MeshInstances;
-[[group(0), binding(1)]] var<storage, read_write> animation_instances: SkinAnimationInstances;
+@group(0) @binding(0) var<storage, read_write> mesh_instances: MeshInstances;
+@group(0) @binding(1) var<storage, read_write> animation_instances: SkinAnimationInstances;
 
 struct SkinAnimation {
     offset: u32;
@@ -24,13 +24,13 @@ struct SkinAnimations {
     data: array<SkinAnimation>;
 };
 
-[[group(1), binding(1)]] var<storage, read> animations: SkinAnimations;
+@group(1) @binding(1) var<storage, read> animations: SkinAnimations;
 
 // fn find_animation(current_frame: u32) -> ptr<storage, SkinAnimation> {}
 
-[[stage(compute), workgroup_size(100)]]
+@stage(compute) @workgroup_size(100)
 fn main(
-    [[builtin(global_invocation_id)]] global_id: vec3<u32>,
+    @builtin(global_invocation_id) global_id: vec3<u32>,
 ) {
     let animation_instance = &animation_instances.data[global_id.x];
 

@@ -6,7 +6,7 @@ struct ShadowLight {
     splits: array<f32, CASCADES>;
 };
 
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var<uniform> shadow_light: ShadowLight;
 
 //
@@ -14,24 +14,24 @@ var<uniform> shadow_light: ShadowLight;
 //
 
 struct MeshInstance {
-    [[location(0)]] model_matrix_0: vec4<f32>;
-    [[location(1)]] model_matrix_1: vec4<f32>;
-    [[location(2)]] model_matrix_2: vec4<f32>;
-    [[location(3)]] model_matrix_3: vec4<f32>;
-    [[location(4)]] normal_quat: vec4<f32>;
+    @location(0) model_matrix_0: vec4<f32>;
+    @location(1) model_matrix_1: vec4<f32>;
+    @location(2) model_matrix_2: vec4<f32>;
+    @location(3) model_matrix_3: vec4<f32>;
+    @location(4) normal_quat: vec4<f32>;
 };
 
 struct SkinAnimationInstance {
-    [[location(5)]] frame: u32;
+    @location(5) frame: u32;
 };
 
 struct VertexInput {
-    [[location(6)]] position: vec3<f32>;
-    [[location(7)]] joints: u32;
-    [[location(8)]] weights: vec4<f32>;
+    @location(6) position: vec3<f32>;
+    @location(7) joints: u32;
+    @location(8) weights: vec4<f32>;
 };
 
-[[group(1), binding(0)]] var animation: texture_2d_array<f32>;
+@group(1) @binding(0) var animation: texture_2d_array<f32>;
 
 fn get_joint_matrix(frame: u32, joint_index: u32) -> mat4x4<f32> {
     let c = vec2<i32>(
@@ -68,13 +68,13 @@ fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
     );
 }
 
-[[stage(vertex)]]
+@stage(vertex)
 fn vs_main(
-    [[builtin(view_index)]] view_index: i32,
+    @builtin(view_index) view_index: i32,
     instance: MeshInstance,
     skin_animation_instance: SkinAnimationInstance,
     in: VertexInput,
-) -> [[builtin(position)]] vec4<f32> {
+) -> @builtin(position) vec4<f32> {
     let skinning_matrix = get_skinning_matrix(skin_animation_instance.frame, in);
 
     let model_matrix = mat4x4<f32>(

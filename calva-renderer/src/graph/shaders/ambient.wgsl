@@ -5,14 +5,14 @@ struct Config {
     ambient_factor: f32;
 };
 
-[[group(0), binding(0)]] var<uniform> config: Config;
+@group(0) @binding(0) var<uniform> config: Config;
 
 //
 // Vertex shader
 //
 
-[[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn vs_main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4<f32> {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
         f32(vertex_index &  1u),
@@ -25,13 +25,13 @@ fn vs_main([[builtin(vertex_index)]] vertex_index : u32) -> [[builtin(position)]
 // Fragment shader
 //
 
-[[group(1), binding(0)]] var albedo: texture_multisampled_2d<f32>;
+@group(1) @binding(0) var albedo: texture_multisampled_2d<f32>;
 
-[[stage(fragment)]]
+@stage(fragment)
 fn fs_main(
-    [[builtin(position)]] coord : vec4<f32>,
-    [[builtin(sample_index)]] msaa_sample: u32
-) -> [[location(0)]] vec4<f32> {
+    @builtin(position) coord : vec4<f32>,
+    @builtin(sample_index) msaa_sample: u32
+) -> @location(0) vec4<f32> {
     let c = vec2<i32>(floor(coord.xy));
 
     let diffuse = textureLoad(albedo, c, i32(msaa_sample)).rgb;

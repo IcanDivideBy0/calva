@@ -18,7 +18,7 @@ impl epi::App for MyApp {
         "egui template"
     }
 
-    fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
+    fn update(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame) {
         egui::SidePanel::right("config_panel")
             .min_width(300.0)
             .frame(egui::containers::Frame {

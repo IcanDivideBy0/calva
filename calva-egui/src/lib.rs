@@ -11,7 +11,7 @@ pub use epi;
 
 struct RepaintSignal;
 
-impl epi::RepaintSignal for RepaintSignal {
+impl epi::backend::RepaintSignal for RepaintSignal {
     fn request_repaint(&self) {
         println!("req");
     }
@@ -64,23 +64,21 @@ impl EguiPass {
 
         let egui_start = Instant::now();
         self.platform.begin_frame();
-        let mut app_output = epi::backend::AppOutput::default();
+        let app_output = epi::backend::AppOutput::default();
 
-        let mut epi_frame = epi::backend::FrameBuilder {
+        let frame = epi::Frame::new(epi::backend::FrameData {
             info: epi::IntegrationInfo {
                 name: "egui_wgpu",
                 web_info: None,
-                prefer_dark_mode: Some(true),
                 cpu_usage: self.previous_frame_time,
-                native_pixels_per_point: Some(scale_factor),
+                native_pixels_per_point: Some(window.scale_factor() as _),
+                prefer_dark_mode: Some(true),
             },
-            tex_allocator: &mut self.rpass,
-            output: &mut app_output,
+            output: app_output,
             repaint_signal: self.repaint_signal.clone(),
-        }
-        .build();
+        });
 
-        app.update(&self.platform.context(), &mut epi_frame);
+        app.update(&self.platform.context(), &frame);
         let (_output, paint_commands) = self.platform.end_frame(Some(window));
         let paint_jobs = self.platform.context().tessellate(paint_commands);
 
@@ -90,7 +88,7 @@ impl EguiPass {
         self.rpass.update_texture(
             &ctx.renderer.device,
             &ctx.renderer.queue,
-            &self.platform.context().texture(),
+            &self.platform.context().font_image(),
         );
 
         self.rpass

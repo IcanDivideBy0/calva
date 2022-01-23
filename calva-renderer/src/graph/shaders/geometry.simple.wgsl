@@ -6,41 +6,41 @@ struct Camera {
     inv_proj: mat4x4<f32>;
 };
 
-[[group(0), binding(0)]] var<uniform> camera: Camera;
+@group(0) @binding(0) var<uniform> camera: Camera;
 
 //
 // Vertex shader
 //
 
 struct MeshInstance {
-    [[location(0)]] model_matrix_0: vec4<f32>;
-    [[location(1)]] model_matrix_1: vec4<f32>;
-    [[location(2)]] model_matrix_2: vec4<f32>;
-    [[location(3)]] model_matrix_3: vec4<f32>;
-    [[location(4)]] normal_quat: vec4<f32>;
+    @location(0) model_matrix_0: vec4<f32>;
+    @location(1) model_matrix_1: vec4<f32>;
+    @location(2) model_matrix_2: vec4<f32>;
+    @location(3) model_matrix_3: vec4<f32>;
+    @location(4) normal_quat: vec4<f32>;
 };
 
 struct VertexInput {
-    [[location(5)]] position: vec3<f32>;
-    [[location(6)]] normal: vec3<f32>;
-    [[location(7)]] tangent: vec4<f32>;
-    [[location(8)]] uv: vec2<f32>;
+    @location(5) position: vec3<f32>;
+    @location(6) normal: vec3<f32>;
+    @location(7) tangent: vec4<f32>;
+    @location(8) uv: vec2<f32>;
 };
 
 struct VertexOutput {
-    [[builtin(position)]] clip_position: vec4<f32>;
-    [[location(0)]] position: vec3<f32>;
-    [[location(1)]] normal: vec3<f32>;
-    [[location(2)]] tangent: vec3<f32>;
-    [[location(3)]] bitangent: vec3<f32>;
-    [[location(4)]] uv: vec2<f32>;
+    @builtin(position) clip_position: vec4<f32>;
+    @location(0) position: vec3<f32>;
+    @location(1) normal: vec3<f32>;
+    @location(2) tangent: vec3<f32>;
+    @location(3) bitangent: vec3<f32>;
+    @location(4) uv: vec2<f32>;
 };
 
 fn rotate(quat: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
     return v + 2.0 * cross(quat.xyz, cross(quat.xyz, v) + quat.w * v);
 }
 
-[[stage(vertex)]]
+@stage(vertex)
 fn vs_main(
     instance: MeshInstance,
     in: VertexInput,
@@ -79,14 +79,14 @@ fn vs_main(
 //
 
 struct FragmentOutput {
-    [[location(0)]] albedo_metallic: vec4<f32>;
-    [[location(1)]] normal_roughness: vec4<f32>;
+    @location(0) albedo_metallic: vec4<f32>;
+    @location(1) normal_roughness: vec4<f32>;
 };
 
-[[group(1), binding(0)]] var t_albedo: texture_2d<f32>;
-[[group(1), binding(1)]] var t_normal: texture_2d<f32>;
-[[group(1), binding(2)]] var t_metallic_roughness: texture_2d<f32>;
-[[group(1), binding(3)]] var t_sampler: sampler;
+@group(1) @binding(0) var t_albedo: texture_2d<f32>;
+@group(1) @binding(1) var t_normal: texture_2d<f32>;
+@group(1) @binding(2) var t_metallic_roughness: texture_2d<f32>;
+@group(1) @binding(3) var t_sampler: sampler;
 
 fn get_vert_normal(in: VertexOutput) -> vec3<f32> {
     // no normals
@@ -132,7 +132,7 @@ fn get_normal(in: VertexOutput) -> vec3<f32> {
     return normalize(tbn * n);
 }
 
-[[stage(fragment)]]
+@stage(fragment)
 fn fs_main(in: VertexOutput) -> FragmentOutput {
     let albedo = textureSample(t_albedo, t_sampler, in.uv);
 
