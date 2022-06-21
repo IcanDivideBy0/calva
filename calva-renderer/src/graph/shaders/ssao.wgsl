@@ -1,16 +1,16 @@
 struct Config {
-    ssao_radius: f32;
-    ssao_bias: f32;
-    ssao_power: f32;
-    ambient_factor: f32;
+    ssao_radius: f32,
+    ssao_bias: f32,
+    ssao_power: f32,
+    ambient_factor: f32,
 };
 
 struct Camera {
-    view: mat4x4<f32>;
-    proj: mat4x4<f32>;
-    view_proj: mat4x4<f32>;
-    inv_view: mat4x4<f32>;
-    inv_proj: mat4x4<f32>;
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    view_proj: mat4x4<f32>,
+    inv_view: mat4x4<f32>,
+    inv_proj: mat4x4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> config: Config;
@@ -21,11 +21,11 @@ struct Camera {
 //
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>;
-    @location(0) ndc: vec2<f32>;
+    @builtin(position) position: vec4<f32>,
+    @location(0) ndc: vec2<f32>,
 };
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
@@ -43,15 +43,18 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 let SAMPLES_COUNT: u32 = 16u;
 
 struct RandomData {
-    samples: array<vec2<f32>, SAMPLES_COUNT>;
-    noise: array<array<vec2<f32>, 4>, 4>;
+    // samples: array<vec2<f32>, SAMPLES_COUNT>,
+    // @align(16) noise: array<array<vec2<f32>, 4>, 4>,
+
+    samples: array<vec4<f32>, 8>,
+    noise: array<vec4<f32>, 8>,
 };
 
 @group(2) @binding(0) var<uniform> random_data: RandomData;
 @group(2) @binding(1) var t_depth: texture_depth_multisampled_2d;
 @group(2) @binding(2) var t_normal: texture_multisampled_2d<f32>;
 
-@stage(fragment)
+@fragment
 fn fs_main(
     @builtin(sample_index) msaa_sample: u32,
     in: VertexOutput,
@@ -63,7 +66,8 @@ fn fs_main(
     let frag_position = frag_position4.xyz / frag_position4.w;
 
     let frag_normal = textureLoad(t_normal, c, 0).xyz;
-    let random = vec3<f32>(random_data.noise[c.x & 3][c.y & 3], 0.0);
+    // let random = vec3<f32>(random_data.noise[c.x & 3][c.y & 3], 0.0);
+    let random = vec3<f32>(0.0, 0.0, 0.0);
 
     let tangent = normalize(random - frag_normal * dot(random, frag_normal));
     let bitangent = cross(frag_normal, tangent);
@@ -72,7 +76,8 @@ fn fs_main(
     var occlusion: f32 = 0.0;
     for (var i: u32 = 0u; i < SAMPLES_COUNT; i = i + 1u) {
         // Reorient sample vector in view space ...
-        var sample_pos = tbn * vec3<f32>(random_data.samples[i], 0.0);
+        // var sample_pos = tbn * vec3<f32>(random_data.samples[i], 0.0);
+        var sample_pos = tbn * vec3<f32>(0.0, 0.0, 0.0);
 
         // ... and calculate sample point.
         sample_pos = frag_position + sample_pos * config.ssao_radius;
@@ -90,7 +95,7 @@ fn fs_main(
         let frag_pos = camera.inv_proj * vec4<f32>(sample_uv, depth, 1.0);
         let frag_pos = frag_pos.xyz / frag_pos.w;
 
-        let range_check = smoothStep(0.0, 1.0, config.ssao_radius / abs(frag_position.z - frag_pos.z));
+        let range_check = smoothstep(0.0, 1.0, config.ssao_radius / abs(frag_position.z - frag_pos.z));
 
         occlusion = occlusion + select(0.0, 1.0, frag_pos.z >= sample_pos.z + config.ssao_bias) * range_check;
     }

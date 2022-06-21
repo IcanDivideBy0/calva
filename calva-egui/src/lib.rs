@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 use egui_wgpu_backend::{BackendError, RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use std::sync::Arc;
@@ -79,20 +81,20 @@ impl EguiPass {
         });
 
         app.update(&self.platform.context(), &frame);
-        let (_output, paint_commands) = self.platform.end_frame(Some(window));
-        let paint_jobs = self.platform.context().tessellate(paint_commands);
+        let output = self.platform.end_frame(Some(window));
+        let paint_jobs = self.platform.context().tessellate(output.shapes);
 
         let frame_time = (Instant::now() - egui_start).as_secs_f64() as f32;
         self.previous_frame_time = Some(frame_time);
 
-        self.rpass.update_texture(
+        self.rpass.add_textures(
             &ctx.renderer.device,
             &ctx.renderer.queue,
-            &self.platform.context().font_image(),
-        );
+            &output.textures_delta,
+        )?;
 
-        self.rpass
-            .update_user_textures(&ctx.renderer.device, &ctx.renderer.queue);
+        // self.rpass
+        //     .update_user_textures(&ctx.renderer.device, &ctx.renderer.queue);
         let screen_descriptor = ScreenDescriptor {
             physical_width: ctx.renderer.surface_config.width,
             physical_height: ctx.renderer.surface_config.height,

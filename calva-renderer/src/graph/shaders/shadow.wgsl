@@ -1,24 +1,24 @@
 struct Config {
-    ssao_radius: f32;
-    ssao_bias: f32;
-    ssao_power: f32;
-    ambient_factor: f32;
+    ssao_radius: f32,
+    ssao_bias: f32,
+    ssao_power: f32,
+    ambient_factor: f32,
 };
 
 struct Camera {
-    view: mat4x4<f32>;
-    proj: mat4x4<f32>;
-    view_proj: mat4x4<f32>;
-    inv_view: mat4x4<f32>;
-    inv_proj: mat4x4<f32>;
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    view_proj: mat4x4<f32>,
+    inv_view: mat4x4<f32>,
+    inv_proj: mat4x4<f32>,
 };
 
 let CASCADES: u32 = 3u;
 struct ShadowLight {
-    color: vec4<f32>;
-    direction: vec4<f32>; // camera view space
-    view_proj: array<mat4x4<f32>, CASCADES>;
-    splits: array<f32, CASCADES>;
+    color: vec4<f32>,
+    direction: vec4<f32>, // camera view space
+    view_proj: array<mat4x4<f32>, CASCADES>,
+    splits: array<f32, CASCADES>,
 };
 
 @group(0) @binding(0) var<uniform> config: Config;
@@ -34,7 +34,7 @@ struct VertexOutput {
     @location(0) ndc: vec2<f32>;
 };
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
@@ -90,7 +90,7 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
     return ggx1 * ggx2;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(
     @builtin(sample_index) msaa_sample: u32,
     in: VertexOutput,

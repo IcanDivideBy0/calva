@@ -1,5 +1,6 @@
 use crate::{
-    Mesh, MeshInstances, RenderContext, Renderer, Skin, SkinAnimationInstances, SkinAnimations,
+    light::DirectionalLight, Mesh, MeshInstances, RenderContext, Renderer, Skin,
+    SkinAnimationInstances, SkinAnimations,
 };
 
 pub type DrawCallArgs<'a> = (
@@ -222,7 +223,7 @@ impl ShadowLight {
         &self,
         ctx: &'ctx mut RenderContext,
         splits: [f32; Self::CASCADES],
-        light_dir: glam::Vec3,
+        light: &DirectionalLight,
         cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
         ctx.encoder.push_debug_group("ShadowLight");
@@ -232,7 +233,7 @@ impl ShadowLight {
             ctx.renderer.camera.view,
             ctx.renderer.camera.proj,
             splits,
-            light_dir,
+            light,
         );
 
         self.depth_pass.render(ctx, &self.uniform, cb);
@@ -260,6 +261,9 @@ impl ShadowLight {
 }
 
 mod uniform {
+    use crate::light::DirectionalLight;
+    use std::mem::size_of;
+
     const CASCADES: usize = super::ShadowLight::CASCADES;
 
     #[repr(C)]
@@ -298,8 +302,6 @@ mod uniform {
         }
     }
 
-    impl ShadowLightUniformRaw {}
-
     pub struct ShadowLightUniform {
         buffer: wgpu::Buffer,
 
@@ -311,7 +313,7 @@ mod uniform {
         pub fn new(device: &wgpu::Device) -> Self {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("ShadowLightUniform buffer"),
-                size: std::mem::size_of::<ShadowLightUniformRaw>() as _,
+                size: size_of::<ShadowLightUniformRaw>() as _,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -325,7 +327,9 @@ mod uniform {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: None,
+                            min_binding_size: wgpu::BufferSize::new(
+                                size_of::<ShadowLightUniformRaw>() as _,
+                            ),
                         },
                         count: None,
                     }],
@@ -353,7 +357,7 @@ mod uniform {
             camera_view: glam::Mat4,
             camera_proj: glam::Mat4,
             mut splits: [f32; CASCADES],
-            light_dir: glam::Vec3,
+            light: &DirectionalLight,
         ) {
             #[rustfmt::skip]
             const CAMERA_FRUSTRUM: [glam::Vec3; 8] = [
@@ -369,7 +373,7 @@ mod uniform {
                 glam::const_vec3!([ 1.0, -1.0, 1.0]), // bottom right
             ];
 
-            let light_dir = light_dir.normalize();
+            let light_dir = light.direction.normalize();
             let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
             let transform = light_view * (camera_proj * camera_view).inverse();
@@ -435,8 +439,8 @@ mod uniform {
                 &self.buffer,
                 0,
                 bytemuck::bytes_of(&ShadowLightUniformRaw::new(
-                    glam::Vec4::ONE,
-                    light_dir_view_space.extend(1.0),
+                    light.color,
+                    light_dir_view_space.extend(0.0),
                     split_transforms,
                     splits,
                 )),
@@ -446,6 +450,8 @@ mod uniform {
 }
 
 mod depth {
+    use std::mem::size_of;
+
     use super::{uniform::ShadowLightUniform, DrawCallArgs, ShadowLight};
     use crate::{Instance, MeshInstance, RenderContext, SkinAnimationInstance, SkinAnimations};
 
@@ -501,7 +507,7 @@ mod depth {
                             MeshInstance::LAYOUT,
                             // Positions
                             wgpu::VertexBufferLayout {
-                                array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                                array_stride: (size_of::<f32>() * 3) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
                                 attributes: &wgpu::vertex_attr_array![5 => Float32x3],
                             },
@@ -557,19 +563,19 @@ mod depth {
                             SkinAnimationInstance::LAYOUT,
                             // Positions
                             wgpu::VertexBufferLayout {
-                                array_stride: (std::mem::size_of::<f32>() * 3) as _,
+                                array_stride: (size_of::<f32>() * 3) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
                                 attributes: &wgpu::vertex_attr_array![6 => Float32x3],
                             },
                             // Joints
                             wgpu::VertexBufferLayout {
-                                array_stride: (std::mem::size_of::<u32>()) as _,
+                                array_stride: (size_of::<u32>()) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
                                 attributes: &wgpu::vertex_attr_array![7 => Uint32],
                             },
                             // Weights
                             wgpu::VertexBufferLayout {
-                                array_stride: (std::mem::size_of::<f32>() * 4) as _,
+                                array_stride: (size_of::<f32>() * 4) as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
                                 attributes: &wgpu::vertex_attr_array![8 => Float32x4],
                             },

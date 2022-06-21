@@ -2,7 +2,7 @@
 // Vertex shader
 //
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<f32> {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
@@ -34,12 +34,12 @@ fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
     return result;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main_horizontal(@builtin(position) position: vec4<f32>) -> @location(0) f32 {
     return blur(position, vec2<i32>(1, 0));
 }
 
-@stage(fragment)
+@fragment
 fn fs_main_vertical(@builtin(position) position: vec4<f32>) -> @location(0) f32 {
     return blur(position, vec2<i32>(0, 1));
 }

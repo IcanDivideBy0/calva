@@ -89,10 +89,10 @@ pub fn texture_builder<'a>(
 pub fn traverse_nodes<'a, T>(
     nodes: impl Iterator<Item = gltf::Node<'a>>,
     cb: &mut dyn FnMut(&T, &gltf::Node) -> T,
-    parent: T,
+    acc: T,
 ) {
     for node in nodes {
-        let res = cb(&parent, &node);
+        let res = cb(&acc, &node);
         traverse_nodes(node.children(), cb, res);
     }
 }

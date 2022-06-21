@@ -1,4 +1,4 @@
-use crate::{PointLight, RenderContext, Renderer};
+use crate::{light::DirectionalLight, PointLight, RenderContext, Renderer};
 
 pub mod ambient;
 pub mod geometry;
@@ -18,7 +18,7 @@ pub struct DefaultGraph {
     pub gbuffer: Geometry,
     pub skybox: Skybox,
     pub ambient: Ambient,
-    pub shadows: ShadowLight,
+    // pub shadows: ShadowLight,
     pub point_lights: PointLights,
     pub ssao: Ssao,
 }
@@ -28,12 +28,12 @@ impl DefaultGraph {
         let gbuffer = Geometry::new(renderer);
         let skybox = Skybox::new(renderer, skybox.0, skybox.1);
         let ambient = Ambient::new(renderer, &gbuffer.albedo_metallic);
-        let shadows = ShadowLight::new(
-            renderer,
-            &gbuffer.albedo_metallic,
-            &gbuffer.normal_roughness,
-            &gbuffer.depth,
-        );
+        // let shadows = ShadowLight::new(
+        //     renderer,
+        //     &gbuffer.albedo_metallic,
+        //     &gbuffer.normal_roughness,
+        //     &gbuffer.depth,
+        // );
         let point_lights = PointLights::new(
             renderer,
             &gbuffer.albedo_metallic,
@@ -46,7 +46,7 @@ impl DefaultGraph {
             gbuffer,
             skybox,
             ambient,
-            shadows,
+            // shadows,
             point_lights,
             ssao,
         }
@@ -58,7 +58,7 @@ impl DefaultGraph {
 
         draw_geometry: impl FnOnce(&mut dyn FnMut(geometry::DrawCallArgs<'data>)),
         draw_shadows: impl FnOnce(&mut dyn FnMut(shadow::DrawCallArgs<'data>)),
-        light_dir: glam::Vec3,
+        light: &DirectionalLight,
         splits: [f32; 3],
         lights: &[PointLight],
     ) {
@@ -66,7 +66,7 @@ impl DefaultGraph {
 
         self.skybox.render(ctx);
         self.ambient.render(ctx);
-        self.shadows.render(ctx, splits, light_dir, draw_shadows);
+        // self.shadows.render(ctx, splits, light, draw_shadows);
 
         self.point_lights.render(ctx, lights);
         self.ssao.render(ctx);

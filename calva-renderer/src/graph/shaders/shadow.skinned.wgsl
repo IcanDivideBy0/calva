@@ -1,9 +1,9 @@
 let CASCADES: u32 = 3u;
 struct ShadowLight {
-    color: vec4<f32>;
-    direction: vec4<f32>; // camera view space
-    view_proj: array<mat4x4<f32>, CASCADES>;
-    splits: array<f32, CASCADES>;
+    color: vec4<f32>,
+    direction: vec4<f32>, // camera view space
+    view_proj: array<mat4x4<f32>, CASCADES>,
+    splits: array<f32, CASCADES>,
 };
 
 @group(0) @binding(0)
@@ -68,7 +68,7 @@ fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
     );
 }
 
-@stage(vertex)
+@vertex
 fn vs_main(
     @builtin(view_index) view_index: i32,
     instance: MeshInstance,

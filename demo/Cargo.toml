@@ -7,11 +7,11 @@ edition = "2021"
 
 [dependencies]
 calva = { path = "../calva" }
-anyhow = "1.0.40"
-async-std = { version = "1.10.0", features = ["attributes"] }
-bytemuck = "1.7"
-env_logger = "0.9.0"
-glam = { version = "0.20.0", features = ["bytemuck"] }
-winit = "0.26.0"
-rand = "0.8.3"
-image = "0.23.14"
+anyhow = "1.0"
+async-std = { version = "1.11", features = ["attributes"] }
+bytemuck = "1.9"
+env_logger = "0.9"
+glam = { version = "0.20", features = ["bytemuck"] }
+winit = "0.26"
+rand = "0.8"
+image = "0.24"

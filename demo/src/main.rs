@@ -1,7 +1,9 @@
+#![warn(clippy::all)]
+
 use anyhow::Result;
 use calva::{
     egui::EguiPass,
-    renderer::{graph, wgpu, Renderer, RendererConfigData},
+    renderer::{graph, wgpu, DirectionalLight, Renderer, RendererConfigData},
 };
 use std::time::Instant;
 use winit::{
@@ -195,7 +197,10 @@ async fn main() -> Result<()> {
                                 }
                             }
                         },
-                        my_app.shadow_light_angle,
+                        &DirectionalLight {
+                            direction: my_app.shadow_light_angle,
+                            color: glam::Vec4::ONE,
+                        },
                         [5.0, 25.0, 64.0],
                         &point_lights,
                     );

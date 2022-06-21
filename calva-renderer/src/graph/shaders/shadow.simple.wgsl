@@ -1,9 +1,11 @@
 let CASCADES: u32 = 3u;
 struct ShadowLight {
-    color: vec4<f32>;
-    direction: vec4<f32>; // camera view space
-    view_proj: array<mat4x4<f32>, CASCADES>;
-    splits: array<f32, CASCADES>;
+    color: vec4<f32>,
+    direction: vec4<f32>, // camera view space
+    view_proj: array<mat4x4<f32>, CASCADES>,
+    splits: array<f32, CASCADES>,
+
+    _padding: array<f32, 1>,
 };
 
 @group(0) @binding(0)
@@ -14,18 +16,18 @@ var<uniform> shadow_light: ShadowLight;
 //
 
 struct MeshInstance {
-    @location(0) model_matrix_0: vec4<f32>;
-    @location(1) model_matrix_1: vec4<f32>;
-    @location(2) model_matrix_2: vec4<f32>;
-    @location(3) model_matrix_3: vec4<f32>;
-    @location(4) normal_quat: vec4<f32>;
+    @location(0) model_matrix_0: vec4<f32>,
+    @location(1) model_matrix_1: vec4<f32>,
+    @location(2) model_matrix_2: vec4<f32>,
+    @location(3) model_matrix_3: vec4<f32>,
+    @location(4) normal_quat: vec4<f32>,
 };
 
 struct VertexInput {
-    @location(5) position: vec3<f32>;
+    @location(5) position: vec3<f32>,
 };
 
-@stage(vertex)
+@vertex
 fn vs_main(
     @builtin(view_index) view_index: i32,
     instance: MeshInstance,

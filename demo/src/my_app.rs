@@ -18,11 +18,11 @@ impl epi::App for MyApp {
         "egui template"
     }
 
-    fn update(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         egui::SidePanel::right("config_panel")
             .min_width(300.0)
             .frame(egui::containers::Frame {
-                margin: (10.0, 10.0).into(),
+                margin: egui::Vec2::splat(10.0).into(),
                 fill: egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
                 ..Default::default()
             })

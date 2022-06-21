@@ -17,3 +17,10 @@ impl PointLight {
         ],
     };
 }
+
+pub struct DirectionalLight {
+    pub direction: glam::Vec3,
+    pub color: glam::Vec4,
+}
+
+impl DirectionalLight {}

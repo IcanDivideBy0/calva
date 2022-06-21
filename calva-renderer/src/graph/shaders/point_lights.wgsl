@@ -1,21 +1,21 @@
 struct Camera {
-    view: mat4x4<f32>;
-    proj: mat4x4<f32>;
-    view_proj: mat4x4<f32>;
-    inv_view: mat4x4<f32>;
-    inv_proj: mat4x4<f32>;
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    view_proj: mat4x4<f32>,
+    inv_view: mat4x4<f32>,
+    inv_proj: mat4x4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct LightInstance {
-    @location(0) position: vec3<f32>;
-    @location(1) radius: f32;
-    @location(2) color: vec3<f32>;
+    @location(0) position: vec3<f32>,
+    @location(1) radius: f32,
+    @location(2) color: vec3<f32>,
 };
 
 struct VertexInput {
-    @location(3) position: vec3<f32>;
+    @location(3) position: vec3<f32>,
 };
 
 fn get_clip_pos(
@@ -30,7 +30,7 @@ fn get_clip_pos(
 // Stencil pass
 //
 
-@stage(vertex)
+@vertex
 fn vs_main_stencil(
     instance: LightInstance,
     in: VertexInput,
@@ -43,15 +43,15 @@ fn vs_main_stencil(
 //
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>;
-    @location(0) ndc: vec2<f32>;
+    @builtin(position) position: vec4<f32>,
+    @location(0) ndc: vec2<f32>,
 
-    @location(1) l_position: vec3<f32>;
-    @location(2) l_radius: f32;
-    @location(3) l_color: vec3<f32>;
+    @location(1) l_position: vec3<f32>,
+    @location(2) l_radius: f32,
+    @location(3) l_color: vec3<f32>,
 };
 
-@stage(vertex)
+@vertex
 fn vs_main_lighting(
     instance: LightInstance,
     in: VertexInput,
@@ -110,7 +110,7 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
     return ggx1 * ggx2;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main_lighting(
     @builtin(sample_index) msaa_sample: u32,
     in: VertexOutput,
@@ -136,7 +136,7 @@ fn fs_main_lighting(
     let NdotL = max(dot(N, L), 0.0);
 
     let dist = distance(in.l_position, frag_pos_view);
-    let attenuation = 1.0 - smoothStep(0.0, in.l_radius, dist);
+    let attenuation = 1.0 - smoothstep(0.0, in.l_radius, dist);
     // let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 
     let radiance = in.l_color * attenuation;

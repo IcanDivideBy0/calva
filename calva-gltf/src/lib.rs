@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 use anyhow::{anyhow, Result};
 use renderer::wgpu::{self, util::DeviceExt};
 use std::collections::HashMap;

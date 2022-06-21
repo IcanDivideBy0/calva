@@ -1,4 +1,7 @@
-use calva::renderer::{wgpu, MeshInstances, RenderContext, SkinAnimationInstances, SkinAnimations};
+use calva::renderer::{
+    wgpu, MeshInstance, MeshInstances, RenderContext, SkinAnimationInstance,
+    SkinAnimationInstances, SkinAnimations,
+};
 
 pub struct Particles {
     bind_group: wgpu::BindGroup,
@@ -26,7 +29,9 @@ impl Particles {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
-                        min_binding_size: None,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<MeshInstance>() as _,
+                        ),
                     },
                     count: None,
                 },
@@ -37,7 +42,9 @@ impl Particles {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
-                        min_binding_size: None,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
+                            SkinAnimationInstance,
+                        >() as _),
                     },
                     count: None,
                 },
@@ -91,6 +98,6 @@ impl Particles {
         cpass.set_pipeline(&self.pipeline);
         cpass.set_bind_group(0, &self.bind_group, &[]);
         cpass.set_bind_group(1, &animations.bind_group, &[]);
-        cpass.dispatch(100, 1, 1);
+        cpass.dispatch_workgroups(100, 1, 1);
     }
 }

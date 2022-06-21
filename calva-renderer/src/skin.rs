@@ -45,7 +45,9 @@ impl SkinAnimations {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
-                        min_binding_size: None,
+                        min_binding_size: wgpu::BufferSize::new(
+                            (2 * std::mem::size_of::<u32>()) as _,
+                        ),
                     },
                     count: None,
                 },

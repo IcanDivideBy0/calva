@@ -1,8 +1,8 @@
 struct Config {
-    ssao_radius: f32;
-    ssao_bias: f32;
-    ssao_power: f32;
-    ambient_factor: f32;
+    ssao_radius: f32,
+    ssao_bias: f32,
+    ssao_power: f32,
+    ambient_factor: f32,
 };
 
 @group(0) @binding(0) var<uniform> config: Config;
@@ -11,7 +11,7 @@ struct Config {
 // Vertex shader
 //
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4<f32> {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
@@ -27,7 +27,7 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4
 
 @group(1) @binding(0) var albedo: texture_multisampled_2d<f32>;
 
-@stage(fragment)
+@fragment
 fn fs_main(
     @builtin(position) coord : vec4<f32>,
     @builtin(sample_index) msaa_sample: u32
