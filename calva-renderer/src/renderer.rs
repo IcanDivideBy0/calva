@@ -104,7 +104,9 @@ impl Renderer {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface
-                .get_preferred_format(&adapter)
+                .get_supported_formats(&adapter)
+                .get(0)
+                .cloned()
                 .ok_or_else(|| anyhow!("Unable to get surface preferred format"))?,
             width: size.width as u32,
             height: size.height as u32,

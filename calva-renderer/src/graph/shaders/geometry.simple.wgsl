@@ -4,7 +4,7 @@ struct Camera {
     view_proj: mat4x4<f32>,
     inv_view: mat4x4<f32>,
     inv_proj: mat4x4<f32>,
-};
+}
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 
@@ -18,14 +18,14 @@ struct MeshInstance {
     @location(2) model_matrix_2: vec4<f32>,
     @location(3) model_matrix_3: vec4<f32>,
     @location(4) normal_quat: vec4<f32>,
-};
+}
 
 struct VertexInput {
     @location(5) position: vec3<f32>,
     @location(6) normal: vec3<f32>,
     @location(7) tangent: vec4<f32>,
     @location(8) uv: vec2<f32>,
-};
+}
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -34,7 +34,7 @@ struct VertexOutput {
     @location(2) tangent: vec3<f32>,
     @location(3) bitangent: vec3<f32>,
     @location(4) uv: vec2<f32>,
-};
+}
 
 fn rotate(quat: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
     return v + 2.0 * cross(quat.xyz, cross(quat.xyz, v) + quat.w * v);
@@ -81,7 +81,7 @@ fn vs_main(
 struct FragmentOutput {
     @location(0) albedo_metallic: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,
-};
+}
 
 @group(1) @binding(0) var t_albedo: texture_2d<f32>;
 @group(1) @binding(1) var t_normal: texture_2d<f32>;
@@ -106,8 +106,8 @@ fn compute_tbn(in: VertexOutput) -> mat3x3<f32> {
     let normal = get_vert_normal(in);
 
     return mat3x3<f32>(
-        normalize(tangent), 
-        normalize(bitangent), 
+        normalize(tangent),
+        normalize(bitangent),
         normalize(normal),
     );
 }
@@ -142,7 +142,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     if (albedo.a < 0.5) { discard; }
 
-    return FragmentOutput (
+    return FragmentOutput(
         vec4<f32>(albedo.rgb, metallic),
         vec4<f32>(get_normal(in), roughness),
     );

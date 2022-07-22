@@ -70,7 +70,7 @@ impl PointLights {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("PointLights shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/point_lights.wgsl").into()),
         });
@@ -222,7 +222,7 @@ impl PointLights {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main_lighting",
-                    targets: &[wgpu::ColorTargetState {
+                    targets: &[Some(wgpu::ColorTargetState {
                         format: surface_config.format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
@@ -237,7 +237,7 @@ impl PointLights {
                             },
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    })],
                 }),
                 primitive: wgpu::PrimitiveState {
                     cull_mode: Some(wgpu::Face::Front),
@@ -272,7 +272,7 @@ impl PointLights {
             let mut encoder =
                 device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
                     label: Some("PointLights lighting render bundle encoder"),
-                    color_formats: &[surface_config.format],
+                    color_formats: &[Some(surface_config.format)],
                     depth_stencil: Some(wgpu::RenderBundleDepthStencil {
                         format: Renderer::DEPTH_FORMAT,
                         depth_read_only: true,
@@ -342,14 +342,14 @@ impl PointLights {
         ctx.encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights lighting pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: ctx.view,
                     resolve_target: ctx.resolve_target,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &ctx.renderer.depth_stencil,
                     depth_ops: None,

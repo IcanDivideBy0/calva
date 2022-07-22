@@ -94,7 +94,7 @@ impl Skybox {
             push_constant_ranges: &[],
         });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Skybox shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/skybox.wgsl").into()),
         });
@@ -111,11 +111,11 @@ impl Skybox {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -132,7 +132,7 @@ impl Skybox {
             let mut encoder =
                 device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
                     label: Some("Skybox render bundle encoder"),
-                    color_formats: &[surface_config.format],
+                    color_formats: &[Some(surface_config.format)],
                     depth_stencil: Some(wgpu::RenderBundleDepthStencil {
                         format: Renderer::DEPTH_FORMAT,
                         depth_read_only: true,
@@ -162,14 +162,14 @@ impl Skybox {
         ctx.encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Skybox render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: ctx.view,
                     resolve_target: ctx.resolve_target,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &ctx.renderer.depth_stencil,
                     depth_ops: None,

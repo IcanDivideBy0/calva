@@ -4,10 +4,9 @@ struct Camera {
     view_proj: mat4x4<f32>,
     inv_view: mat4x4<f32>,
     inv_proj: mat4x4<f32>,
-};
+}
 
 @group(0) @binding(0) var<uniform> camera: Camera;
-
 
 //
 // Vertex shader
@@ -16,13 +15,13 @@ struct Camera {
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) view_dir: vec3<f32>,
-};
+}
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
-        f32(vertex_index &  1u),
+        f32(vertex_index & 1u),
     ) * 2.0;
 
     let clip = vec4<f32>(tc * 2.0 - 1.0, 1.0, 1.0);
@@ -38,7 +37,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     );
     let view_dir = inv_view * view_ray; // world space
 
-    return VertexOutput (clip, view_dir);
+    return VertexOutput(clip, view_dir);
 }
 
 //

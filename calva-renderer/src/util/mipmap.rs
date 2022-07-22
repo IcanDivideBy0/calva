@@ -13,7 +13,7 @@ pub struct MipmapGenerator {
 
 impl MipmapGenerator {
     pub fn new(device: &wgpu::Device) -> Self {
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("MipmapGenerator shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("mipmap.wgsl").into()),
         });
@@ -81,11 +81,11 @@ impl MipmapGenerator {
             fragment: Some(wgpu::FragmentState {
                 module: &self.shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
@@ -151,14 +151,14 @@ impl MipmapGenerator {
 
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("MipmapGenerator render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: None,
             });
 

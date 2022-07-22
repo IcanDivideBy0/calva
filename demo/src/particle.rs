@@ -14,7 +14,7 @@ impl Particles {
         mesh_instances: &MeshInstances,
         animation_instances: &SkinAnimationInstances,
     ) -> Self {
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Particles shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("particle.wgsl").into()),
         });

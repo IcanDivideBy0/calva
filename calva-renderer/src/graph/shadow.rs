@@ -54,7 +54,7 @@ impl ShadowLight {
             ..Default::default()
         });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ShadowLight shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
         });
@@ -166,7 +166,7 @@ impl ShadowLight {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
@@ -181,7 +181,7 @@ impl ShadowLight {
                         },
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
@@ -192,7 +192,7 @@ impl ShadowLight {
             let mut encoder =
                 device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
                     label: Some("ShadowLight render bundle encoder"),
-                    color_formats: &[surface_config.format],
+                    color_formats: &[Some(surface_config.format)],
                     depth_stencil: None,
                     sample_count: Renderer::MULTISAMPLE_STATE.count,
                     multiview: None,
@@ -222,7 +222,7 @@ impl ShadowLight {
     pub fn render<'ctx, 'data: 'ctx>(
         &self,
         ctx: &'ctx mut RenderContext,
-        splits: [f32; Self::CASCADES],
+        splits: [f32; 4],
         light: &DirectionalLight,
         cb: impl FnOnce(&mut dyn FnMut(DrawCallArgs<'data>)),
     ) {
@@ -244,14 +244,14 @@ impl ShadowLight {
         ctx.encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ShadowLight lighting pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: ctx.view,
                     resolve_target: ctx.resolve_target,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: None,
             })
             .execute_bundles(std::iter::once(&self.render_bundle));
@@ -272,9 +272,7 @@ mod uniform {
         color: [f32; 4],
         direction: [f32; 4], // camera view space
         view_proj: [[f32; 16]; CASCADES],
-        splits: [f32; CASCADES],
-
-        _padding: [f32; 4 - CASCADES % 4],
+        splits: [f32; 4],
     }
 
     impl ShadowLightUniformRaw {
@@ -282,7 +280,7 @@ mod uniform {
             color: glam::Vec4,
             direction: glam::Vec4,
             view_proj: Vec<glam::Mat4>,
-            splits: [f32; CASCADES],
+            splits: [f32; 4],
         ) -> Self {
             let view_proj = TryFrom::try_from(
                 view_proj[0..CASCADES]
@@ -356,7 +354,7 @@ mod uniform {
             queue: &wgpu::Queue,
             camera_view: glam::Mat4,
             camera_proj: glam::Mat4,
-            mut splits: [f32; CASCADES],
+            mut splits: [f32; 4],
             light: &DirectionalLight,
         ) {
             #[rustfmt::skip]
@@ -483,7 +481,7 @@ mod depth {
             });
 
             let simple_mesh_pipeline = {
-                let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some("ShadowLight[simple] depth shader"),
                     source: wgpu::ShaderSource::Wgsl(
                         include_str!("shaders/shadow.simple.wgsl").into(),
@@ -535,7 +533,7 @@ mod depth {
             };
 
             let skinned_mesh_pipeline = {
-                let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some("ShadowLight[skinned] depth shader"),
                     source: wgpu::ShaderSource::Wgsl(
                         include_str!("shaders/shadow.skinned.wgsl").into(),
@@ -716,7 +714,7 @@ mod blur {
                     ..Default::default()
                 });
 
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("ShadowLightBlur shader"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.blur.wgsl").into()),
             });

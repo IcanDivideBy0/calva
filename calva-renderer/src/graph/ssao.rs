@@ -5,8 +5,8 @@ use crate::{RenderContext, Renderer};
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct SsaoUniform {
-    samples: [glam::Vec2; SsaoUniform::SAMPLES_COUNT],
-    noise: [glam::Vec2; 16],
+    samples: [glam::Vec4; SsaoUniform::SAMPLES_COUNT],
+    noise: [glam::Vec4; 16],
 }
 
 impl SsaoUniform {
@@ -15,13 +15,20 @@ impl SsaoUniform {
     fn new() -> Self {
         let samples: [_; Self::SAMPLES_COUNT] = (0..Self::SAMPLES_COUNT)
             .map(|i| {
-                let sample = glam::vec2(
+                let sample = glam::vec4(
                     rand::random::<f32>() * 2.0 - 1.0,
                     rand::random::<f32>() * 2.0 - 1.0,
+                    0.0,
+                    0.0,
                 );
 
                 let scale = i as f32 / Self::SAMPLES_COUNT as f32;
-                sample * glam::Vec2::lerp(glam::vec2(0.1, 0.1), glam::vec2(1.0, 1.0), scale * scale)
+                sample
+                    * glam::Vec4::lerp(
+                        glam::Vec4::splat(0.1),
+                        glam::Vec4::splat(1.0),
+                        scale * scale,
+                    )
             })
             .collect::<Vec<_>>()
             .try_into()
@@ -29,9 +36,11 @@ impl SsaoUniform {
 
         let noise: [_; 16] = (0..16)
             .map(|_| {
-                glam::vec2(
+                glam::vec4(
                     rand::random::<f32>() * 2.0 - 1.0,
                     rand::random::<f32>() * 2.0 - 1.0,
+                    0.0,
+                    0.0,
                 )
             })
             .collect::<Vec<_>>()
@@ -157,7 +166,7 @@ impl Ssao {
             push_constant_ranges: &[],
         });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Ssao shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao.wgsl").into()),
         });
@@ -173,11 +182,11 @@ impl Ssao {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: Self::OUTPUT_FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
@@ -189,7 +198,7 @@ impl Ssao {
             let mut encoder =
                 device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
                     label: Some("Ssao render bundle encoder"),
-                    color_formats: &[Self::OUTPUT_FORMAT],
+                    color_formats: &[Some(Self::OUTPUT_FORMAT)],
                     depth_stencil: None,
                     sample_count: 1,
                     multiview: None,
@@ -225,14 +234,14 @@ impl Ssao {
         ctx.encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Ssao render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: None,
             })
             .execute_bundles(std::iter::once(&self.render_bundle));
@@ -310,7 +319,7 @@ mod blur {
                 push_constant_ranges: &[],
             });
 
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("SsaoBlur shader"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao.blur.wgsl").into()),
             });
@@ -339,11 +348,11 @@ mod blur {
                     fragment: Some(wgpu::FragmentState {
                         module: &shader,
                         entry_point: format!("fs_main_{}", direction).as_str(),
-                        targets: &[wgpu::ColorTargetState {
+                        targets: &[Some(wgpu::ColorTargetState {
                             format: Ssao::OUTPUT_FORMAT,
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
-                        }],
+                        })],
                     }),
                     primitive: wgpu::PrimitiveState::default(),
                     depth_stencil: None,
@@ -356,7 +365,7 @@ mod blur {
                         label: Some(
                             format!("SsaoBlur {} render bundle encoder", direction).as_str(),
                         ),
-                        color_formats: &[Ssao::OUTPUT_FORMAT],
+                        color_formats: &[Some(Ssao::OUTPUT_FORMAT)],
                         depth_stencil: None,
                         sample_count: 1,
                         multiview: None,
@@ -387,14 +396,14 @@ mod blur {
             ctx.encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("SsaoBlur horizontal pass"),
-                    color_attachments: &[wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &self.temp,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                             store: true,
                         },
-                    }],
+                    })],
                     depth_stencil_attachment: None,
                 })
                 .execute_bundles(std::iter::once(&self.h_render_bundle));
@@ -402,14 +411,14 @@ mod blur {
             ctx.encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("SsaoBlur vertical pass"),
-                    color_attachments: &[wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: output,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                             store: true,
                         },
-                    }],
+                    })],
                     depth_stencil_attachment: None,
                 })
                 .execute_bundles(std::iter::once(&self.v_render_bundle));
@@ -430,7 +439,7 @@ mod blit {
             surface_config: &wgpu::SurfaceConfiguration,
             ssao_result: &wgpu::TextureView,
         ) -> Self {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("SsaoBlit shader"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ssao.blit.wgsl").into()),
             });
@@ -476,14 +485,14 @@ mod blit {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: &[wgpu::ColorTargetState {
+                    targets: &[Some(wgpu::ColorTargetState {
                         format: surface_config.format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::OVER,
                             alpha: wgpu::BlendComponent::OVER,
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    })],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
@@ -495,7 +504,7 @@ mod blit {
                 let mut encoder =
                     device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
                         label: Some("SsaoBlit render bundle encoder"),
-                        color_formats: &[surface_config.format],
+                        color_formats: &[Some(surface_config.format)],
                         depth_stencil: None,
                         sample_count: Renderer::MULTISAMPLE_STATE.count,
                         multiview: None,
@@ -515,14 +524,14 @@ mod blit {
             ctx.encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("SsaoBlit pass"),
-                    color_attachments: &[wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: ctx.view,
                         resolve_target: ctx.resolve_target,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: true,
                         },
-                    }],
+                    })],
                     depth_stencil_attachment: None,
                 })
                 .execute_bundles(std::iter::once(&self.render_bundle));

@@ -4,7 +4,7 @@ struct Camera {
     view_proj: mat4x4<f32>,
     inv_view: mat4x4<f32>,
     inv_proj: mat4x4<f32>,
-};
+}
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 
@@ -18,11 +18,11 @@ struct MeshInstance {
     @location(2) model_matrix_2: vec4<f32>,
     @location(3) model_matrix_3: vec4<f32>,
     @location(4) normal_quat: vec4<f32>,
-};
+}
 
 struct SkinAnimationInstance {
     @location(5) frame: u32,
-};
+}
 
 struct VertexInput {
     @location( 6) position: vec3<f32>,
@@ -31,7 +31,7 @@ struct VertexInput {
     @location( 9) uv: vec2<f32>,
     @location(10) joints: u32,
     @location(11) weights: vec4<f32>,
-};
+}
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -40,7 +40,7 @@ struct VertexOutput {
     @location(2) tangent: vec3<f32>,
     @location(3) bitangent: vec3<f32>,
     @location(4) uv: vec2<f32>,
-};
+}
 
 @group(2) @binding(0) var animation: texture_2d_array<f32>;
 
@@ -60,8 +60,8 @@ fn get_joint_matrix(frame: u32, joint_index: u32) -> mat4x4<f32> {
 
 fn get_skinning_matrix(frame: u32, in: VertexInput) -> mat4x4<f32> {
     let joints = vec4<u32>(
-        in.joints >>  0u & 0xFFu,
-        in.joints >>  8u & 0xFFu,
+        in.joints >> 0u & 0xFFu,
+        in.joints >> 8u & 0xFFu,
         in.joints >> 16u & 0xFFu,
         in.joints >> 24u & 0xFFu,
     );
@@ -100,19 +100,19 @@ fn quat_to_mat3(q: vec4<f32>) -> mat3x3<f32> {
 
     return mat3x3<f32>(
         vec3<f32>(
-            1.0 - 2.0 * (qyy +  qzz),
+            1.0 - 2.0 * (qyy + qzz),
             2.0 * (qxy + qwz),
             2.0 * (qxz - qwy),
         ),
         vec3<f32>(
             2.0 * (qxy - qwz),
-            1.0 - 2.0 * (qxx +  qzz),
+            1.0 - 2.0 * (qxx + qzz),
             2.0 * (qyz + qwx),
         ),
         vec3<f32>(
             2.0 * (qxz + qwy),
             2.0 * (qyz - qwx),
-            1.0 - 2.0 * (qxx +  qyy),
+            1.0 - 2.0 * (qxx + qyy),
         ),
     );
 }
@@ -125,7 +125,7 @@ fn vs_main(
 ) -> VertexOutput {
     let skinning_matrix = get_skinning_matrix(skin_animation_instance.frame, in);
 
-    let model_matrix =  mat4x4<f32>(
+    let model_matrix = mat4x4<f32>(
         instance.model_matrix_0,
         instance.model_matrix_1,
         instance.model_matrix_2,
@@ -140,10 +140,7 @@ fn vs_main(
     out.clip_position = camera.proj * view_pos;
     out.position = view_pos.xyz / view_pos.w;
 
-    let view_normal_matrix =
-        mat4_to_mat3(camera.view) *
-        quat_to_mat3(instance.normal_quat) *
-        mat4_to_mat3(skinning_matrix);
+    let view_normal_matrix = mat4_to_mat3(camera.view) * quat_to_mat3(instance.normal_quat) * mat4_to_mat3(skinning_matrix);
 
     out.normal = view_normal_matrix * in.normal;
     out.tangent = view_normal_matrix * in.tangent.xyz;
@@ -161,7 +158,7 @@ fn vs_main(
 struct FragmentOutput {
     @location(0) albedo_metallic: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,
-};
+}
 
 @group(1) @binding(0) var t_albedo: texture_2d<f32>;
 @group(1) @binding(1) var t_normal: texture_2d<f32>;
@@ -186,8 +183,8 @@ fn compute_tbn(in: VertexOutput) -> mat3x3<f32> {
     let normal = get_vert_normal(in);
 
     return mat3x3<f32>(
-        normalize(tangent), 
-        normalize(bitangent), 
+        normalize(tangent),
+        normalize(bitangent),
         normalize(normal),
     );
 }
@@ -222,7 +219,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     if (albedo.a < 0.5) { discard; }
 
-    return FragmentOutput (
+    return FragmentOutput(
         vec4<f32>(albedo.rgb, metallic),
         vec4<f32>(get_normal(in), roughness),
     );

@@ -2,28 +2,21 @@
 
 use egui_wgpu_backend::{BackendError, RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
-use std::sync::Arc;
 use std::time::Instant;
 use winit::{event::Event, window::Window};
 
 use renderer::{wgpu, RenderContext, Renderer};
 
 pub use egui;
-pub use epi;
 
-struct RepaintSignal;
-
-impl epi::backend::RepaintSignal for RepaintSignal {
-    fn request_repaint(&self) {
-        println!("req");
-    }
+pub trait App {
+    fn ui(&mut self, ctx: &egui::Context);
 }
 
 pub struct EguiPass {
     platform: Platform,
     rpass: RenderPass,
     previous_frame_time: Option<f32>,
-    repaint_signal: Arc<RepaintSignal>,
 }
 
 impl EguiPass {
@@ -42,7 +35,6 @@ impl EguiPass {
             platform,
             rpass,
             previous_frame_time: None,
-            repaint_signal: Arc::new(RepaintSignal),
         }
     }
 
@@ -58,7 +50,7 @@ impl EguiPass {
         &mut self,
         ctx: &mut RenderContext,
         window: &Window,
-        app: &mut impl epi::App,
+        app: &mut impl App,
     ) -> Result<(), BackendError> {
         ctx.encoder.push_debug_group("Egui");
 
@@ -66,21 +58,9 @@ impl EguiPass {
 
         let egui_start = Instant::now();
         self.platform.begin_frame();
-        let app_output = epi::backend::AppOutput::default();
 
-        let frame = epi::Frame::new(epi::backend::FrameData {
-            info: epi::IntegrationInfo {
-                name: "egui_wgpu",
-                web_info: None,
-                cpu_usage: self.previous_frame_time,
-                native_pixels_per_point: Some(window.scale_factor() as _),
-                prefer_dark_mode: Some(true),
-            },
-            output: app_output,
-            repaint_signal: self.repaint_signal.clone(),
-        });
+        app.ui(&self.platform.context());
 
-        app.update(&self.platform.context(), &frame);
         let output = self.platform.end_frame(Some(window));
         let paint_jobs = self.platform.context().tessellate(output.shapes);
 
@@ -93,8 +73,6 @@ impl EguiPass {
             &output.textures_delta,
         )?;
 
-        // self.rpass
-        //     .update_user_textures(&ctx.renderer.device, &ctx.renderer.queue);
         let screen_descriptor = ScreenDescriptor {
             physical_width: ctx.renderer.surface_config.width,
             physical_height: ctx.renderer.surface_config.height,

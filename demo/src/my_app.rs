@@ -1,4 +1,4 @@
-use calva::egui::{egui, epi};
+use calva::egui::{egui, App};
 use calva::renderer::RendererConfigData;
 
 #[derive(Clone)]
@@ -13,16 +13,16 @@ pub struct MyApp {
     pub animation: String,
 }
 
-impl epi::App for MyApp {
-    fn name(&self) -> &str {
-        "egui template"
-    }
+impl App for MyApp {
+    // fn name(&self) -> &str {
+    //     "egui template"
+    // }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
+    fn ui(&mut self, ctx: &egui::Context) {
         egui::SidePanel::right("config_panel")
             .min_width(300.0)
             .frame(egui::containers::Frame {
-                margin: egui::Vec2::splat(10.0).into(),
+                inner_margin: egui::Vec2::splat(10.0).into(),
                 fill: egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
                 ..Default::default()
             })

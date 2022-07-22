@@ -28,17 +28,17 @@ impl Geometry {
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-    const RENDER_TARGETS: &'static [wgpu::ColorTargetState] = &[
-        wgpu::ColorTargetState {
+    const RENDER_TARGETS: &'static [Option<wgpu::ColorTargetState>] = &[
+        Some(wgpu::ColorTargetState {
             format: Self::ALBEDO_METALLIC_FORMAT,
             blend: None,
             write_mask: wgpu::ColorWrites::ALL,
-        },
-        wgpu::ColorTargetState {
+        }),
+        Some(wgpu::ColorTargetState {
             format: Self::NORMAL_ROUGHNESS_FORMAT,
             blend: None,
             write_mask: wgpu::ColorWrites::ALL,
-        },
+        }),
     ];
 
     pub fn new(renderer: &Renderer) -> Self {
@@ -99,7 +99,7 @@ impl Geometry {
         });
 
         let simple_mesh_pipeline = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry[simple] shader"),
                 source: wgpu::ShaderSource::Wgsl(
                     include_str!("shaders/geometry.simple.wgsl").into(),
@@ -171,7 +171,7 @@ impl Geometry {
         };
 
         let skinned_mesh_pipeline = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry[skinned] shader"),
                 source: wgpu::ShaderSource::Wgsl(
                     include_str!("shaders/geometry.skinned.wgsl").into(),
@@ -279,22 +279,22 @@ impl Geometry {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry render pass"),
             color_attachments: &[
-                wgpu::RenderPassColorAttachment {
+                Some(wgpu::RenderPassColorAttachment {
                     view: &self.albedo_metallic,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
-                },
-                wgpu::RenderPassColorAttachment {
+                }),
+                Some(wgpu::RenderPassColorAttachment {
                     view: &self.normal_roughness,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
-                },
+                }),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth,

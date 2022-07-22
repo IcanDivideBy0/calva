@@ -201,7 +201,7 @@ async fn main() -> Result<()> {
                             direction: my_app.shadow_light_angle,
                             color: glam::Vec4::ONE,
                         },
-                        [5.0, 25.0, 64.0],
+                        [5.0, 25.0, 64.0, 0.0],
                         &point_lights,
                     );
 

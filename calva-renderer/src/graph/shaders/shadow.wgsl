@@ -3,7 +3,7 @@ struct Config {
     ssao_bias: f32,
     ssao_power: f32,
     ambient_factor: f32,
-};
+}
 
 struct Camera {
     view: mat4x4<f32>,
@@ -11,15 +11,15 @@ struct Camera {
     view_proj: mat4x4<f32>,
     inv_view: mat4x4<f32>,
     inv_proj: mat4x4<f32>,
-};
+}
 
 let CASCADES: u32 = 3u;
 struct ShadowLight {
     color: vec4<f32>,
     direction: vec4<f32>, // camera view space
     view_proj: array<mat4x4<f32>, CASCADES>,
-    splits: array<f32, CASCADES>,
-};
+    splits: vec4<f32>,
+}
 
 @group(0) @binding(0) var<uniform> config: Config;
 @group(1) @binding(0) var<uniform> camera: Camera;
@@ -30,19 +30,19 @@ struct ShadowLight {
 //
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>;
-    @location(0) ndc: vec2<f32>;
-};
+    @builtin(position) position: vec4<f32>,
+    @location(0) ndc: vec2<f32>,
+}
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let tc = vec2<f32>(
         f32(vertex_index >> 1u),
-        f32(vertex_index &  1u),
+        f32(vertex_index & 1u),
     ) * 2.0;
     let clip = vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0);
 
-    return VertexOutput (clip, clip.xy);
+    return VertexOutput(clip, clip.xy);
 }
 
 //
@@ -63,12 +63,12 @@ fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
 let PI: f32 = 3.14159265359;
 
 fn distribution_ggx(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
-    let a      = roughness * roughness;
-    let a2     = a * a;
-    let NdotH  = max(dot(N, H), 0.0);
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let NdotH = max(dot(N, H), 0.0);
     let NdotH2 = NdotH * NdotH;
 
-    let num   = a2;
+    let num = a2;
     let denom = (NdotH2 * (a2 - 1.0) + 1.0);
 
     return num / (PI * denom * denom);
@@ -84,8 +84,8 @@ fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
 fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f32 {
     let NdotV = max(dot(N, V), 0.0);
     let NdotL = max(dot(N, L), 0.0);
-    let ggx2  = geometry_schlick_ggx(NdotV, roughness);
-    let ggx1  = geometry_schlick_ggx(NdotL, roughness);
+    let ggx2 = geometry_schlick_ggx(NdotV, roughness);
+    let ggx1 = geometry_schlick_ggx(NdotL, roughness);
 
     return ggx1 * ggx2;
 }
@@ -126,7 +126,7 @@ fn fs_main(
 
     // Exponential shadow mapping
     let ratio = 60.0; // TODO: compute a different ratio for each cascade
-    let visibility = clamp(exp(ratio * 10.0 * (light_depth - frag_proj.z)), 0.0, 1.0 );
+    let visibility = clamp(exp(ratio * 10.0 * (light_depth - frag_proj.z)), 0.0, 1.0);
 
     let N = normal;
     let V = normalize(-frag_pos_view.xyz);
@@ -137,13 +137,13 @@ fn fs_main(
     let radiance = shadow_light.color.rgb * shadow_light.color.a * visibility;
 
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
-    let F  = fresnel_schlick(max(dot(H, V), 0.0), F0);
+    let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
     let NDF = distribution_ggx(N, H, roughness);
-    let G   = geometry_smith(N, V, L, roughness);
+    let G = geometry_smith(N, V, L, roughness);
 
-    let num      = NDF * G * F;
-    let denom    = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;
+    let num = NDF * G * F;
+    let denom = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;
     let specular = num / denom;
 
     let kS = F;
