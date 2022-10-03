@@ -6,8 +6,10 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 bitflags = "1.3"
-bytemuck = { version = "1.9", features = [ "derive" ] }
-glam = { version = "0.20", features = ["bytemuck"] }
-wgpu = "0.13"
-winit = "0.26"
+bytemuck = { version = "1.12", features = [ "derive" ] }
+glam = { version = "0.22", features = ["bytemuck"] }
+gpp = "0.6"
+wgpu = "0.14"
+wgpu-profiler = "0.10"
+winit = "0.27"
 rand = "0.8"

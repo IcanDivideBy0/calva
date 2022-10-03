@@ -5,7 +5,6 @@ struct Camera {
     inv_view: mat4x4<f32>,
     inv_proj: mat4x4<f32>,
 }
-
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct LightInstance {
@@ -75,6 +74,8 @@ fn vs_main_lighting(
 @group(1) @binding(1) var t_normal_roughness: texture_multisampled_2d<f32>;
 @group(1) @binding(2) var t_depth: texture_depth_multisampled_2d;
 
+var<push_constant> GAMMA: f32;
+
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
@@ -136,6 +137,7 @@ fn fs_main_lighting(
 
     let dist = distance(in.l_position, frag_pos_view);
     let attenuation = 1.0 - smoothstep(0.0, in.l_radius, dist);
+    // let attenuation = 1.0 / smoothstep(0.0, 1.0, dist / in.l_radius);
     // let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 
     let radiance = in.l_color * attenuation;
@@ -155,8 +157,7 @@ fn fs_main_lighting(
 
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    // color = color / (color + 1.0);
-    // color = pow(color, vec3<f32>(1.0 / 2.2));
+    color = pow(color, vec3<f32>(1.0 / GAMMA));
 
     return vec4<f32>(color, 1.0);
 }

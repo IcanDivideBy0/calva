@@ -23,7 +23,7 @@ fn main(
 ) {
     let animation_instance = &animation_instances[global_id.x];
 
-    if ((*animation_instance).frame == !0u) {
+    if ((*animation_instance).frame == 0xFFFFFFFFu) {
         (*animation_instance).frame = animations[global_id.x].offset;
     }
 
@@ -32,10 +32,7 @@ fn main(
     for (var i = 0u; i < arrayLength(&animations); i = i + 1u) {
         let animation = &animations[i];
 
-        if (
-            (*animation_instance).frame >= (*animation).offset &&
-            (*animation_instance).frame - (*animation).offset < (*animation).length
-        ) {
+        if ((*animation_instance).frame >= (*animation).offset && (*animation_instance).frame - (*animation).offset < (*animation).length) {
             offset = (*animation).offset;
             length = (*animation).length;
         }
@@ -44,8 +41,8 @@ fn main(
     let current_frame_relative = (*animation_instance).frame - offset;
     (*animation_instance).frame = (current_frame_relative + 1u) % length + offset;
 
-    let dz = 5.0 * 1.0 / 60.0;
-    let mesh_instance = &mesh_instances[global_id.x];
-    let mesh_instance_z = &(*mesh_instance).model_matrix[3][2];
-    *mesh_instance_z = (*mesh_instance_z + dz + 20.0) % 40.0 - 20.0;
+    // let dz = 5.0 * 1.0 / 60.0;
+    // let mesh_instance = &mesh_instances[global_id.x];
+    // let mesh_instance_z = &(*mesh_instance).model_matrix[3][2];
+    // *mesh_instance_z = (*mesh_instance_z + dz + 20.0) % 40.0 - 20.0;
 }

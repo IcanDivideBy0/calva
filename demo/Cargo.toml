@@ -3,15 +3,14 @@ name = "calva-demo"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 calva = { path = "../calva" }
 anyhow = "1.0"
-async-std = { version = "1.11", features = ["attributes"] }
-bytemuck = "1.9"
-env_logger = "0.9"
-glam = { version = "0.20", features = ["bytemuck"] }
-winit = "0.26"
+async-std = { version = "1.12", features = ["attributes"] }
+bytemuck = "1.12"
+egui-winit = "0.20"
+env_logger = "0.10"
+glam = { version = "0.22", features = ["bytemuck"] }
+winit = "0.27"
 rand = "0.8"
 image = "0.24"

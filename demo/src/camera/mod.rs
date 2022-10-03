@@ -15,7 +15,7 @@ pub struct MyCamera {
 impl MyCamera {
     pub fn new(window: &Window) -> Self {
         let controller = FlyingCamera::default();
-        let projection = Perspective::new(window.inner_size(), 45.0, 1.0, 140.0);
+        let projection = Perspective::new(window.inner_size(), 45.0, 0.1, 140.0);
 
         Self {
             controller,
@@ -23,17 +23,21 @@ impl MyCamera {
         }
     }
 
-    pub fn process_event(&mut self, event: &WindowEvent) -> bool {
-        self.controller.process_event(event)
+    pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
+        self.controller.handle_event(event)
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
         self.projection.resize(size)
     }
 
-    pub fn update(&mut self, renderer: &mut Renderer, dt: Duration) {
+    pub fn _update(&mut self, renderer: &mut Renderer, dt: Duration) {
         self.controller.update(dt);
 
-        renderer.update_camera(self.controller.transform.inverse(), self.projection.into())
+        renderer.camera.update(
+            &renderer.queue,
+            self.controller.transform.inverse(),
+            self.projection.into(),
+        );
     }
 }

@@ -47,7 +47,11 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @group(1) @binding(0) var t_skybox: texture_cube<f32>;
 @group(1) @binding(1) var t_sampler: sampler;
 
+var<push_constant> GAMMA: f32;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_skybox, t_sampler, in.view_dir);
+    let diffuse = textureSample(t_skybox, t_sampler, in.view_dir);
+    let color = pow(diffuse.rgb, vec3<f32>(1.0 / GAMMA));
+    return vec4<f32>(color, 1.0);
 }

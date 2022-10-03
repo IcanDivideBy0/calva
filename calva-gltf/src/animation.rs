@@ -2,8 +2,6 @@ use gltf::animation::util::ReadOutputs;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
-use super::util;
-
 macro_rules! secs {
     () => {
         Duration::from_secs_f32(0.0)
@@ -121,7 +119,8 @@ impl AnimationSampler {
         let mut samplers: HashMap<usize, NodeSampler> = HashMap::new();
 
         for channel in animation.channels() {
-            let reader = channel.reader(util::buffer_reader(buffers));
+            let reader =
+                channel.reader(|buffer| buffers.get(buffer.index()).map(std::ops::Deref::deref));
 
             let keyframes = reader
                 .read_inputs()

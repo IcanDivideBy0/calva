@@ -1,12 +1,3 @@
-struct Config {
-    ssao_radius: f32,
-    ssao_bias: f32,
-    ssao_power: f32,
-    ambient_factor: f32,
-}
-
-@group(0) @binding(0) var<uniform> config: Config;
-
 //
 // Vertex shader
 //
@@ -25,7 +16,14 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 // Fragment shader
 //
 
-@group(1) @binding(0) var albedo: texture_multisampled_2d<f32>;
+struct AmbientConfig {
+    factor: f32,
+}
+
+@group(0) @binding(0) var<uniform> config: AmbientConfig;
+@group(0) @binding(1) var albedo: texture_multisampled_2d<f32>;
+
+var<push_constant> GAMMA: f32;
 
 @fragment
 fn fs_main(
@@ -35,11 +33,7 @@ fn fs_main(
     let c = vec2<i32>(floor(coord.xy));
 
     let diffuse = textureLoad(albedo, c, i32(msaa_sample)).rgb;
-
-    var color = config.ambient_factor * diffuse;
-
-    // color = color / (color + 1.0);
-    // color = pow(color, vec3<f32>(1.0 / 2.2));
+    let color = pow(config.factor * diffuse, vec3<f32>(1.0 / GAMMA));
 
     return vec4<f32>(color, 1.0);
 }

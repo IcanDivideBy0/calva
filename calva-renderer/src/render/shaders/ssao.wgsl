@@ -1,10 +1,3 @@
-struct Config {
-    ssao_radius: f32,
-    ssao_bias: f32,
-    ssao_power: f32,
-    ambient_factor: f32,
-}
-
 struct Camera {
     view: mat4x4<f32>,
     proj: mat4x4<f32>,
@@ -13,8 +6,7 @@ struct Camera {
     inv_proj: mat4x4<f32>,
 }
 
-@group(0) @binding(0) var<uniform> config: Config;
-@group(1) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(0) var<uniform> camera: Camera;
 
 //
 // Vertex shader
@@ -40,16 +32,22 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 // Fragment shader
 //
 
-let SAMPLES_COUNT: u32 = 16u;
+struct SsaoConfig {
+    radius: f32,
+    bias: f32,
+    power: f32,
+}
 
+let SAMPLES_COUNT: u32 = 64u;
 struct RandomData {
     samples: array<vec4<f32>, SAMPLES_COUNT>,
     noise: array<array<vec4<f32>, 4>, 4>,
 }
 
-@group(2) @binding(0) var<uniform> random_data: RandomData;
-@group(2) @binding(1) var t_depth: texture_depth_multisampled_2d;
-@group(2) @binding(2) var t_normal: texture_multisampled_2d<f32>;
+@group(1) @binding(0) var<uniform> config: SsaoConfig;
+@group(1) @binding(1) var<uniform> random_data: RandomData;
+@group(1) @binding(2) var t_depth: texture_depth_multisampled_2d;
+@group(1) @binding(3) var t_normal: texture_multisampled_2d<f32>;
 
 @fragment
 fn fs_main(
@@ -75,7 +73,7 @@ fn fs_main(
         var sample_pos = tbn * random_data.samples[i].xyz;
 
         // ... and calculate sample point.
-        sample_pos = frag_position + sample_pos * config.ssao_radius;
+        sample_pos = frag_position + sample_pos * config.radius;
 
         // Project point and calculate NDC.
         var sample_clip = camera.proj * vec4<f32>(sample_pos, 1.0);
@@ -90,11 +88,11 @@ fn fs_main(
         let frag_pos = camera.inv_proj * vec4<f32>(sample_uv, depth, 1.0);
         let frag_pos = frag_pos.xyz / frag_pos.w;
 
-        let range_check = smoothstep(0.0, 1.0, config.ssao_radius / abs(frag_position.z - frag_pos.z));
+        let range_check = smoothstep(0.0, 1.0, config.radius / abs(frag_position.z - frag_pos.z));
 
-        occlusion = occlusion + select(0.0, 1.0, frag_pos.z >= sample_pos.z + config.ssao_bias) * range_check;
+        occlusion = occlusion + select(0.0, 1.0, frag_pos.z >= sample_pos.z + config.bias) * range_check;
     }
 
     occlusion = 1.0 - (occlusion / f32(SAMPLES_COUNT));
-    return pow(occlusion, config.ssao_power);
+    return pow(occlusion, config.power);
 }

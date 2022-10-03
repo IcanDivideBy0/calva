@@ -15,8 +15,6 @@ opt-level = 3
 # wgpu = { git = "https://github.com/gfx-rs/wgpu.git", branch = "master" }
 # wgpu = { path = "../wgpu/wgpu" }
 # naga = { git = "https://github.com/gfx-rs/naga.git", branch = "master" }
-# egui_wgpu_backend = { git = "https://github.com/IcanDivideBy0/egui_wgpu_backend.git", branch = "wgpu-0.13" }
-# egui_wgpu_backend = { path = "../egui_wgpu_backend" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

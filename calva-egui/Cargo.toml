@@ -3,12 +3,9 @@ name = "calva-egui"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 renderer = { package = "calva-renderer", path = "../calva-renderer" }
-epi = "0.17"
-egui = "0.18"
-egui_wgpu_backend = "0.18"
-egui_winit_platform = "0.15"
-winit = "0.26"
+thousands = "0.2"
+egui = "0.20"
+egui-wgpu = "0.20"
+winit = "0.27"

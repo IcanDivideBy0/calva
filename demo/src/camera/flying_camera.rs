@@ -43,7 +43,7 @@ impl Default for FlyingCamera {
 }
 
 impl FlyingCamera {
-    pub fn process_event(&mut self, event: &WindowEvent) -> bool {
+    pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
                 input: KeyboardInput {
@@ -113,8 +113,8 @@ impl FlyingCamera {
             let mut yaw = back.x.atan2(back.z);
             let mut pitch = back.y.asin();
 
-            yaw -= self.sensitivity * self.mouse_dx as f32;
-            pitch -= self.sensitivity * self.mouse_dy as f32;
+            yaw -= self.sensitivity * self.mouse_dx;
+            pitch -= self.sensitivity * self.mouse_dy;
 
             pitch = pitch.clamp(-FRAC_PI_2, FRAC_PI_2);
 

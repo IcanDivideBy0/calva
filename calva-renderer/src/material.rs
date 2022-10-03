@@ -1,90 +1,77 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use super::TextureId;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MaterialId(u32);
+
+#[repr(C)]
+#[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Material {
-    pub bind_group: wgpu::BindGroup,
+    pub albedo: TextureId,
+    pub normal: TextureId,
+    pub metallic_roughness: TextureId,
 }
 
-impl Material {
-    pub const DESC: &'static wgpu::BindGroupLayoutDescriptor<'static> =
-        &wgpu::BindGroupLayoutDescriptor {
-            label: Some("Material bind group layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        };
+pub struct MaterialsManager {
+    material_index: AtomicU32,
+    buffer: wgpu::Buffer,
 
-    pub fn new(
-        device: &wgpu::Device,
-        albedo: &wgpu::TextureView,
-        normal: &wgpu::TextureView,
-        metallic_roughness: &wgpu::TextureView,
-    ) -> Self {
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
+    pub(crate) bind_group_layout: wgpu::BindGroupLayout,
+    pub(crate) bind_group: wgpu::BindGroup,
+}
+
+impl MaterialsManager {
+    const MAX_MATERIALS: usize = 256;
+
+    pub fn new(device: &wgpu::Device) -> Self {
+        use wgpu::util::DeviceExt;
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("MaterialManager buffer"),
+            contents: bytemuck::cast_slice(&[Material::default(); Self::MAX_MATERIALS]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("MaterialManager bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Material>() as _),
+                },
+                count: None,
+            }],
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Material bind group"),
-            layout: &device.create_bind_group_layout(Self::DESC),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(albedo),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(normal),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(metallic_roughness),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
+            label: Some("MaterialManager bind group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
         });
 
-        Self { bind_group }
+        Self {
+            material_index: AtomicU32::new(1),
+            buffer,
+            bind_group_layout,
+            bind_group,
+        }
+    }
+
+    pub fn add(&self, queue: &wgpu::Queue, material: Material) -> MaterialId {
+        let index = self.material_index.fetch_add(1, Ordering::Relaxed);
+        let offset =
+            index as wgpu::BufferAddress * std::mem::size_of::<Material>() as wgpu::BufferAddress;
+
+        queue.write_buffer(&self.buffer, offset, bytemuck::bytes_of(&material));
+
+        MaterialId(index)
     }
 }

@@ -1,101 +1,141 @@
 #![warn(clippy::all)]
 
-use egui_wgpu_backend::{BackendError, RenderPass, ScreenDescriptor};
-use egui_winit_platform::{Platform, PlatformDescriptor};
-use std::time::Instant;
-use winit::{event::Event, window::Window};
-
-use renderer::{wgpu, RenderContext, Renderer};
+use renderer::{wgpu, AmbientConfig, ProfilerResult, RenderContext, Renderer, SsaoConfig};
+use thousands::Separable;
 
 pub use egui;
 
-pub trait App {
-    fn ui(&mut self, ctx: &egui::Context);
-}
-
 pub struct EguiPass {
-    platform: Platform,
-    rpass: RenderPass,
-    previous_frame_time: Option<f32>,
+    renderer: egui_wgpu::Renderer,
 }
 
 impl EguiPass {
-    pub fn new(renderer: &Renderer, window: &Window) -> Self {
-        let platform = Platform::new(PlatformDescriptor {
-            physical_width: renderer.surface_config.width as u32,
-            physical_height: renderer.surface_config.height as u32,
-            scale_factor: window.scale_factor(),
-            font_definitions: Default::default(),
-            style: Default::default(),
-        });
+    pub fn new(renderer: &Renderer) -> Self {
+        let renderer = egui_wgpu::Renderer::new(
+            &renderer.device,
+            renderer.surface_config.format,
+            Some(Renderer::DEPTH_FORMAT),
+            Renderer::MULTISAMPLE_STATE.count,
+        );
 
-        let rpass = RenderPass::new(&renderer.device, wgpu::TextureFormat::Bgra8UnormSrgb, 1);
-
-        Self {
-            platform,
-            rpass,
-            previous_frame_time: None,
-        }
-    }
-
-    pub fn handle_event<E>(&mut self, event: &Event<'_, E>) {
-        self.platform.handle_event(event)
-    }
-
-    pub fn captures_event<E>(&mut self, event: &Event<'_, E>) -> bool {
-        self.platform.captures_event(event)
+        Self { renderer }
     }
 
     pub fn render(
         &mut self,
         ctx: &mut RenderContext,
-        window: &Window,
-        app: &mut impl App,
-    ) -> Result<(), BackendError> {
-        ctx.encoder.push_debug_group("Egui");
-
-        let scale_factor = window.scale_factor() as f32;
-
-        let egui_start = Instant::now();
-        self.platform.begin_frame();
-
-        app.ui(&self.platform.context());
-
-        let output = self.platform.end_frame(Some(window));
-        let paint_jobs = self.platform.context().tessellate(output.shapes);
-
-        let frame_time = (Instant::now() - egui_start).as_secs_f64() as f32;
-        self.previous_frame_time = Some(frame_time);
-
-        self.rpass.add_textures(
-            &ctx.renderer.device,
-            &ctx.renderer.queue,
-            &output.textures_delta,
-        )?;
-
-        let screen_descriptor = ScreenDescriptor {
-            physical_width: ctx.renderer.surface_config.width,
-            physical_height: ctx.renderer.surface_config.height,
-            scale_factor,
+        paint_jobs: &[egui::ClippedPrimitive],
+        textures_delta: &egui::TexturesDelta,
+        pixels_per_point: f32,
+    ) {
+        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [ctx.surface_config.width, ctx.surface_config.height],
+            pixels_per_point,
         };
 
-        self.rpass.update_buffers(
-            &ctx.renderer.device,
-            &ctx.renderer.queue,
-            &paint_jobs,
+        for (texture_id, image_delta) in &textures_delta.set {
+            self.renderer
+                .update_texture(&ctx.device, &ctx.queue, *texture_id, image_delta);
+        }
+        for texture_id in &textures_delta.free {
+            self.renderer.free_texture(texture_id);
+        }
+
+        self.renderer.update_buffers(
+            &ctx.device,
+            &ctx.queue,
+            &mut ctx.encoder,
+            paint_jobs,
             &screen_descriptor,
         );
 
-        self.rpass.execute(
-            &mut ctx.encoder,
-            ctx.resolve_target.as_ref().unwrap_or(&ctx.view),
-            &paint_jobs,
+        self.renderer.render(
+            &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Egui"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: ctx.output.view,
+                    resolve_target: ctx.output.resolve_target,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &ctx.output.depth_stencil,
+                    depth_ops: None,
+                    stencil_ops: None,
+                }),
+            }),
+            paint_jobs,
             &screen_descriptor,
-            None,
-        )?;
+        );
+    }
 
-        ctx.encoder.pop_debug_group();
+    pub fn adapter_info_ui(adapter_info: &wgpu::AdapterInfo) -> impl FnOnce(&mut egui::Ui) + '_ {
+        let wgpu::AdapterInfo {
+            name,
+            driver,
+            driver_info,
+            ..
+        } = adapter_info;
 
-        Ok(())
+        move |ui| {
+            egui::Grid::new("EguiPass::AdapterInfo")
+                .num_columns(2)
+                .spacing([40.0, 0.0])
+                .show(ui, |ui| {
+                    ui.label("Device");
+                    ui.label(name);
+
+                    ui.end_row();
+
+                    ui.label("Driver");
+                    ui.label(format!("{driver} ({driver_info})"));
+                });
+        }
+    }
+
+    pub fn profiler_ui(results: &[ProfilerResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
+        move |ui| {
+            let frame = egui::Frame {
+                inner_margin: egui::style::Margin {
+                    left: 10.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            for result in results {
+                ui.vertical(|ui| {
+                    ui.columns(2, |columns| {
+                        columns[0].label(&result.label);
+                        columns[1].with_layout(
+                            egui::Layout::right_to_left(egui::Align::TOP),
+                            |ui| {
+                                let time = (result.time.end - result.time.start) * 1000.0 * 1000.0;
+                                let time_str = format!("{time:.3}").separate_with_commas();
+                                ui.monospace(format!("{time_str} µs"));
+                            },
+                        )
+                    });
+
+                    frame.show(ui, Self::profiler_ui(&result.nested_scopes));
+                });
+            }
+        }
+    }
+
+    pub fn ambient_config_ui(config: &mut AmbientConfig) -> impl FnOnce(&mut egui::Ui) + '_ {
+        move |ui| {
+            ui.add(egui::Slider::new(&mut config.factor, 0.0..=1.0).text("Factor"));
+        }
+    }
+
+    pub fn ssao_config_ui(config: &mut SsaoConfig) -> impl FnOnce(&mut egui::Ui) + '_ {
+        move |ui| {
+            ui.add(egui::Slider::new(&mut config.radius, 0.0..=4.0).text("Radius"));
+            ui.add(egui::Slider::new(&mut config.bias, 0.0..=0.1).text("Bias"));
+            ui.add(egui::Slider::new(&mut config.power, 0.0..=8.0).text("Power"));
+        }
     }
 }
