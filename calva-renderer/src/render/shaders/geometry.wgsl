@@ -17,11 +17,13 @@ struct Material {
 }
 @group(2) @binding(0) var<storage, read> materials: array<Material>;
 
-#ifdef SKINNING
+@group(3) @binding(0) var<storage, read> skinning_joints: array<u32>;
+@group(3) @binding(1) var<storage, read> skinning_weights: array<vec4<f32>>;
+
 // TODO: should it be a texture_storage_2d_array?
-@group(3) @binding(0) var animations: binding_array<texture_2d_array<f32>>;
-@group(3) @binding(1) var animations_sampler: sampler;
-#endif
+@group(4) @binding(0) var animations: binding_array<texture_2d_array<f32>>;
+@group(4) @binding(1) var animations_sampler: sampler;
+
 
 struct MeshInstance {
     @location(0) model_matrix_0: vec4<f32>,
@@ -31,10 +33,9 @@ struct MeshInstance {
     @location(4) normal_quat: vec4<f32>,
     @location(5) material: u32,
 
-#ifdef SKINNING
-    @location(6) animation_id: u32,
-    @location(7) animation_time: f32,
-#endif
+    @location(6) skinning_offset: i32,
+    @location(7) animation_id: u32,
+    @location(8) animation_time: f32,
 }
 
 struct VertexInput {
@@ -42,11 +43,6 @@ struct VertexInput {
     @location(11) normal: vec3<f32>,
     @location(12) tangent: vec4<f32>,
     @location(13) uv: vec2<f32>,
-
-#ifdef SKINNING
-    @location(20) joints: u32,
-    @location(21) weights: vec4<f32>,
-#endif
 }
 
 struct VertexOutput {
@@ -67,13 +63,13 @@ fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
     return mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
 }
 
-#ifdef SKINNING
 fn get_joint_matrix(animation_id: u32, time: f32, joint_index: u32) -> mat4x4<f32> {
     let texture = animations[animation_id];
     let dim = textureDimensions(texture);
 
     let pixel_size = 1.0 / vec2<f32>(f32(dim.x), f32(dim.y));
 
+    let ANIMATIONS_SAMPLES_PER_SEC = 15.0;
     let frame = time * ANIMATIONS_SAMPLES_PER_SEC;
     let uv = (vec2<f32>(f32(joint_index), frame) + 0.5) * pixel_size;
 
@@ -85,7 +81,7 @@ fn get_joint_matrix(animation_id: u32, time: f32, joint_index: u32) -> mat4x4<f3
     );
 }
 
-fn get_skinning_matrix(animation_id: u32, time: f32, packed_joints: u32, weights: vec4<f32>) -> mat4x4<f32> {
+fn get_skinning_matrix(animation_id: u32, time: f32, skinning_offset: u32) -> mat4x4<f32> {
     if animation_id == 0u {
         return mat4x4<f32>(
             vec4<f32>(1.0, 0.0, 0.0, 0.0),
@@ -94,6 +90,9 @@ fn get_skinning_matrix(animation_id: u32, time: f32, packed_joints: u32, weights
             vec4<f32>(0.0, 0.0, 0.0, 1.0),
         );
     }
+
+    let packed_joints = skinning_joints[skinning_offset];
+    let weights = skinning_weights[skinning_offset];
 
     let joints = vec4<u32>(
         (packed_joints >> 0u) & 0xFFu,
@@ -114,12 +113,12 @@ fn get_skinning_matrix(animation_id: u32, time: f32, packed_joints: u32, weights
         m1[3] + m2[3] + m3[3] + m4[3],
     );
 }
-#endif
 
 @vertex
 fn vs_main(
     instance: MeshInstance,
     in: VertexInput,
+    @builtin(vertex_index) vertex_index: u32
 ) -> VertexOutput {
     var model_matrix = mat4x4<f32>(
         instance.model_matrix_0,
@@ -129,17 +128,17 @@ fn vs_main(
     );
     var normal_matrix = mat4_to_mat3(camera.view);
 
-#ifdef SKINNING
-    let skinning_matrix = get_skinning_matrix(
-        instance.animation_id,
-        instance.animation_time,
-        in.joints,
-        in.weights,
-    );
+    let skinning_offset = u32(instance.skinning_offset + i32(vertex_index));
+    if skinning_offset > 0u {
+        let skinning_matrix = get_skinning_matrix(
+            instance.animation_id,
+            instance.animation_time,
+            skinning_offset
+        );
 
-    model_matrix *= skinning_matrix;
-    normal_matrix *= mat4_to_mat3(skinning_matrix);
-#endif
+        model_matrix *= skinning_matrix;
+        normal_matrix *= mat4_to_mat3(skinning_matrix);
+    }
 
     let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
     let view_pos = camera.view * world_pos;
@@ -205,21 +204,18 @@ fn get_tbn(in: VertexOutput) -> mat3x3<f32> {
     );
 }
 
-fn normal_map(in: VertexOutput) -> vec3<f32> {
-    let material = materials[in.material];
+fn normal_map(in: VertexOutput, material: Material) -> vec3<f32> {
     let texture = textures[material.normal];
     return textureSample(texture, textures_sampler, in.uv).rgb;
 }
 
-fn get_normal(in: VertexOutput) -> vec3<f32> {
-    let material = materials[in.material];
-
+fn get_normal(in: VertexOutput, material: Material) -> vec3<f32> {
     if material.normal == 0u { // no normal mapping
         return normalize(get_vert_normal(in));
     }
 
     let tbn = get_tbn(in);
-    let n = normal_map(in) * 2.0 - 1.0;
+    let n = normal_map(in, material) * 2.0 - 1.0;
     return normalize(tbn * n);
 }
 
@@ -234,6 +230,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     return FragmentOutput(
         vec4<f32>(albedo.rgb, metallic_roughness.x),
-        vec4<f32>(get_normal(in), metallic_roughness.y),
+        vec4<f32>(get_normal(in, material), metallic_roughness.y),
     );
 }

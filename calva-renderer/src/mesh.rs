@@ -1,5 +1,7 @@
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
+use crate::SkinIndex;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshId(u32);
@@ -14,12 +16,11 @@ struct MeshBoundingSphere {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshData {
-    bounding_sphere: MeshBoundingSphere,
     vertex_count: u32,
     vertex_offset: i32,
     base_index: u32,
-
-    _padding: u32,
+    skin_index: SkinIndex,
+    bounding_sphere: MeshBoundingSphere,
 }
 
 impl MeshData {
@@ -31,13 +32,13 @@ pub struct MeshesManager {
     base_index: AtomicU32,
     mesh_index: AtomicU32,
 
-    pub vertices: wgpu::Buffer,
-    pub normals: wgpu::Buffer,
-    pub tangents: wgpu::Buffer,
-    pub tex_coords0: wgpu::Buffer,
-    pub indices: wgpu::Buffer,
+    pub(crate) vertices: wgpu::Buffer,
+    pub(crate) normals: wgpu::Buffer,
+    pub(crate) tangents: wgpu::Buffer,
+    pub(crate) tex_coords0: wgpu::Buffer,
+    pub(crate) indices: wgpu::Buffer,
 
-    pub meshes: wgpu::Buffer,
+    pub(crate) meshes_data: wgpu::Buffer,
 }
 
 impl MeshesManager {
@@ -88,7 +89,7 @@ impl MeshesManager {
             mapped_at_creation: false,
         });
 
-        let meshes = device.create_buffer(&wgpu::BufferDescriptor {
+        let meshes_data = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("MeshesManager meshes data"),
             size: MeshData::SIZE * (Self::MAX_MESHES as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
@@ -106,7 +107,7 @@ impl MeshesManager {
             tex_coords0,
             indices,
 
-            meshes,
+            meshes_data,
         }
     }
 
@@ -118,6 +119,7 @@ impl MeshesManager {
         &self,
         queue: &wgpu::Queue,
         bounding_sphere: (glam::Vec3, f32),
+        skin_index: Option<SkinIndex>,
         vertices: &[u8],
         normals: &[u8],
         tangents: &[u8],
@@ -155,19 +157,18 @@ impl MeshesManager {
 
         let mesh_index = self.mesh_index.fetch_add(1, Ordering::Relaxed);
         let mesh_data = MeshData {
+            vertex_count,
+            vertex_offset,
+            base_index,
             bounding_sphere: MeshBoundingSphere {
                 center: bounding_sphere.0.to_array(),
                 radius: bounding_sphere.1,
             },
-            vertex_count,
-            vertex_offset,
-            base_index,
-
-            _padding: 0,
+            skin_index: skin_index.unwrap_or_default(),
         };
 
         queue.write_buffer(
-            &self.meshes,
+            &self.meshes_data,
             mesh_index as wgpu::BufferAddress * MeshData::SIZE,
             bytemuck::bytes_of(&mesh_data),
         );

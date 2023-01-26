@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
 
     let objects = [
         // "./demo/assets/sphere.glb",
-        // "./demo/assets/sponza.glb",
+        "./demo/assets/sponza.glb",
         // "./demo/assets/plane.glb",
         "./demo/assets/zombie.glb",
     ]

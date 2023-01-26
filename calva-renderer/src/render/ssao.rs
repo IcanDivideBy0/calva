@@ -80,6 +80,7 @@ pub struct SsaoPass {
     pub config: SsaoConfig,
     config_buffer: wgpu::Buffer,
     random_buffer: wgpu::Buffer,
+    sampler: wgpu::Sampler,
 
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -112,6 +113,17 @@ impl SsaoPass {
                 usage: wgpu::BufferUsages::UNIFORM,
             });
 
+        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Skybox sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let bind_group_layout =
             renderer
                 .device
@@ -140,15 +152,11 @@ impl SsaoPass {
                             },
                             count: None,
                         },
-                        // depth
+                        // sampler
                         wgpu::BindGroupLayoutEntry {
                             binding: 2,
                             visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Depth,
-                            },
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
                         // normals
@@ -162,6 +170,17 @@ impl SsaoPass {
                             },
                             count: None,
                         },
+                        // depth
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Depth,
+                            },
+                            count: None,
+                        },
                     ],
                 });
 
@@ -170,8 +189,9 @@ impl SsaoPass {
             &bind_group_layout,
             &config_buffer,
             &random_buffer,
-            depth,
+            &sampler,
             normal,
+            depth,
         );
 
         let pipeline_layout =
@@ -222,6 +242,7 @@ impl SsaoPass {
             config,
             config_buffer,
             random_buffer,
+            sampler,
 
             bind_group_layout,
             bind_group,
@@ -247,8 +268,9 @@ impl SsaoPass {
             &self.bind_group_layout,
             &self.config_buffer,
             &self.random_buffer,
-            depth,
+            &self.sampler,
             normal,
+            depth,
         );
 
         self.blur.resize(renderer, &self.output);
@@ -313,8 +335,9 @@ impl SsaoPass {
         layout: &wgpu::BindGroupLayout,
         config_buffer: &wgpu::Buffer,
         random_buffer: &wgpu::Buffer,
-        depth: &wgpu::TextureView,
+        sampler: &wgpu::Sampler,
         normal: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
     ) -> wgpu::BindGroup {
         renderer
             .device
@@ -332,11 +355,15 @@ impl SsaoPass {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(depth),
+                        resource: wgpu::BindingResource::Sampler(sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(normal),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(depth),
                     },
                 ],
             })

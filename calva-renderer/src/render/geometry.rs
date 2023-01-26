@@ -22,9 +22,8 @@ struct CulledMeshInstance {
     _material: MaterialId,
 
     // Skinning only
+    _skinning_offset: i32,
     _animation: AnimationState,
-
-    _padding: [u32; 1],
 }
 
 impl CulledMeshInstance {
@@ -45,8 +44,9 @@ impl CulledMeshInstance {
             5 => Uint32,
 
             // Skinning
-            6 => Uint32, // Animation ID
-            7 => Float32, // Animation time
+            6 => Sint32, // Skinning offset
+            7 => Uint32, // Animation ID
+            8 => Float32, // Animation time
         ],
     };
 }
@@ -69,8 +69,7 @@ pub struct GeometryPass {
     cull_init_pipeline: wgpu::ComputePipeline,
     cull_pipeline: wgpu::ComputePipeline,
 
-    static_mesh_pipeline: wgpu::RenderPipeline,
-    skinned_mesh_pipeline: wgpu::RenderPipeline,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl GeometryPass {
@@ -194,7 +193,7 @@ impl GeometryPass {
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: meshes.meshes.as_entire_binding(),
+                            resource: meshes.meshes_data.as_entire_binding(),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -249,132 +248,24 @@ impl GeometryPass {
             (bind_group, init_pipeline, pipeline)
         };
 
-        let static_mesh_pipeline = {
+        let render_pipeline = {
             let shader = renderer
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("Geometry[static] shader"),
-                    source: wgpu::ShaderSource::Wgsl(
-                        gpp::process_str(
-                            include_str!("shaders/geometry.wgsl"),
-                            &mut gpp::Context::new(),
-                        )
-                        .unwrap()
-                        .into(),
-                    ),
+                    label: Some("Geometry[render] shader"),
+                    source: wgpu::ShaderSource::Wgsl(include_str!("shaders/geometry.wgsl").into()),
                 });
 
             let pipeline_layout =
                 renderer
                     .device
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Geometry[static] render pipeline layout"),
+                        label: Some("Geometry[render] render pipeline layout"),
                         bind_group_layouts: &[
                             &renderer.camera.bind_group_layout,
                             &textures.bind_group_layout,
                             &materials.bind_group_layout,
-                        ],
-                        push_constant_ranges: &[],
-                    });
-
-            renderer
-                .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Geometry[static] render pipeline"),
-                    layout: Some(&pipeline_layout),
-                    multiview: None,
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: "vs_main",
-                        buffers: &[
-                            CulledMeshInstance::LAYOUT,
-                            // Positions
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::VERTEX_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![10 => Float32x3],
-                            },
-                            // Normals
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::NORMAL_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![11 => Float32x3],
-                            },
-                            // Tangents
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::TANGENT_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![12 => Float32x4],
-                            },
-                            // UV
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::TEX_COORD_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![13 => Float32x2],
-                            },
-                        ],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: "fs_main",
-                        targets: &[
-                            Some(wgpu::ColorTargetState {
-                                format: Self::ALBEDO_METALLIC_FORMAT,
-                                blend: None,
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }),
-                            Some(wgpu::ColorTargetState {
-                                format: Self::NORMAL_ROUGHNESS_FORMAT,
-                                blend: None,
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }),
-                        ],
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        cull_mode: Some(wgpu::Face::Back),
-                        ..Default::default()
-                    },
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: Renderer::DEPTH_FORMAT,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less,
-                        stencil: Default::default(),
-                        bias: Default::default(),
-                    }),
-                    multisample: Renderer::MULTISAMPLE_STATE,
-                })
-        };
-
-        let skinned_mesh_pipeline = {
-            let shader = renderer
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("Geometry[skinned] shader"),
-                    source: wgpu::ShaderSource::Wgsl(
-                        gpp::process_str(
-                            include_str!("shaders/geometry.wgsl"),
-                            &mut gpp::Context::from_macros([
-                                ("SKINNING".into(), "1".into()),
-                                (
-                                    "ANIMATIONS_SAMPLES_PER_SEC".into(),
-                                    format!("{:.3}", AnimationsManager::SAMPLES_PER_SEC).into(),
-                                ),
-                            ]),
-                        )
-                        .unwrap()
-                        .into(),
-                    ),
-                });
-
-            let pipeline_layout =
-                renderer
-                    .device
-                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Geometry[skinned] render pipeline layout"),
-                        bind_group_layouts: &[
-                            &renderer.camera.bind_group_layout,
-                            &textures.bind_group_layout,
-                            &materials.bind_group_layout,
+                            &skins.bind_group_layout,
                             &animations.bind_group_layout,
                         ],
                         push_constant_ranges: &[wgpu::PushConstantRange {
@@ -386,7 +277,7 @@ impl GeometryPass {
             renderer
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Geometry[skinned] render pipeline"),
+                    label: Some("Geometry[render] render pipeline"),
                     layout: Some(&pipeline_layout),
                     multiview: None,
                     vertex: wgpu::VertexState {
@@ -417,18 +308,6 @@ impl GeometryPass {
                                 array_stride: MeshesManager::TEX_COORD_SIZE as _,
                                 step_mode: wgpu::VertexStepMode::Vertex,
                                 attributes: &wgpu::vertex_attr_array![13 => Float32x2],
-                            },
-                            // Joints
-                            wgpu::VertexBufferLayout {
-                                array_stride: SkinsManager::JOINTS_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![20 => Uint32],
-                            },
-                            // Weights
-                            wgpu::VertexBufferLayout {
-                                array_stride: SkinsManager::WEIGHTS_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![21 => Float32x4],
                             },
                         ],
                     },
@@ -481,8 +360,7 @@ impl GeometryPass {
             cull_init_pipeline,
             cull_pipeline,
 
-            static_mesh_pipeline,
-            skinned_mesh_pipeline,
+            render_pipeline,
         }
     }
 
@@ -552,22 +430,19 @@ impl GeometryPass {
             }),
         });
 
-        // rpass.set_pipeline(&self.static_mesh_pipeline);
-        rpass.set_pipeline(&self.skinned_mesh_pipeline);
+        rpass.set_pipeline(&self.render_pipeline);
 
         rpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
         rpass.set_bind_group(1, &self.textures.bind_group, &[]);
         rpass.set_bind_group(2, &self.materials.bind_group, &[]);
-        rpass.set_bind_group(3, &self.animations.bind_group, &[]);
+        rpass.set_bind_group(3, &self.skins.bind_group, &[]);
+        rpass.set_bind_group(4, &self.animations.bind_group, &[]);
 
         rpass.set_vertex_buffer(0, self.culled_instances.slice(..));
         rpass.set_vertex_buffer(1, self.meshes.vertices.slice(..));
         rpass.set_vertex_buffer(2, self.meshes.normals.slice(..));
         rpass.set_vertex_buffer(3, self.meshes.tangents.slice(..));
         rpass.set_vertex_buffer(4, self.meshes.tex_coords0.slice(..));
-
-        rpass.set_vertex_buffer(5, self.skins.joints.slice(..));
-        rpass.set_vertex_buffer(6, self.skins.weights.slice(..));
 
         rpass.set_index_buffer(self.meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 

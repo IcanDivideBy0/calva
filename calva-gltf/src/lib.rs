@@ -197,21 +197,24 @@ impl GltfModel {
                             (center, radius)
                         };
 
+                        let skin_index = Option::zip(
+                            get_data(&gltf::Semantic::Joints(0)),
+                            get_data(&gltf::Semantic::Weights(0)),
+                        )
+                        .map(|(joints, weights)| {
+                            geometry.skins.add(&renderer.queue, joints, weights)
+                        });
+
                         let mesh = geometry.meshes.add(
                             &renderer.queue,
                             bounding_sphere,
+                            skin_index,
                             get_data_res(&gltf::Semantic::Positions)?,
                             get_data_res(&gltf::Semantic::Normals)?,
                             get_data_res(&gltf::Semantic::Tangents)?,
                             get_data_res(&gltf::Semantic::TexCoords(0))?,
                             bytemuck::cast_slice(&indices),
                         );
-
-                        let joints = get_data(&gltf::Semantic::Joints(0));
-                        let weights = get_data(&gltf::Semantic::Weights(0));
-                        if let Some((joints, weights)) = Option::zip(joints, weights) {
-                            geometry.skins.add(&renderer.queue, joints, weights);
-                        }
 
                         Ok(mesh)
                     })

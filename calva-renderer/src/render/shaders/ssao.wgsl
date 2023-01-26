@@ -46,8 +46,9 @@ struct RandomData {
 
 @group(1) @binding(0) var<uniform> config: SsaoConfig;
 @group(1) @binding(1) var<uniform> random_data: RandomData;
-@group(1) @binding(2) var t_depth: texture_depth_multisampled_2d;
+@group(1) @binding(2) var t_sampler: sampler;
 @group(1) @binding(3) var t_normal: texture_multisampled_2d<f32>;
+@group(1) @binding(4) var t_depth: texture_depth_multisampled_2d;
 
 @fragment
 fn fs_main(
@@ -57,6 +58,7 @@ fn fs_main(
     let c = vec2<i32>(floor(in.position.xy));
 
     let frag_depth = textureLoad(t_depth, c, 0);
+    // let frag_depth = textureSample(t_depth, t_sampler, in.ndc);
     let frag_position4 = camera.inv_proj * vec4<f32>(in.ndc, frag_depth, 1.0);
     let frag_position = frag_position4.xyz / frag_position4.w;
 

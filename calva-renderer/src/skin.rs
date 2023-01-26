@@ -1,17 +1,18 @@
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::MeshesManager;
 
 #[repr(C)]
-#[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct SkinId(u32);
+#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkinIndex(u32);
 
 pub struct SkinsManager {
-    vertex_offset: AtomicI32,
-    skin_index: AtomicU32,
+    offset: AtomicU32,
+    joints: wgpu::Buffer,
+    weights: wgpu::Buffer,
 
-    pub joints: wgpu::Buffer,
-    pub weights: wgpu::Buffer,
+    pub(crate) bind_group_layout: wgpu::BindGroupLayout,
+    pub(crate) bind_group: wgpu::BindGroup,
 }
 
 impl SkinsManager {
@@ -24,42 +25,85 @@ impl SkinsManager {
         let joints = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("SkinsManager joints"),
             size: Self::JOINTS_SIZE * max_verts,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let weights = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("SkinsManager weights"),
             size: Self::WEIGHTS_SIZE * max_verts,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("SkinsManager bind group layout"),
+            entries: &[
+                // Joints
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(Self::JOINTS_SIZE),
+                    },
+                    count: None,
+                },
+                // Weights
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(Self::WEIGHTS_SIZE),
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("SkinsManager bind group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: joints.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: weights.as_entire_binding(),
+                },
+            ],
+        });
+
         Self {
-            vertex_offset: AtomicI32::new(0),
-            skin_index: AtomicU32::new(0),
+            offset: AtomicU32::new(1),
             joints,
             weights,
+            bind_group_layout,
+            bind_group,
         }
     }
 
-    pub fn add(&self, queue: &wgpu::Queue, joints: &[u8], weights: &[u8]) -> SkinId {
-        let vertex_len = (joints.len() / Self::JOINTS_SIZE as usize) as i32;
-        let vertex_offset = self.vertex_offset.fetch_add(vertex_len, Ordering::Relaxed);
+    pub fn add(&mut self, queue: &wgpu::Queue, joints: &[u8], weights: &[u8]) -> SkinIndex {
+        let size = (joints.len() / Self::JOINTS_SIZE as usize) as u32;
+        let offset = self.offset.fetch_add(size, Ordering::Relaxed);
 
         queue.write_buffer(
             &self.joints,
-            vertex_offset as wgpu::BufferAddress * Self::JOINTS_SIZE,
+            offset as wgpu::BufferAddress * Self::JOINTS_SIZE,
             joints,
         );
 
         queue.write_buffer(
             &self.weights,
-            vertex_offset as wgpu::BufferAddress * Self::WEIGHTS_SIZE,
+            offset as wgpu::BufferAddress * Self::WEIGHTS_SIZE,
             weights,
         );
 
-        let skin_index = self.skin_index.fetch_add(1, Ordering::Relaxed);
-        SkinId(skin_index)
+        SkinIndex(offset)
     }
 }

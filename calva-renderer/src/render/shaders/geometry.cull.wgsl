@@ -13,10 +13,11 @@ struct MeshBoundingSphere {
 }
 
 struct MeshData {
-    bounding_sphere: MeshBoundingSphere,
     vertex_count: u32,
     vertex_offset: i32,
     base_index: u32,
+    skinning_index: u32,
+    bounding_sphere: MeshBoundingSphere,
 }
 
 struct AnimationState {
@@ -35,6 +36,7 @@ struct InstanceOutput {
     transform: mat4x4<f32>,
     normal_quat: vec4<f32>,
     material_id: u32,
+    skinning_offset: i32,
     animation: AnimationState,
 }
 
@@ -178,6 +180,7 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
     out.transform = *transform;
     out.normal_quat = normal_quat;
     out.material_id = (*instance_input).material_id;
+    out.skinning_offset = i32((*mesh_data).skinning_index) - (*mesh_data).vertex_offset;
     out.animation = (*instance_input).animation;
 
     instances_output[instance_index] = out;
