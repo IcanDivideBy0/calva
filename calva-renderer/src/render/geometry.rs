@@ -58,7 +58,9 @@ pub struct GeometryPass {
     pub skins: SkinsManager,
     pub animations: AnimationsManager,
 
+    pub albedo_metallic_ms: wgpu::TextureView,
     pub albedo_metallic: wgpu::TextureView,
+    pub normal_roughness_ms: wgpu::TextureView,
     pub normal_roughness: wgpu::TextureView,
 
     instances: wgpu::Buffer,
@@ -95,7 +97,8 @@ impl GeometryPass {
         let skins = SkinsManager::new(&renderer.device);
         let animations = AnimationsManager::new(&renderer.device);
 
-        let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
+        let (albedo_metallic_ms, albedo_metallic, normal_roughness_ms, normal_roughness) =
+            Self::make_textures(renderer);
 
         let instances = renderer.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Geometry meshes instances"),
@@ -349,7 +352,9 @@ impl GeometryPass {
             skins,
             animations,
 
+            albedo_metallic_ms,
             albedo_metallic,
+            normal_roughness_ms,
             normal_roughness,
 
             instances,
@@ -365,7 +370,12 @@ impl GeometryPass {
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {
-        (self.albedo_metallic, self.normal_roughness) = Self::make_textures(renderer);
+        (
+            self.albedo_metallic_ms,
+            self.albedo_metallic,
+            self.normal_roughness_ms,
+            self.normal_roughness,
+        ) = Self::make_textures(renderer);
     }
 
     pub fn render<'e, 'data: 'e>(
@@ -404,16 +414,16 @@ impl GeometryPass {
             label: Some("Geometry[render]"),
             color_attachments: &[
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &self.albedo_metallic,
-                    resolve_target: None,
+                    view: &self.albedo_metallic_ms,
+                    resolve_target: Some(&self.albedo_metallic),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
                 }),
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &self.normal_roughness,
-                    resolve_target: None,
+                    view: &self.normal_roughness_ms,
+                    resolve_target: Some(&self.normal_roughness),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
@@ -453,39 +463,73 @@ impl GeometryPass {
         ctx.encoder.profile_end();
     }
 
-    fn make_textures(renderer: &Renderer) -> (wgpu::TextureView, wgpu::TextureView) {
-        let desc = wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: renderer.surface_config.width,
-                height: renderer.surface_config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: Renderer::MULTISAMPLE_STATE.count,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm, // whatever
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+    fn make_textures(
+        renderer: &Renderer,
+    ) -> (
+        wgpu::TextureView,
+        wgpu::TextureView,
+        wgpu::TextureView,
+        wgpu::TextureView,
+    ) {
+        let size = wgpu::Extent3d {
+            width: renderer.surface_config.width,
+            height: renderer.surface_config.height,
+            depth_or_array_layers: 1,
         };
+
+        let albedo_metallic_desc = wgpu::TextureDescriptor {
+            label: Some("GBuffer albedo/metallic texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            format: Self::ALBEDO_METALLIC_FORMAT,
+            view_formats: &[Self::ALBEDO_METALLIC_FORMAT],
+        };
+
+        let albedo_metallic_ms = renderer
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                sample_count: Renderer::MULTISAMPLE_STATE.count,
+                ..albedo_metallic_desc
+            })
+            .create_view(&Default::default());
 
         let albedo_metallic = renderer
             .device
+            .create_texture(&albedo_metallic_desc)
+            .create_view(&Default::default());
+
+        let normal_roughness_desc = wgpu::TextureDescriptor {
+            label: Some("Geometry normal/roughness texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            format: Self::NORMAL_ROUGHNESS_FORMAT,
+            view_formats: &[Self::NORMAL_ROUGHNESS_FORMAT],
+        };
+
+        let normal_roughness_ms = renderer
+            .device
             .create_texture(&wgpu::TextureDescriptor {
-                label: Some("GBuffer albedo/metallic texture"),
-                format: Self::ALBEDO_METALLIC_FORMAT,
-                ..desc
+                sample_count: Renderer::MULTISAMPLE_STATE.count,
+                ..normal_roughness_desc
             })
             .create_view(&Default::default());
 
         let normal_roughness = renderer
             .device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("Geometry normal/roughness texture"),
-                format: Self::NORMAL_ROUGHNESS_FORMAT,
-                ..desc
-            })
+            .create_texture(&normal_roughness_desc)
             .create_view(&Default::default());
 
-        (albedo_metallic, normal_roughness)
+        (
+            albedo_metallic_ms,
+            albedo_metallic,
+            normal_roughness_ms,
+            normal_roughness,
+        )
     }
 }

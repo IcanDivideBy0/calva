@@ -57,14 +57,15 @@ async fn main() -> Result<()> {
 
         SkyboxPass::new(&renderer, size, &bytes)
     };
-    let mut ambient = AmbientPass::new(&renderer, &geometry.albedo_metallic);
+    let mut ambient = AmbientPass::new(&renderer, &geometry.albedo_metallic_ms);
     let mut lights = LightsPass::new(
         &renderer,
-        &geometry.albedo_metallic,
-        &geometry.normal_roughness,
+        &geometry.albedo_metallic_ms,
+        &geometry.normal_roughness_ms,
         &renderer.depth,
     );
-    let mut ssao = SsaoPass::new(&renderer, &geometry.normal_roughness, &renderer.depth);
+    let mut ssao =
+        SsaoPass::<800, 600>::new(&renderer, &geometry.normal_roughness, &renderer.depth);
 
     let egui_context = egui::Context::default();
     let mut egui_state = egui_winit::State::new(&event_loop);
@@ -111,11 +112,11 @@ async fn main() -> Result<()> {
                     camera.resize(window_size);
                     renderer.resize(window_size);
                     geometry.resize(&renderer);
-                    ambient.resize(&renderer, &geometry.albedo_metallic);
+                    ambient.resize(&renderer, &geometry.albedo_metallic_ms);
                     lights.resize(
                         &renderer,
-                        &geometry.albedo_metallic,
-                        &geometry.normal_roughness,
+                        &geometry.albedo_metallic_ms,
+                        &geometry.normal_roughness_ms,
                         &renderer.depth,
                     );
                     ssao.resize(&renderer, &geometry.normal_roughness, &renderer.depth);
@@ -136,8 +137,8 @@ async fn main() -> Result<()> {
                         demo_app.ui(
                             ctx,
                             &mut renderer,
-                            &mut ambient,
-                            &mut ssao,
+                            &mut ambient.config,
+                            &mut ssao.config,
                             &mut point_lights,
                         )
                     });

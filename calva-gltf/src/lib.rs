@@ -12,6 +12,7 @@ use animation::*;
 
 pub struct GltfModel {
     pub instances: Vec<MeshInstance>,
+    pub animations: HashMap<String, AnimationId>,
 }
 
 impl GltfModel {
@@ -78,6 +79,7 @@ impl GltfModel {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING
                         | wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
                 };
 
                 let texture = renderer.device.create_texture(&desc);
@@ -357,6 +359,9 @@ impl GltfModel {
             .flatten()
             .collect();
 
-        Ok(Self { instances })
+        Ok(Self {
+            instances,
+            animations: skins_animations.get(0).cloned().unwrap_or_default(),
+        })
     }
 }

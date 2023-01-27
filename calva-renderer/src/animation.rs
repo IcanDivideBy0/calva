@@ -42,6 +42,7 @@ impl AnimationsManager {
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::Rgba32Float,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[wgpu::TextureFormat::Rgba32Float],
                 })
                 .create_view(&Default::default()),
         );
@@ -121,6 +122,7 @@ impl AnimationsManager {
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::Rgba32Float,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[wgpu::TextureFormat::Rgba32Float],
                 },
                 bytemuck::cast_slice(&pixels),
             )

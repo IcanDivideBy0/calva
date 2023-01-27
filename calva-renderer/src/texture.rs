@@ -33,6 +33,7 @@ impl TexturesManager {
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::R8Unorm,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[wgpu::TextureFormat::R8Unorm],
                 })
                 .create_view(&Default::default()),
         );

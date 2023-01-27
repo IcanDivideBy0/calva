@@ -1,6 +1,6 @@
 use calva::{
     egui::{egui, EguiPass},
-    renderer::{AmbientPass, PointLight, ProfilerResult, Renderer, SsaoPass},
+    renderer::{AmbientConfig, PointLight, ProfilerResult, Renderer, SsaoConfig},
 };
 
 pub struct DemoApp {
@@ -22,8 +22,8 @@ impl DemoApp {
         &mut self,
         ctx: &egui::Context,
         renderer: &mut Renderer,
-        ambient: &mut AmbientPass,
-        ssao: &mut SsaoPass,
+        ambient: &mut AmbientConfig,
+        ssao: &mut SsaoConfig,
         lights: &mut [PointLight],
     ) {
         if let Some(profiler_results) = renderer.profiler() {
@@ -54,11 +54,11 @@ impl DemoApp {
 
                 egui::CollapsingHeader::new("Ambient")
                     .default_open(true)
-                    .show(ui, EguiPass::ambient_config_ui(&mut ambient.config));
+                    .show(ui, EguiPass::ambient_config_ui(ambient));
 
                 egui::CollapsingHeader::new("SSAO")
                     .default_open(true)
-                    .show(ui, EguiPass::ssao_config_ui(&mut ssao.config));
+                    .show(ui, EguiPass::ssao_config_ui(ssao));
 
                 egui::CollapsingHeader::new("PointLight")
                     .default_open(true)

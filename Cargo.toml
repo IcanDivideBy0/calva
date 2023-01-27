@@ -15,6 +15,13 @@ opt-level = 3
 # wgpu = { git = "https://github.com/gfx-rs/wgpu.git", branch = "master" }
 # wgpu = { path = "../wgpu/wgpu" }
 # naga = { git = "https://github.com/gfx-rs/naga.git", branch = "master" }
+# wgpu-profiler = { git = "https://github.com/IcanDivideBy0/wgpu-profiler.git", branch = "wgpu-0.15" }
+# egui-wgpu = { path = "../egui/crates/egui-wgpu" }
+# egui-winit = { path = "../egui/crates/egui-winit" }
+# egui = { path = "../egui/crates/egui" }
+egui-wgpu = { git = "https://github.com/coderedart/egui.git", branch = "wgpu_upgrade" }
+egui-winit = { git = "https://github.com/coderedart/egui.git", branch = "wgpu_upgrade" }
+egui = { git = "https://github.com/coderedart/egui.git", branch = "wgpu_upgrade" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

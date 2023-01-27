@@ -49,8 +49,11 @@ impl Renderer {
 
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         // let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
-        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
-        let surface = unsafe { instance.create_surface(window) };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            ..Default::default()
+        });
+        let surface = unsafe { instance.create_surface(window) }?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -82,32 +85,16 @@ impl Renderer {
             )
             .await?;
 
+        let surface_capabilities = surface.get_capabilities(&adapter);
+        let format = surface_capabilities.formats[0].remove_srgb_suffix();
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: match surface.get_supported_formats(&adapter)[0] {
-                // waiting for release https://wgpu.rs/doc/wgpu/enum.TextureFormat.html#method.remove_srgb_suffix
-                wgpu::TextureFormat::Rgba8UnormSrgb => wgpu::TextureFormat::Rgba8Unorm,
-                wgpu::TextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8Unorm,
-                wgpu::TextureFormat::Bc1RgbaUnormSrgb => wgpu::TextureFormat::Bc1RgbaUnorm,
-                wgpu::TextureFormat::Bc2RgbaUnormSrgb => wgpu::TextureFormat::Bc2RgbaUnorm,
-                wgpu::TextureFormat::Bc3RgbaUnormSrgb => wgpu::TextureFormat::Bc3RgbaUnorm,
-                wgpu::TextureFormat::Bc7RgbaUnormSrgb => wgpu::TextureFormat::Bc7RgbaUnorm,
-                wgpu::TextureFormat::Etc2Rgb8UnormSrgb => wgpu::TextureFormat::Etc2Rgb8Unorm,
-                wgpu::TextureFormat::Etc2Rgb8A1UnormSrgb => wgpu::TextureFormat::Etc2Rgb8A1Unorm,
-                wgpu::TextureFormat::Etc2Rgba8UnormSrgb => wgpu::TextureFormat::Etc2Rgba8Unorm,
-                wgpu::TextureFormat::Astc {
-                    block,
-                    channel: wgpu::AstcChannel::UnormSrgb,
-                } => wgpu::TextureFormat::Astc {
-                    block,
-                    channel: wgpu::AstcChannel::Unorm,
-                },
-                format => format,
-            },
+            format,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![format],
         };
         surface.configure(&device, &surface_config);
 
@@ -207,11 +194,13 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Unorm, // whatever
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[wgpu::TextureFormat::R8Unorm],
         };
 
         let msaa = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer msaa texture"),
             format: surface_config.format,
+            view_formats: &[surface_config.format],
             ..desc
         });
 
@@ -219,6 +208,7 @@ impl Renderer {
             label: Some("Renderer depth texture"),
             format: Self::DEPTH_FORMAT,
             usage: desc.usage | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[Self::DEPTH_FORMAT],
             ..desc
         });
 
