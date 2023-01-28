@@ -115,6 +115,7 @@ impl MeshesManager {
         self.mesh_index.load(Ordering::Relaxed)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add(
         &self,
         queue: &wgpu::Queue,

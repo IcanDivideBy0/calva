@@ -80,7 +80,6 @@ impl Renderer {
                         max_bind_groups: 6,
                         ..Default::default()
                     },
-                    ..Default::default()
                 },
                 None,
             )

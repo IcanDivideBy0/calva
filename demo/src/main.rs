@@ -57,15 +57,18 @@ async fn main() -> Result<()> {
 
         SkyboxPass::new(&renderer, size, &bytes)
     };
-    let mut ambient = AmbientPass::new(&renderer, &geometry.albedo_metallic);
+    let mut ambient = AmbientPass::new(&renderer, geometry.albedo_metallic_view());
     let mut lights = LightsPass::new(
         &renderer,
-        &geometry.albedo_metallic,
-        &geometry.normal_roughness,
+        geometry.albedo_metallic_view(),
+        geometry.normal_roughness_view(),
         &renderer.depth,
     );
-    let mut ssao =
-        SsaoPass::<800, 600>::new(&renderer, &geometry.normal_roughness, &renderer.depth);
+    let mut ssao = SsaoPass::<800, 600>::new(
+        &renderer,
+        geometry.normal_roughness_view(),
+        &renderer.depth,
+    );
 
     let egui_context = egui::Context::default();
     let mut egui_state = egui_winit::State::new(&event_loop);
@@ -150,14 +153,18 @@ async fn main() -> Result<()> {
                     camera.resize(window_size);
                     renderer.resize(window_size);
                     geometry.resize(&renderer);
-                    ambient.resize(&renderer, &geometry.albedo_metallic);
+                    ambient.resize(&renderer, geometry.albedo_metallic_view());
                     lights.resize(
                         &renderer,
-                        &geometry.albedo_metallic,
-                        &geometry.normal_roughness,
+                        geometry.albedo_metallic_view(),
+                        geometry.normal_roughness_view(),
                         &renderer.depth,
                     );
-                    ssao.resize(&renderer, &geometry.normal_roughness, &renderer.depth);
+                    ssao.resize(
+                        &renderer,
+                        geometry.normal_roughness_view(),
+                        &renderer.depth,
+                    );
                 }
 
                 let dt = last_render_time.elapsed();

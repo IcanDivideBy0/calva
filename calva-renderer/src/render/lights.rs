@@ -333,7 +333,7 @@ mod point_lights {
                 label: Some("PointLights[stencil]"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &ctx.output.depth_stencil,
+                    view: ctx.output.depth_stencil,
                     depth_ops: None,
                     stencil_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(0),
@@ -364,7 +364,7 @@ mod point_lights {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &ctx.output.depth_stencil,
+                    view: ctx.output.depth_stencil,
                     depth_ops: None,
                     stencil_ops: None,
                 }),
