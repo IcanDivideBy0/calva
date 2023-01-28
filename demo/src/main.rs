@@ -57,11 +57,11 @@ async fn main() -> Result<()> {
 
         SkyboxPass::new(&renderer, size, &bytes)
     };
-    let mut ambient = AmbientPass::new(&renderer, &geometry.albedo_metallic_ms);
+    let mut ambient = AmbientPass::new(&renderer, &geometry.albedo_metallic);
     let mut lights = LightsPass::new(
         &renderer,
-        &geometry.albedo_metallic_ms,
-        &geometry.normal_roughness_ms,
+        &geometry.albedo_metallic,
+        &geometry.normal_roughness,
         &renderer.depth,
     );
     let mut ssao =
@@ -72,21 +72,59 @@ async fn main() -> Result<()> {
     let mut egui = EguiPass::new(&renderer);
     let mut demo_app = app::DemoApp::default();
 
-    let objects = [
-        // "./demo/assets/sphere.glb",
-        "./demo/assets/sponza.glb",
-        // "./demo/assets/plane.glb",
-        "./demo/assets/zombie.glb",
-    ]
-    .iter()
-    .map(|path| {
+    let objects = vec![
+        // GltfModel::from_reader(
+        //     &mut renderer,
+        //     &mut geometry,
+        //     &mut std::fs::File::open("./demo/assets/sphere.glb")?,
+        // )?,
         GltfModel::from_reader(
             &mut renderer,
             &mut geometry,
-            &mut std::fs::File::open(path)?,
+            &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+        )?,
+        // GltfModel::from_reader(
+        //     &mut renderer,
+        //     &mut geometry,
+        //     &mut std::fs::File::open("./demo/assets/plane.glb")?,
+        // )?,
+        GltfModel::from_reader(
+            &mut renderer,
+            &mut geometry,
+            &mut std::fs::File::open("./demo/assets/zombie.glb")?,
         )
-    })
-    .collect::<Result<Vec<_>>>()?;
+        .map(|mut zombie| {
+            let instance = zombie.instances[0];
+
+            zombie.instances = (0..100)
+                .map(|idx| {
+                    let mut i = instance;
+                    i.transform =
+                        glam::Mat4::from_translation(glam::vec3(4.0 * idx as f32, 0.0, 0.0))
+                            * i.transform;
+                    i
+                })
+                .collect();
+
+            zombie
+        })?,
+    ];
+
+    // let objects = [
+    //     // "./demo/assets/sphere.glb",
+    //     "./demo/assets/sponza.glb",
+    //     // "./demo/assets/plane.glb",
+    //     "./demo/assets/zombie.glb",
+    // ]
+    // .iter()
+    // .map(|path| {
+    //     GltfModel::from_reader(
+    //         &mut renderer,
+    //         &mut geometry,
+    //         &mut std::fs::File::open(path)?,
+    //     )
+    // })
+    // .collect::<Result<Vec<_>>>()?;
 
     let mut instances = objects
         .iter()
@@ -112,11 +150,11 @@ async fn main() -> Result<()> {
                     camera.resize(window_size);
                     renderer.resize(window_size);
                     geometry.resize(&renderer);
-                    ambient.resize(&renderer, &geometry.albedo_metallic_ms);
+                    ambient.resize(&renderer, &geometry.albedo_metallic);
                     lights.resize(
                         &renderer,
-                        &geometry.albedo_metallic_ms,
-                        &geometry.normal_roughness_ms,
+                        &geometry.albedo_metallic,
+                        &geometry.normal_roughness,
                         &renderer.depth,
                     );
                     ssao.resize(&renderer, &geometry.normal_roughness, &renderer.depth);

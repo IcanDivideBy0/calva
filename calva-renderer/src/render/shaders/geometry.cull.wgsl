@@ -16,7 +16,7 @@ struct MeshData {
     vertex_count: u32,
     vertex_offset: i32,
     base_index: u32,
-    skinning_index: u32,
+    skin_offset: i32,
     bounding_sphere: MeshBoundingSphere,
 }
 
@@ -36,7 +36,7 @@ struct InstanceOutput {
     transform: mat4x4<f32>,
     normal_quat: vec4<f32>,
     material_id: u32,
-    skinning_offset: i32,
+    skin_offset: i32,
     animation: AnimationState,
 }
 
@@ -46,6 +46,10 @@ struct DrawIndexedIndirect {
     base_index: u32,
     vertex_offset: i32,
     base_instance: u32,
+}
+struct IndirectBuffer {
+    count: u32,
+    draws: array<DrawIndexedIndirect>,
 }
 
 @group(1) @binding(0)
@@ -59,24 +63,24 @@ var<push_constant> instances_count: u32;
 var<storage, read_write> instances_output: array<InstanceOutput>;
 
 @group(1) @binding(3)
-var<storage, read_write> indirects: array<DrawIndexedIndirect>;
+var<storage, read_write> indirects: IndirectBuffer;
 
 @compute @workgroup_size(32)
 fn init(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mesh_id = global_id.x;
 
     let mesh_data = &meshes_data[mesh_id];
-    let indirect = &indirects[mesh_id];
+    let draw = &indirects.draws[mesh_id];
 
-    (*indirect).vertex_count = (*mesh_data).vertex_count;
-    (*indirect).base_index = (*mesh_data).base_index;
-    (*indirect).vertex_offset = (*mesh_data).vertex_offset;
+    (*draw).vertex_count = (*mesh_data).vertex_count;
+    (*draw).base_index = (*mesh_data).base_index;
+    (*draw).vertex_offset = (*mesh_data).vertex_offset;
 
-    atomicStore(&(*indirect).instance_count, 0u);
+    atomicStore(&(*draw).instance_count, 0u);
 
-    (*indirect).base_instance = 0u;
+    (*draw).base_instance = 0u;
     for (var i = 0u; i < instances_count; i++) {
-        (*indirect).base_instance += u32(instances_input[i].mesh_id < mesh_id);
+        (*draw).base_instance += u32(instances_input[i].mesh_id < mesh_id);
     }
 }
 
@@ -98,13 +102,14 @@ fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
     );
 
     let neg_radius = -sphere.radius;
-    return !(//
-        plane_distance_to_point(frustum[0], sphere.center) < neg_radius || //
-        plane_distance_to_point(frustum[1], sphere.center) < neg_radius || //
-        plane_distance_to_point(frustum[2], sphere.center) < neg_radius || //
-        plane_distance_to_point(frustum[3], sphere.center) < neg_radius || //
-        plane_distance_to_point(frustum[4], sphere.center) < neg_radius || //
-        plane_distance_to_point(frustum[5], sphere.center) < neg_radius);
+    return !(
+        plane_distance_to_point(frustum[0], sphere.center) < neg_radius ||
+        plane_distance_to_point(frustum[1], sphere.center) < neg_radius ||
+        plane_distance_to_point(frustum[2], sphere.center) < neg_radius ||
+        plane_distance_to_point(frustum[3], sphere.center) < neg_radius ||
+        plane_distance_to_point(frustum[4], sphere.center) < neg_radius ||
+        plane_distance_to_point(frustum[5], sphere.center) < neg_radius
+    );
 }
 
 fn mat3_quat(m: mat3x3<f32>) -> vec4<f32> {
@@ -173,15 +178,28 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
         (*transform)[2].xyz,
     ));
 
-    let indirect = &indirects[(*instance_input).mesh_id];
-    let instance_index = (*indirect).base_instance + atomicAdd(&(*indirect).instance_count, 1u);
+    let draw = &indirects.draws[(*instance_input).mesh_id];
+    let instance_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
 
     var out: InstanceOutput;
     out.transform = *transform;
     out.normal_quat = normal_quat;
     out.material_id = (*instance_input).material_id;
-    out.skinning_offset = i32((*mesh_data).skinning_index) - (*mesh_data).vertex_offset;
+    out.skin_offset = (*mesh_data).skin_offset;
     out.animation = (*instance_input).animation;
 
     instances_output[instance_index] = out;
+}
+
+@compute @workgroup_size(1)
+fn count() {
+    indirects.count = 0u;
+
+    for (var i = 0u; i < arrayLength(&indirects.draws); i++) {
+        let draw = &indirects.draws[i];
+        if atomicLoad(&(*draw).instance_count) > 0u {
+            indirects.draws[indirects.count] = *draw;
+            indirects.count++;
+        }
+    }
 }

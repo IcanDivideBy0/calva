@@ -173,7 +173,7 @@ mod point_lights {
                                 binding: 0,
                                 visibility: wgpu::ShaderStages::FRAGMENT,
                                 ty: wgpu::BindingType::Texture {
-                                    multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                    multisampled: false,
                                     view_dimension: wgpu::TextureViewDimension::D2,
                                     sample_type: wgpu::TextureSampleType::Float {
                                         filterable: false,
@@ -186,7 +186,7 @@ mod point_lights {
                                 binding: 1,
                                 visibility: wgpu::ShaderStages::FRAGMENT,
                                 ty: wgpu::BindingType::Texture {
-                                    multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                    multisampled: false,
                                     view_dimension: wgpu::TextureViewDimension::D2,
                                     sample_type: wgpu::TextureSampleType::Float {
                                         filterable: false,

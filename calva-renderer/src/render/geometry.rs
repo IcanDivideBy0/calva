@@ -20,9 +20,7 @@ struct CulledMeshInstance {
     _model_matrix: [f32; 16],
     _normal_quat: [f32; 4],
     _material: MaterialId,
-
-    // Skinning only
-    _skinning_offset: i32,
+    _skin_offset: i32,
     _animation: AnimationState,
 }
 
@@ -44,7 +42,7 @@ impl CulledMeshInstance {
             5 => Uint32,
 
             // Skinning
-            6 => Sint32, // Skinning offset
+            6 => Sint32, // Skin offset
             7 => Uint32, // Animation ID
             8 => Float32, // Animation time
         ],
@@ -70,6 +68,7 @@ pub struct GeometryPass {
     cull_bind_group: wgpu::BindGroup,
     cull_init_pipeline: wgpu::ComputePipeline,
     cull_pipeline: wgpu::ComputePipeline,
+    cull_count_pipeline: wgpu::ComputePipeline,
 
     render_pipeline: wgpu::RenderPipeline,
 }
@@ -87,6 +86,7 @@ impl GeometryPass {
 
     const INDIRECT_SIZE: wgpu::BufferAddress =
         std::mem::size_of::<wgpu::util::DrawIndexedIndirect>() as _;
+    const INDIRECT_COUNT_SIZE: wgpu::BufferAddress = std::mem::size_of::<u32>() as _;
 
     const MAX_INSTANCES: usize = 1000;
 
@@ -120,15 +120,15 @@ impl GeometryPass {
 
         let indirect = renderer.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Geometry draw indirect"),
-            size: (std::mem::size_of::<wgpu::util::DrawIndexedIndirect>()
-                * MeshesManager::MAX_MESHES) as _,
+            size: Self::INDIRECT_COUNT_SIZE
+                + Self::INDIRECT_SIZE * MeshesManager::MAX_MESHES as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::INDIRECT,
             mapped_at_creation: false,
         });
 
-        let (cull_bind_group, cull_init_pipeline, cull_pipeline) = {
+        let (cull_bind_group, cull_init_pipeline, cull_pipeline, cull_count_pipeline) = {
             let shader = renderer
                 .device
                 .create_shader_module(wgpu::include_wgsl!("shaders/geometry.cull.wgsl"));
@@ -181,7 +181,9 @@ impl GeometryPass {
                                 ty: wgpu::BindingType::Buffer {
                                     ty: wgpu::BufferBindingType::Storage { read_only: false },
                                     has_dynamic_offset: false,
-                                    min_binding_size: wgpu::BufferSize::new(Self::INDIRECT_SIZE),
+                                    min_binding_size: wgpu::BufferSize::new(
+                                        Self::INDIRECT_COUNT_SIZE + Self::INDIRECT_SIZE,
+                                    ),
                                 },
                                 count: None,
                             },
@@ -248,7 +250,17 @@ impl GeometryPass {
                         entry_point: "cull",
                     });
 
-            (bind_group, init_pipeline, pipeline)
+            let count_pipeline =
+                renderer
+                    .device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Geometry[cull] count pipeline"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: "count",
+                    });
+
+            (bind_group, init_pipeline, pipeline, count_pipeline)
         };
 
         let render_pipeline = {
@@ -364,6 +376,7 @@ impl GeometryPass {
             cull_bind_group,
             cull_init_pipeline,
             cull_pipeline,
+            cull_count_pipeline,
 
             render_pipeline,
         }
@@ -396,17 +409,18 @@ impl GeometryPass {
 
         let instances_count = instances.len() as u32;
 
-        cpass.set_pipeline(&self.cull_init_pipeline);
         cpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
         cpass.set_bind_group(1, &self.cull_bind_group, &[]);
+
+        cpass.set_pipeline(&self.cull_init_pipeline);
         cpass.set_push_constants(0, bytemuck::bytes_of(&instances_count));
         cpass.dispatch_workgroups(self.meshes.count() as _, 1, 1);
 
         cpass.set_pipeline(&self.cull_pipeline);
-        cpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
-        cpass.set_bind_group(1, &self.cull_bind_group, &[]);
-        cpass.set_push_constants(0, bytemuck::bytes_of(&instances_count));
         cpass.dispatch_workgroups(instances.len() as _, 1, 1);
+
+        cpass.set_pipeline(&self.cull_count_pipeline);
+        cpass.dispatch_workgroups(1, 1, 1);
 
         drop(cpass);
 
@@ -431,7 +445,7 @@ impl GeometryPass {
                 }),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &ctx.output.depth_stencil,
+                view: ctx.output.depth_stencil,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -456,7 +470,13 @@ impl GeometryPass {
 
         rpass.set_index_buffer(self.meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 
-        rpass.multi_draw_indexed_indirect(&self.indirect, 0, MeshesManager::MAX_MESHES as _);
+        rpass.multi_draw_indexed_indirect_count(
+            &self.indirect,
+            Self::INDIRECT_COUNT_SIZE,
+            &self.indirect,
+            0,
+            MeshesManager::MAX_MESHES as _,
+        );
 
         drop(rpass);
 

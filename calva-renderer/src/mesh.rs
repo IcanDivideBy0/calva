@@ -19,7 +19,7 @@ pub struct MeshData {
     vertex_count: u32,
     vertex_offset: i32,
     base_index: u32,
-    skin_index: SkinIndex,
+    skin_offset: i32,
     bounding_sphere: MeshBoundingSphere,
 }
 
@@ -119,12 +119,12 @@ impl MeshesManager {
         &self,
         queue: &wgpu::Queue,
         bounding_sphere: (glam::Vec3, f32),
-        skin_index: Option<SkinIndex>,
         vertices: &[u8],
         normals: &[u8],
         tangents: &[u8],
         tex_coords0: &[u8],
         indices: &[u8],
+        skin: Option<SkinIndex>,
     ) -> MeshId {
         let vertex_len = (vertices.len() / Self::VERTEX_SIZE as usize) as i32;
         let vertex_offset = self.vertex_offset.fetch_add(vertex_len, Ordering::Relaxed);
@@ -155,16 +155,20 @@ impl MeshesManager {
 
         queue.write_buffer(&self.indices, base_index as u64 * Self::INDEX_SIZE, indices);
 
+        let skin_offset = skin
+            .map(|skin_index| skin_index.as_offset(vertex_offset))
+            .unwrap_or_default();
+
         let mesh_index = self.mesh_index.fetch_add(1, Ordering::Relaxed);
         let mesh_data = MeshData {
             vertex_count,
             vertex_offset,
             base_index,
+            skin_offset,
             bounding_sphere: MeshBoundingSphere {
                 center: bounding_sphere.0.to_array(),
                 radius: bounding_sphere.1,
             },
-            skin_index: skin_index.unwrap_or_default(),
         };
 
         queue.write_buffer(

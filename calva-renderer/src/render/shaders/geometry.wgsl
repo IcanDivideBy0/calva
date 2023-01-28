@@ -33,7 +33,7 @@ struct MeshInstance {
     @location(4) normal_quat: vec4<f32>,
     @location(5) material: u32,
 
-    @location(6) skinning_offset: i32,
+    @location(6) skin_offset: i32,
     @location(7) animation_id: u32,
     @location(8) animation_time: f32,
 }
@@ -81,7 +81,7 @@ fn get_joint_matrix(animation_id: u32, time: f32, joint_index: u32) -> mat4x4<f3
     );
 }
 
-fn get_skinning_matrix(animation_id: u32, time: f32, skinning_offset: u32) -> mat4x4<f32> {
+fn get_skinning_matrix(animation_id: u32, time: f32, skin_index: u32) -> mat4x4<f32> {
     if animation_id == 0u {
         return mat4x4<f32>(
             vec4<f32>(1.0, 0.0, 0.0, 0.0),
@@ -91,8 +91,8 @@ fn get_skinning_matrix(animation_id: u32, time: f32, skinning_offset: u32) -> ma
         );
     }
 
-    let packed_joints = skinning_joints[skinning_offset];
-    let weights = skinning_weights[skinning_offset];
+    let packed_joints = skinning_joints[skin_index];
+    let weights = skinning_weights[skin_index];
 
     let joints = vec4<u32>(
         (packed_joints >> 0u) & 0xFFu,
@@ -128,12 +128,12 @@ fn vs_main(
     );
     var normal_matrix = mat4_to_mat3(camera.view);
 
-    let skinning_offset = u32(instance.skinning_offset + i32(vertex_index));
-    if skinning_offset > 0u {
+    let skin_index = u32(i32(vertex_index) + instance.skin_offset);
+    if skin_index > 0u {
         let skinning_matrix = get_skinning_matrix(
             instance.animation_id,
             instance.animation_time,
-            skinning_offset
+            skin_index
         );
 
         model_matrix *= skinning_matrix;

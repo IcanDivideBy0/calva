@@ -6,6 +6,12 @@ use crate::MeshesManager;
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SkinIndex(u32);
 
+impl SkinIndex {
+    pub(crate) fn as_offset(&self, vertex_offset: i32) -> i32 {
+        self.0 as i32 - vertex_offset
+    }
+}
+
 pub struct SkinsManager {
     offset: AtomicU32,
     joints: wgpu::Buffer,

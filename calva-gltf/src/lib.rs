@@ -199,7 +199,7 @@ impl GltfModel {
                             (center, radius)
                         };
 
-                        let skin_index = Option::zip(
+                        let skin = Option::zip(
                             get_data(&gltf::Semantic::Joints(0)),
                             get_data(&gltf::Semantic::Weights(0)),
                         )
@@ -210,12 +210,12 @@ impl GltfModel {
                         let mesh = geometry.meshes.add(
                             &renderer.queue,
                             bounding_sphere,
-                            skin_index,
                             get_data_res(&gltf::Semantic::Positions)?,
                             get_data_res(&gltf::Semantic::Normals)?,
                             get_data_res(&gltf::Semantic::Tangents)?,
                             get_data_res(&gltf::Semantic::TexCoords(0))?,
                             bytemuck::cast_slice(&indices),
+                            skin,
                         );
 
                         Ok(mesh)
@@ -253,7 +253,7 @@ impl GltfModel {
 
         let animations_samplers: Vec<AnimationSampler> = doc
             .animations()
-            .map(|animation| AnimationSampler::new(animation, &buffers))
+            .map(|animation| AnimationSampler::new(animation, buffers))
             .collect();
 
         let skins_animations: Vec<HashMap<String, AnimationId>> = doc

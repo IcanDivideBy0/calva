@@ -21,6 +21,7 @@ impl Default for AmbientConfig {
 pub struct AmbientPass {
     pub config: AmbientConfig,
     config_buffer: wgpu::Buffer,
+    sampler: wgpu::Sampler,
 
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -39,6 +40,17 @@ impl AmbientPass {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
+        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Skybox sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let bind_group_layout =
             renderer
                 .device
@@ -56,22 +68,34 @@ impl AmbientPass {
                             },
                             count: None,
                         },
-                        // albedo
+                        // sampler
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        // albedo
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
                     ],
                 });
 
-        let bind_group =
-            Self::make_bind_group(&renderer.device, &bind_group_layout, &config_buffer, albedo);
+        let bind_group = Self::make_bind_group(
+            &renderer.device,
+            &bind_group_layout,
+            &config_buffer,
+            &sampler,
+            albedo,
+        );
 
         let shader = renderer
             .device
@@ -117,6 +141,7 @@ impl AmbientPass {
         Self {
             config,
             config_buffer,
+            sampler,
 
             bind_group_layout,
             bind_group,
@@ -129,6 +154,7 @@ impl AmbientPass {
             &renderer.device,
             &self.bind_group_layout,
             &self.config_buffer,
+            &self.sampler,
             albedo,
         );
     }
@@ -163,6 +189,7 @@ impl AmbientPass {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         config_buffer: &wgpu::Buffer,
+        sampler: &wgpu::Sampler,
         albedo: &wgpu::TextureView,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -175,6 +202,10 @@ impl AmbientPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(albedo),
                 },
             ],

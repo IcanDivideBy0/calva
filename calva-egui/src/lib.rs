@@ -35,15 +35,15 @@ impl EguiPass {
 
         for (texture_id, image_delta) in &textures_delta.set {
             self.renderer
-                .update_texture(&ctx.device, &ctx.queue, *texture_id, image_delta);
+                .update_texture(ctx.device, ctx.queue, *texture_id, image_delta);
         }
         for texture_id in &textures_delta.free {
             self.renderer.free_texture(texture_id);
         }
 
         self.renderer.update_buffers(
-            &ctx.device,
-            &ctx.queue,
+            ctx.device,
+            ctx.queue,
             &mut ctx.encoder,
             paint_jobs,
             &screen_descriptor,
@@ -61,7 +61,7 @@ impl EguiPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &ctx.output.depth_stencil,
+                    view: ctx.output.depth_stencil,
                     depth_ops: None,
                     stencil_ops: None,
                 }),

@@ -23,12 +23,13 @@ pub struct Renderer {
 
 impl Renderer {
     const FEATURES: &'static [wgpu::Features] = &[
-        wgpu::Features::DEPTH_CLIP_CONTROL,      // all platforms
-        wgpu::Features::MULTIVIEW,               // Vulkan
-        wgpu::Features::TIMESTAMP_QUERY,         // Vulkan, DX12, web
-        wgpu::Features::TEXTURE_BINDING_ARRAY,   // Vulkan, DX12, metal
-        wgpu::Features::MULTI_DRAW_INDIRECT,     // Vulkan, DX12, metal
-        wgpu::Features::INDIRECT_FIRST_INSTANCE, // Vulkan, DX12, metal
+        wgpu::Features::DEPTH_CLIP_CONTROL,        // all platforms
+        wgpu::Features::MULTIVIEW,                 // Vulkan
+        wgpu::Features::TIMESTAMP_QUERY,           // Vulkan, DX12, web
+        wgpu::Features::TEXTURE_BINDING_ARRAY,     // Vulkan, DX12, metal
+        wgpu::Features::MULTI_DRAW_INDIRECT,       // Vulkan, DX12, metal
+        wgpu::Features::MULTI_DRAW_INDIRECT_COUNT, // Vulkan, DX12
+        wgpu::Features::INDIRECT_FIRST_INSTANCE,   // Vulkan, DX12, metal
         wgpu::Features::PUSH_CONSTANTS,
         wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
         wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
@@ -145,7 +146,7 @@ impl Renderer {
             .begin_scope("RenderFrame", &mut encoder, &self.device);
 
         let mut context = RenderContext {
-            surface_config: &&self.surface_config,
+            surface_config: &self.surface_config,
             device: &self.device,
             queue: &self.queue,
             camera: &self.camera,
@@ -263,9 +264,9 @@ impl<'a> ProfilerCommandEncoder<'a> {
     ) -> wgpu_profiler::scope::OwningScope<wgpu::ComputePass> {
         wgpu_profiler::scope::OwningScope::start(
             desc.label.unwrap_or("???"),
-            &mut self.profiler,
+            self.profiler,
             self.encoder.begin_compute_pass(desc),
-            &self.device,
+            self.device,
         )
     }
 
@@ -275,9 +276,9 @@ impl<'a> ProfilerCommandEncoder<'a> {
     ) -> wgpu_profiler::scope::OwningScope<wgpu::RenderPass<'pass>> {
         wgpu_profiler::scope::OwningScope::start(
             desc.label.unwrap_or("???"),
-            &mut self.profiler,
+            self.profiler,
             self.encoder.begin_render_pass(desc),
-            &self.device,
+            self.device,
         )
     }
 }
@@ -286,11 +287,11 @@ impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
     type Target = wgpu::CommandEncoder;
 
     fn deref(&self) -> &Self::Target {
-        &self.encoder
+        self.encoder
     }
 }
 impl<'a> std::ops::DerefMut for ProfilerCommandEncoder<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.encoder
+        self.encoder
     }
 }

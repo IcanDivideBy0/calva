@@ -153,7 +153,7 @@ impl SkyboxPass {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &ctx.output.depth_stencil,
+                view: ctx.output.depth_stencil,
                 depth_ops: None,
                 stencil_ops: None,
             }),

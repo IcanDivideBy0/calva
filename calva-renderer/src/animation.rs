@@ -98,13 +98,12 @@ impl AnimationsManager {
         animation: Vec<Vec<glam::Mat4>>,
     ) -> AnimationId {
         let pixels = (0..4)
-            .map(|i| {
+            .flat_map(|i| {
                 animation
                     .iter()
                     .flatten()
                     .map(move |joint_transform| joint_transform.col(i))
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         let view = device
