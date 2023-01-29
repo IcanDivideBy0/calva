@@ -112,50 +112,69 @@ fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
     );
 }
 
-fn mat3_quat(m: mat3x3<f32>) -> vec4<f32> {
-    var out = vec4<f32>(0.0);
+fn mat_quat(m: mat4x4<f32>) -> vec4<f32> {
+    let inv_scale = 1.0 / vec3<f32>(
+        length(m[0].xyz) * sign(determinant(m)),
+        length(m[1].xyz),
+        length(m[2].xyz),
+    );
 
-    // Algorithm in Ken Shoemake's article in 1987 SIGGRAPH course notes
-    // article "Quaternion Calculus and Fast Animation".
-    var fTrace = m[0].x + m[1].y + m[2].z;
-    var fRoot: f32;
-
-    if fTrace > 0.0 {
-        // |w| > 1/2, may as well choose w > 1/2
-        fRoot = sqrt(fTrace + 1.0); // 2w
-        out.w = 0.5 * fRoot;
-        fRoot = 0.5 / fRoot; // 1/(4w)
-        out.x = (m[1].z - m[2].y) * fRoot;
-        out.y = (m[2].x - m[0].z) * fRoot;
-        out.z = (m[0].y - m[1].x) * fRoot;
-    } else {
-        // |w| <= 1/2
-        if m[1].y > m[0].x {
-            if m[2].z > m[1][1] {
-                fRoot = sqrt(m[2][2] - m[0][0] - m[1][1] + 1.0);
-                out[2] = 0.5 * fRoot;
-                fRoot = 0.5 / fRoot;
-                out[3] = (m[0][1] - m[1][0]) * fRoot;
-                out[0] = (m[0][2] + m[2][0]) * fRoot;
-                out[1] = (m[1][2] + m[2][1]) * fRoot;
-            } else {
-                fRoot = sqrt(m[1][1] - m[2][2] - m[0][0] + 1.0);
-                out[1] = 0.5 * fRoot;
-                fRoot = 0.5 / fRoot;
-                out[3] = (m[2][0] - m[0][2]) * fRoot;
-                out[2] = (m[2][1] + m[1][2]) * fRoot;
-                out[0] = (m[0][1] + m[1][0]) * fRoot;
-            }
+    let x_axis = m[0].xyz * inv_scale.x;
+    let y_axis = m[1].xyz * inv_scale.y;
+    let z_axis = m[2].xyz * inv_scale.z;
+    
+    // Based on https://github.com/microsoft/DirectXMath `XM$quaternionRotationMatrix`
+    if z_axis.z <= 0.0 {
+        // x^2 + y^2 >= z^2 + w^2
+        let dif10 = y_axis.y - x_axis.x;
+        let omm22 = 1.0 - z_axis.z;
+        if dif10 <= 0.0 {
+            // x^2 >= y^2
+            let four_xsq = omm22 - dif10;
+            let inv4x = 0.5 / sqrt(four_xsq);
+            return vec4<f32>(
+                four_xsq * inv4x,
+                (x_axis.y + y_axis.x) * inv4x,
+                (x_axis.z + z_axis.x) * inv4x,
+                (y_axis.z - z_axis.y) * inv4x,
+            );
         } else {
-            fRoot = sqrt(m[0][0] - m[1][1] - m[2][2] + 1.0);
-            out[0] = 0.5 * fRoot;
-            fRoot = 0.5 / fRoot;
-            out[3] = (m[1][2] - m[2][1]) * fRoot;
-            out[1] = (m[1][0] + m[0][1]) * fRoot;
-            out[2] = (m[2][0] + m[0][2]) * fRoot;
+            // y^2 >= x^2
+            let four_ysq = omm22 + dif10;
+            let inv4y = 0.5 / sqrt(four_ysq);
+            return vec4<f32>(
+                (x_axis.y + y_axis.x) * inv4y,
+                four_ysq * inv4y,
+                (y_axis.z + z_axis.y) * inv4y,
+                (z_axis.x - x_axis.z) * inv4y,
+            );
+        }
+    } else {
+        // z^2 + w^2 >= x^2 + y^2
+        let sum10 = y_axis.y + x_axis.x;
+        let opm22 = 1.0 + z_axis.z;
+        if sum10 <= 0.0 {
+            // z^2 >= w^2
+            let four_zsq = opm22 - sum10;
+            let inv4z = 0.5 / sqrt(four_zsq);
+            return vec4<f32>(
+                (x_axis.z + z_axis.x) * inv4z,
+                (y_axis.z + z_axis.y) * inv4z,
+                four_zsq * inv4z,
+                (x_axis.y - y_axis.x) * inv4z,
+            );
+        } else {
+            // w^2 >= z^2
+            let four_wsq = opm22 + sum10;
+            let inv4w = 0.5 / sqrt(four_wsq);
+            return vec4<f32>(
+                (y_axis.z - z_axis.y) * inv4w,
+                (z_axis.x - x_axis.z) * inv4w,
+                (x_axis.y - y_axis.x) * inv4w,
+                four_wsq * inv4w,
+            );
         }
     }
-    return normalize(out);
 }
 
 @compute @workgroup_size(32)
@@ -172,18 +191,12 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    let normal_quat = mat3_quat(mat3x3<f32>(
-        (*transform)[0].xyz,
-        (*transform)[1].xyz,
-        (*transform)[2].xyz,
-    ));
-
     let draw = &indirects.draws[(*instance_input).mesh_id];
     let instance_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
 
     var out: InstanceOutput;
     out.transform = *transform;
-    out.normal_quat = normal_quat;
+    out.normal_quat = mat_quat(*transform);
     out.material_id = (*instance_input).material_id;
     out.skin_offset = (*mesh_data).skin_offset;
     out.animation = (*instance_input).animation;

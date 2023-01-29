@@ -27,9 +27,9 @@ async fn main() -> Result<()> {
 
     let mut camera = camera::MyCamera::new(&window);
     camera.controller.transform = glam::Mat4::look_at_rh(
-        glam::Vec3::Y,                 // eye
-        glam::Vec3::Y + glam::Vec3::X, // target
-        glam::Vec3::Y,                 // up
+        glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
+        glam::Vec3::Y - glam::Vec3::Z,        // target
+        glam::Vec3::Y,                        // up
     )
     .inverse();
 
@@ -64,11 +64,8 @@ async fn main() -> Result<()> {
         geometry.normal_roughness_view(),
         &renderer.depth,
     );
-    let mut ssao = SsaoPass::<800, 600>::new(
-        &renderer,
-        geometry.normal_roughness_view(),
-        &renderer.depth,
-    );
+    let mut ssao =
+        SsaoPass::<800, 600>::new(&renderer, geometry.normal_roughness_view(), &renderer.depth);
 
     let egui_context = egui::Context::default();
     let mut egui_state = egui_winit::State::new(&event_loop);
@@ -81,11 +78,11 @@ async fn main() -> Result<()> {
         //     &mut geometry,
         //     &mut std::fs::File::open("./demo/assets/sphere.glb")?,
         // )?,
-        GltfModel::from_reader(
-            &mut renderer,
-            &mut geometry,
-            &mut std::fs::File::open("./demo/assets/sponza.glb")?,
-        )?,
+        // GltfModel::from_reader(
+        //     &mut renderer,
+        //     &mut geometry,
+        //     &mut std::fs::File::open("./demo/assets/sponza.glb")?,
+        // )?,
         // GltfModel::from_reader(
         //     &mut renderer,
         //     &mut geometry,
@@ -94,23 +91,27 @@ async fn main() -> Result<()> {
         GltfModel::from_reader(
             &mut renderer,
             &mut geometry,
+            &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
+        )?,
+        GltfModel::from_reader(
+            &mut renderer,
+            &mut geometry,
             &mut std::fs::File::open("./demo/assets/zombie.glb")?,
-        )
-        .map(|mut zombie| {
-            let instance = zombie.instances[0];
+        )?, // .map(|mut zombie| {
+            //     let instance = zombie.instances[0];
 
-            zombie.instances = (0..100)
-                .map(|idx| {
-                    let mut i = instance;
-                    i.transform =
-                        glam::Mat4::from_translation(glam::vec3(4.0 * idx as f32, 0.0, 0.0))
-                            * i.transform;
-                    i
-                })
-                .collect();
+            //     zombie.instances = (0..100)
+            //         .map(|idx| {
+            //             let mut i = instance;
+            //             i.transform =
+            //                 glam::Mat4::from_translation(glam::vec3(4.0 * idx as f32, 0.0, 0.0))
+            //                     * i.transform;
+            //             i
+            //         })
+            //         .collect();
 
-            zombie
-        })?,
+            //     zombie
+            // })?,
     ];
 
     // let objects = [
@@ -160,11 +161,7 @@ async fn main() -> Result<()> {
                         geometry.normal_roughness_view(),
                         &renderer.depth,
                     );
-                    ssao.resize(
-                        &renderer,
-                        geometry.normal_roughness_view(),
-                        &renderer.depth,
-                    );
+                    ssao.resize(&renderer, geometry.normal_roughness_view(), &renderer.depth);
                 }
 
                 let dt = last_render_time.elapsed();

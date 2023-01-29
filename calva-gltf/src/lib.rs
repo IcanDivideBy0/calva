@@ -323,7 +323,7 @@ impl GltfModel {
             .filter_map(|node| {
                 let mesh = node.mesh()?;
                 let mesh_data = meshes.get(mesh.index())?;
-                let transform = nodes_transforms.get(&node.index())?;
+                let transform = nodes_transforms.get(&node.index()).copied()?;
 
                 let animation_state = node
                     .skin()
@@ -346,7 +346,7 @@ impl GltfModel {
                             .unwrap_or_default();
 
                         MeshInstance {
-                            transform: *transform,
+                            transform,
                             mesh: mesh_id,
                             material: material_id,
                             animation: animation_state,

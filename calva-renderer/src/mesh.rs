@@ -48,7 +48,7 @@ impl MeshesManager {
     pub const TEX_COORD_SIZE: wgpu::BufferAddress = std::mem::size_of::<[f32; 2]>() as _;
     pub const INDEX_SIZE: wgpu::BufferAddress = std::mem::size_of::<u32>() as _;
 
-    pub const MAX_MESHES: usize = 100;
+    pub const MAX_MESHES: usize = 1 << 12;
     pub const MAX_VERTS: usize = 1 << 22;
 
     pub fn new(device: &wgpu::Device) -> Self {
