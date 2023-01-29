@@ -471,7 +471,7 @@ impl GeometryPass {
         cpass.dispatch_workgroups(instances.len() as _, 1, 1);
 
         cpass.set_pipeline(&self.cull_count_pipeline);
-        cpass.dispatch_workgroups(1, 1, 1);
+        cpass.dispatch_workgroups(MeshesManager::MAX_MESHES as _, 1, 1);
 
         drop(cpass);
 

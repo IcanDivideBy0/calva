@@ -4,9 +4,7 @@ use anyhow::Result;
 use calva::{
     egui::{egui, EguiPass},
     gltf::GltfModel,
-    renderer::{
-        wgpu, AmbientPass, GeometryPass, LightsPass, PointLight, Renderer, SkyboxPass, SsaoPass,
-    },
+    renderer::{wgpu, AmbientPass, GeometryPass, LightsPass, Renderer, SkyboxPass, SsaoPass},
 };
 use std::time::Instant;
 use winit::{
@@ -72,7 +70,7 @@ async fn main() -> Result<()> {
     let mut egui = EguiPass::new(&renderer);
     let mut demo_app = app::DemoApp::default();
 
-    let objects = vec![
+    let models = vec![
         // GltfModel::from_reader(
         //     &mut renderer,
         //     &mut geometry,
@@ -130,16 +128,15 @@ async fn main() -> Result<()> {
     // })
     // .collect::<Result<Vec<_>>>()?;
 
-    let mut instances = objects
+    let mut instances = models
         .iter()
-        .flat_map(|object| object.instances.iter().copied())
+        .flat_map(|model| model.instances.iter().copied())
         .collect::<Vec<_>>();
 
-    let mut point_lights = vec![PointLight {
-        color: glam::Vec3::ONE,
-        position: glam::vec3(0.0, 1.2, 0.0),
-        radius: 7.0,
-    }];
+    let point_lights = models
+        .iter()
+        .flat_map(|model| model.point_lights.iter().copied())
+        .collect::<Vec<_>>();
 
     let mut last_render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
@@ -176,13 +173,7 @@ async fn main() -> Result<()> {
 
                 let (paint_jobs, textures_delta) = {
                     let output = egui_context.run(egui_state.take_egui_input(&window), |ctx| {
-                        demo_app.ui(
-                            ctx,
-                            &mut renderer,
-                            &mut ambient.config,
-                            &mut ssao.config,
-                            &mut point_lights,
-                        )
+                        demo_app.ui(ctx, &mut renderer, &mut ambient.config, &mut ssao.config)
                     });
 
                     egui_state.handle_platform_output(

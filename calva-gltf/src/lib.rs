@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu, AnimationId, AnimationState, AnimationsManager, GeometryPass, Material, MaterialId,
-    MeshId, MeshInstance, Renderer, TextureId,
+    MaterialsManager, MeshId, MeshInstance, MeshesManager, PointLight, Renderer, SkinsManager,
+    TextureId, TexturesManager,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use animation::*;
 pub struct GltfModel {
     pub instances: Vec<MeshInstance>,
     pub animations: HashMap<String, AnimationId>,
+    pub point_lights: Vec<PointLight>,
 }
 
 impl GltfModel {
@@ -36,8 +38,114 @@ impl GltfModel {
         buffers: &[gltf::buffer::Data],
         images: &[gltf::image::Data],
     ) -> Result<Self> {
-        let textures: Vec<TextureId> = doc
-            .textures()
+        let textures = Self::build_textures(renderer, &mut geometry.textures, doc, images)?;
+
+        let materials: Vec<MaterialId> =
+            Self::build_materials(renderer, &mut geometry.materials, doc, &textures)?;
+
+        let meshes = Self::build_meshes(
+            renderer,
+            &mut geometry.meshes,
+            &mut geometry.skins,
+            doc,
+            buffers,
+        )?;
+
+        let nodes_transforms = Self::build_nodes_transforms(doc);
+
+        let skins_animations = Self::build_skin_animations(
+            renderer,
+            &mut geometry.animations,
+            doc,
+            &nodes_transforms,
+            buffers,
+        );
+
+        let instances: Vec<MeshInstance> = doc
+            .nodes()
+            .filter_map(|node| {
+                let mesh = node.mesh()?;
+                let mesh_data = meshes.get(mesh.index())?;
+                let transform = nodes_transforms.get(&node.index()).copied()?;
+
+                let animation_state = node
+                    .skin()
+                    .and_then(|skin| skins_animations.get(skin.index()))
+                    .and_then(|animations| animations.get("roar"))
+                    .map(|&animation| AnimationState {
+                        animation,
+                        time: 0.0,
+                    })
+                    .unwrap_or_default();
+
+                let mesh_instances = mesh
+                    .primitives()
+                    .zip(mesh_data)
+                    .map(|(primitive, &mesh_id)| {
+                        let material_id = primitive
+                            .material()
+                            .index()
+                            .and_then(|index| materials.get(index).copied())
+                            .unwrap_or_default();
+
+                        MeshInstance {
+                            transform,
+                            mesh: mesh_id,
+                            material: material_id,
+                            animation: animation_state,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                Some(mesh_instances)
+            })
+            .flatten()
+            .collect();
+
+        let point_lights: Vec<PointLight> = doc
+            .nodes()
+            .filter_map(|node| {
+                use gltf::khr_lights_punctual::Kind;
+                let light = node.light()?;
+
+                match light.kind() {
+                    Kind::Directional => {
+                        unimplemented!();
+                    }
+                    Kind::Point => {
+                        let color = light.color().into();
+                        let position = nodes_transforms
+                            .get(&node.index())?
+                            .transform_point3(glam::Vec3::ZERO);
+                        let radius = light.range().unwrap_or_else(|| light.intensity().sqrt());
+
+                        Some(PointLight {
+                            color,
+                            position,
+                            radius,
+                        })
+                    }
+                    Kind::Spot { .. } => {
+                        unimplemented!();
+                    }
+                }
+            })
+            .collect();
+
+        Ok(Self {
+            instances,
+            animations: skins_animations.get(0).cloned().unwrap_or_default(),
+            point_lights,
+        })
+    }
+
+    fn build_textures(
+        renderer: &Renderer,
+        textures_manager: &mut TexturesManager,
+        doc: &gltf::Document,
+        images: &[gltf::image::Data],
+    ) -> Result<Vec<TextureId>> {
+        doc.textures()
             .map(|texture| {
                 let image_data = images
                     .get(texture.source().index())
@@ -95,21 +203,28 @@ impl GltfModel {
                     size,
                 );
 
-                geometry.textures.generate_mipmaps(
+                textures_manager.generate_mipmaps(
                     &renderer.device,
                     &renderer.queue,
                     &texture,
                     &desc,
                 )?;
 
-                Ok(geometry
-                    .textures
-                    .add(&renderer.device, texture.create_view(&Default::default())))
+                Ok(
+                    textures_manager
+                        .add(&renderer.device, texture.create_view(&Default::default())),
+                )
             })
-            .collect::<Result<_>>()?;
+            .collect()
+    }
 
-        let materials: Vec<MaterialId> = doc
-            .materials()
+    fn build_materials(
+        renderer: &Renderer,
+        materials_manager: &mut MaterialsManager,
+        doc: &gltf::Document,
+        textures: &[TextureId],
+    ) -> Result<Vec<MaterialId>> {
+        doc.materials()
             .map(|material| {
                 let albedo = material
                     .pbr_metallic_roughness()
@@ -128,7 +243,7 @@ impl GltfModel {
                     .and_then(|t| textures.get(t.texture().index()).copied())
                     .unwrap_or_default();
 
-                Ok(geometry.materials.add(
+                Ok(materials_manager.add(
                     &renderer.queue,
                     Material {
                         albedo,
@@ -137,10 +252,17 @@ impl GltfModel {
                     },
                 ))
             })
-            .collect::<Result<_>>()?;
+            .collect()
+    }
 
-        let meshes: Vec<Vec<MeshId>> = doc
-            .meshes()
+    fn build_meshes(
+        renderer: &Renderer,
+        meshes_manager: &mut MeshesManager,
+        skins_manager: &mut SkinsManager,
+        doc: &gltf::Document,
+        buffers: &[gltf::buffer::Data],
+    ) -> Result<Vec<Vec<MeshId>>> {
+        doc.meshes()
             .map(|mesh| {
                 mesh.primitives()
                     .map(|primitive| {
@@ -204,10 +326,10 @@ impl GltfModel {
                             get_data(&gltf::Semantic::Weights(0)),
                         )
                         .map(|(joints, weights)| {
-                            geometry.skins.add(&renderer.queue, joints, weights)
+                            skins_manager.add(&renderer.queue, joints, weights)
                         });
 
-                        let mesh = geometry.meshes.add(
+                        let mesh = meshes_manager.add(
                             &renderer.queue,
                             bounding_sphere,
                             get_data_res(&gltf::Semantic::Positions)?,
@@ -222,9 +344,12 @@ impl GltfModel {
                     })
                     .collect::<Result<_>>()
             })
-            .collect::<Result<_>>()?;
+            .collect()
+    }
 
-        let mut nodes_transforms: HashMap<usize, glam::Mat4> = HashMap::new();
+    fn build_nodes_transforms(doc: &gltf::Document) -> BTreeMap<usize, glam::Mat4> {
+        let mut nodes_transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
+
         if let Some(scene) = doc.default_scene() {
             fn traverse_nodes_tree<'a, T>(
                 nodes: impl Iterator<Item = gltf::Node<'a>>,
@@ -251,13 +376,22 @@ impl GltfModel {
             );
         }
 
+        nodes_transforms
+    }
+
+    fn build_skin_animations(
+        renderer: &Renderer,
+        animations_manager: &mut AnimationsManager,
+        doc: &gltf::Document,
+        nodes_transforms: &BTreeMap<usize, glam::Mat4>,
+        buffers: &[gltf::buffer::Data],
+    ) -> Vec<HashMap<String, AnimationId>> {
         let animations_samplers: Vec<AnimationSampler> = doc
             .animations()
             .map(|animation| AnimationSampler::new(animation, buffers))
             .collect();
 
-        let skins_animations: Vec<HashMap<String, AnimationId>> = doc
-            .skins()
+        doc.skins()
             .map(|skin| {
                 // Find the node which use this skin
                 let mesh_node = doc
@@ -306,9 +440,7 @@ impl GltfModel {
                         time += Duration::from_secs_f32(1.0 / AnimationsManager::SAMPLES_PER_SEC);
                     }
 
-                    geometry
-                        .animations
-                        .add(&renderer.device, &renderer.queue, animation)
+                    animations_manager.add(&renderer.device, &renderer.queue, animation)
                 });
 
                 doc.animations()
@@ -316,52 +448,6 @@ impl GltfModel {
                     .zip(animation_ids)
                     .collect::<HashMap<_, _>>()
             })
-            .collect();
-
-        let instances: Vec<MeshInstance> = doc
-            .nodes()
-            .filter_map(|node| {
-                let mesh = node.mesh()?;
-                let mesh_data = meshes.get(mesh.index())?;
-                let transform = nodes_transforms.get(&node.index()).copied()?;
-
-                let animation_state = node
-                    .skin()
-                    .and_then(|skin| skins_animations.get(skin.index()))
-                    .and_then(|animations| animations.get("roar"))
-                    .map(|&animation| AnimationState {
-                        animation,
-                        time: 0.0,
-                    })
-                    .unwrap_or_default();
-
-                let mesh_instances = mesh
-                    .primitives()
-                    .zip(mesh_data)
-                    .map(|(primitive, &mesh_id)| {
-                        let material_id = primitive
-                            .material()
-                            .index()
-                            .and_then(|index| materials.get(index).copied())
-                            .unwrap_or_default();
-
-                        MeshInstance {
-                            transform,
-                            mesh: mesh_id,
-                            material: material_id,
-                            animation: animation_state,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                Some(mesh_instances)
-            })
-            .flatten()
-            .collect();
-
-        Ok(Self {
-            instances,
-            animations: skins_animations.get(0).cloned().unwrap_or_default(),
-        })
+            .collect()
     }
 }

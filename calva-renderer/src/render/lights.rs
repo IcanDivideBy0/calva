@@ -56,7 +56,7 @@ mod point_lights {
     }
 
     impl PointLightsPass {
-        pub const MAX_LIGHTS: usize = 10_000;
+        pub const MAX_LIGHTS: usize = 1 << 12;
 
         pub fn new(
             renderer: &Renderer,
@@ -93,7 +93,7 @@ mod point_lights {
             let vertex_buffers_layout = [
                 // PointLights instances
                 wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Self>() as _,
+                    array_stride: std::mem::size_of::<PointLight>() as _,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &wgpu::vertex_attr_array![
                         0 => Float32x3, // Position

@@ -48,7 +48,7 @@ struct DrawIndexedIndirect {
     base_instance: u32,
 }
 struct IndirectBuffer {
-    count: u32,
+    count: atomic<u32>,
     draws: array<DrawIndexedIndirect>,
 }
 
@@ -82,6 +82,8 @@ fn init(@builtin(global_invocation_id) global_id: vec3<u32>) {
     for (var i = 0u; i < instances_count; i++) {
         (*draw).base_instance += u32(instances_input[i].mesh_id < mesh_id);
     }
+
+    atomicStore(&indirects.count, 0u);
 }
 
 fn normalize_plane(plane: vec4<f32>) -> vec4<f32> {
@@ -204,15 +206,10 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
     instances_output[instance_index] = out;
 }
 
-@compute @workgroup_size(1)
-fn count() {
-    indirects.count = 0u;
-
-    for (var i = 0u; i < arrayLength(&indirects.draws); i++) {
-        let draw = &indirects.draws[i];
-        if atomicLoad(&(*draw).instance_count) > 0u {
-            indirects.draws[indirects.count] = *draw;
-            indirects.count++;
-        }
+@compute @workgroup_size(32)
+fn count(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let draw = &indirects.draws[global_id.x];
+    if atomicLoad(&(*draw).instance_count) > 0u {
+        indirects.draws[atomicAdd(&indirects.count, 1u)] = *draw;
     }
 }
