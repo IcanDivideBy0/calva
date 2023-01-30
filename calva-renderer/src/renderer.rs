@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu_profiler::{GpuProfiler, GpuTimerScopeResult};
-use winit::window::Window;
 
-use crate::CameraUniform;
+use crate::CameraManager;
 
 pub struct Renderer {
     pub adapter: wgpu::Adapter,
@@ -16,7 +16,7 @@ pub struct Renderer {
     pub depth: wgpu::TextureView,
     pub depth_stencil: wgpu::TextureView,
 
-    pub camera: CameraUniform,
+    pub camera: CameraManager,
 
     profiler: GpuProfiler,
 }
@@ -45,11 +45,11 @@ impl Renderer {
 
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
-    pub async fn new(window: &Window) -> Result<Self> {
-        let size = window.inner_size();
-
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        // let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
+    pub async fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
+        window: &W,
+        width: u32,
+        height: u32,
+    ) -> Result<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..Default::default()
@@ -90,8 +90,8 @@ impl Renderer {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: size.width,
-            height: size.height,
+            width,
+            height,
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
@@ -100,7 +100,7 @@ impl Renderer {
 
         let (msaa, depth, depth_stencil) = Self::make_textures(&device, &surface_config);
 
-        let camera = CameraUniform::new(&device);
+        let camera = CameraManager::new(&device);
 
         let mut profiler = GpuProfiler::new(4, queue.get_timestamp_period(), device.features());
         profiler.enable_debug_marker = false;
@@ -123,9 +123,9 @@ impl Renderer {
         })
     }
 
-    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        self.surface_config.width = size.width;
-        self.surface_config.height = size.height;
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.surface_config.width = width;
+        self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
 
         (self.msaa, self.depth, self.depth_stencil) =
@@ -229,7 +229,7 @@ pub struct RenderContext<'a> {
     pub surface_config: &'a wgpu::SurfaceConfiguration,
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
-    pub camera: &'a CameraUniform,
+    pub camera: &'a CameraManager,
     pub output: RenderOutput<'a>,
     pub encoder: ProfilerCommandEncoder<'a>,
 }

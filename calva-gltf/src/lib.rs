@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use renderer::{
-    wgpu, AnimationId, AnimationState, AnimationsManager, GeometryPass, Material, MaterialId,
-    MaterialsManager, MeshId, MeshInstance, MeshesManager, PointLight, Renderer, SkinsManager,
+    wgpu, AnimationId, AnimationState, AnimationsManager, GeometryPass, Instance, Material,
+    MaterialId, MaterialsManager, MeshId, MeshesManager, PointLight, Renderer, SkinsManager,
     TextureId, TexturesManager,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -12,7 +12,7 @@ mod animation;
 use animation::*;
 
 pub struct GltfModel {
-    pub instances: Vec<MeshInstance>,
+    pub instances: Vec<Instance>,
     pub animations: HashMap<String, AnimationId>,
     pub point_lights: Vec<PointLight>,
 }
@@ -61,7 +61,7 @@ impl GltfModel {
             buffers,
         );
 
-        let instances: Vec<MeshInstance> = doc
+        let instances: Vec<Instance> = doc
             .nodes()
             .filter_map(|node| {
                 let mesh = node.mesh()?;
@@ -88,7 +88,7 @@ impl GltfModel {
                             .and_then(|index| materials.get(index).copied())
                             .unwrap_or_default();
 
-                        MeshInstance {
+                        Instance {
                             transform,
                             mesh: mesh_id,
                             material: material_id,

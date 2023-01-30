@@ -4,11 +4,11 @@ use crate::SkinIndex;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MeshId(u32);
+pub struct MeshId(pub(crate) u32);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct MeshBoundingSphere {
+pub(crate) struct MeshBoundingSphere {
     center: [f32; 3],
     radius: f32,
 }
@@ -16,29 +16,30 @@ struct MeshBoundingSphere {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshData {
-    vertex_count: u32,
-    vertex_offset: i32,
-    base_index: u32,
-    skin_offset: i32,
-    bounding_sphere: MeshBoundingSphere,
+    pub(crate) vertex_count: u32,
+    pub(crate) base_index: u32,
+    pub(crate) vertex_offset: i32,
+    pub(crate) skin_offset: i32,
+    pub(crate) bounding_sphere: MeshBoundingSphere,
 }
-
 impl MeshData {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
+
+    pub(crate) fn address(mesh_id: MeshId) -> wgpu::BufferAddress {
+        Self::SIZE * (mesh_id.0 as wgpu::BufferAddress)
+    }
 }
 
 pub struct MeshesManager {
     vertex_offset: AtomicI32,
     base_index: AtomicU32,
-    mesh_index: AtomicU32,
+    meshes_data: Vec<MeshData>,
 
     pub(crate) vertices: wgpu::Buffer,
     pub(crate) normals: wgpu::Buffer,
     pub(crate) tangents: wgpu::Buffer,
     pub(crate) tex_coords0: wgpu::Buffer,
     pub(crate) indices: wgpu::Buffer,
-
-    pub(crate) meshes_data: wgpu::Buffer,
 }
 
 impl MeshesManager {
@@ -89,35 +90,26 @@ impl MeshesManager {
             mapped_at_creation: false,
         });
 
-        let meshes_data = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("MeshesManager meshes data"),
-            size: MeshData::SIZE * (Self::MAX_MESHES as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         Self {
             vertex_offset: AtomicI32::new(0),
             base_index: AtomicU32::new(0),
-            mesh_index: AtomicU32::new(0),
+            meshes_data: Vec::with_capacity(Self::MAX_MESHES),
 
             vertices,
             normals,
             tangents,
             tex_coords0,
             indices,
-
-            meshes_data,
         }
     }
 
-    pub fn count(&self) -> u32 {
-        self.mesh_index.load(Ordering::Relaxed)
+    pub fn count(&self) -> usize {
+        self.meshes_data.len() as _
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn add(
-        &self,
+        &mut self,
         queue: &wgpu::Queue,
         bounding_sphere: (glam::Vec3, f32),
         vertices: &[u8],
@@ -160,24 +152,50 @@ impl MeshesManager {
             .map(|skin_index| skin_index.as_offset(vertex_offset))
             .unwrap_or_default();
 
-        let mesh_index = self.mesh_index.fetch_add(1, Ordering::Relaxed);
-        let mesh_data = MeshData {
+        // let mesh_index = self.indirect_draws_data.len() as u32;
+        // self.indirect_draws_data.push(DrawIndexedIndirect {
+        //     vertex_count,
+        //     instance_count: 0,
+        //     base_index,
+        //     vertex_offset,
+        //     base_instance: 0,
+        // });
+
+        // queue.write_buffer(
+        //     &self.meshes_data,
+        //     MeshData::SIZE * (mesh_index as wgpu::BufferAddress),
+        //     bytemuck::bytes_of(&MeshData {
+        //         skin_offset,
+        //         vertex_count,
+        //         base_index,
+        //         vertex_offset,
+        //         bounding_sphere: MeshBoundingSphere {
+        //             center: bounding_sphere.0.to_array(),
+        //             radius: bounding_sphere.1,
+        //         },
+        //     }),
+        // );
+
+        let mesh_index = self.meshes_data.len() as u32;
+        self.meshes_data.push(MeshData {
             vertex_count,
-            vertex_offset,
             base_index,
+            vertex_offset,
             skin_offset,
             bounding_sphere: MeshBoundingSphere {
                 center: bounding_sphere.0.to_array(),
                 radius: bounding_sphere.1,
             },
-        };
-
-        queue.write_buffer(
-            &self.meshes_data,
-            mesh_index as wgpu::BufferAddress * MeshData::SIZE,
-            bytemuck::bytes_of(&mesh_data),
-        );
+        });
 
         MeshId(mesh_index)
+    }
+
+    pub(crate) fn get_mesh_data(&self, mesh_id: MeshId) -> &MeshData {
+        &self.meshes_data[mesh_id.0 as usize]
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &MeshData> {
+        self.meshes_data.iter()
     }
 }

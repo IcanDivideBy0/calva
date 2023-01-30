@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct GpuCamera {
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+struct Camera {
     view: glam::Mat4,
     proj: glam::Mat4,
     view_proj: glam::Mat4,
@@ -10,7 +10,7 @@ struct GpuCamera {
     inv_proj: glam::Mat4,
 }
 
-impl GpuCamera {
+impl Camera {
     fn new(view: glam::Mat4, proj: glam::Mat4) -> Self {
         Self {
             view,
@@ -22,7 +22,7 @@ impl GpuCamera {
     }
 }
 
-pub struct CameraUniform {
+pub struct CameraManager {
     pub view: glam::Mat4,
     pub proj: glam::Mat4,
 
@@ -31,33 +31,33 @@ pub struct CameraUniform {
     pub bind_group: wgpu::BindGroup,
 }
 
-impl CameraUniform {
+impl CameraManager {
     pub fn new(device: &wgpu::Device) -> Self {
         let view = glam::Mat4::default();
         let proj = glam::Mat4::default();
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera buffer"),
-            contents: bytemuck::bytes_of(&GpuCamera::new(view, proj)),
+            label: Some("CameraManager buffer"),
+            contents: bytemuck::bytes_of(&Camera::new(view, proj)),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Camera bind group layout"),
+            label: Some("CameraManager bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::all(),
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<GpuCamera>() as _),
+                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Camera>() as _),
                 },
                 count: None,
             }],
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Camera bind group"),
+            label: Some("CameraManager bind group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -82,7 +82,7 @@ impl CameraUniform {
         queue.write_buffer(
             &self.buffer,
             0,
-            bytemuck::bytes_of(&GpuCamera::new(self.view, self.proj)),
+            bytemuck::bytes_of(&Camera::new(self.view, self.proj)),
         );
     }
 }

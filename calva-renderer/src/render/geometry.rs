@@ -1,53 +1,7 @@
 use crate::{
-    AnimationState, AnimationsManager, MaterialId, MaterialsManager, MeshData, MeshId,
-    MeshesManager, RenderContext, Renderer, SkinsManager, TexturesManager,
+    AnimationsManager, CulledInstance, InstancesManager, MaterialsManager, MeshesManager,
+    RenderContext, Renderer, SkinsManager, TexturesManager,
 };
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MeshInstance {
-    pub transform: glam::Mat4,
-    pub mesh: MeshId,
-    pub material: MaterialId,
-    pub animation: AnimationState,
-}
-
-impl MeshInstance {
-    const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
-}
-
-struct CulledMeshInstance {
-    _model_matrix: [f32; 16],
-    _normal_quat: [f32; 4],
-    _material: MaterialId,
-    _skin_offset: i32,
-    _animation: AnimationState,
-}
-
-impl CulledMeshInstance {
-    const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
-
-    const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<Self>() as _,
-        step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &wgpu::vertex_attr_array![
-            // Model matrix
-            0 => Float32x4,
-            1 => Float32x4,
-            2 => Float32x4,
-            3 => Float32x4,
-            // Normal quat
-            4 => Float32x4,
-            // Material
-            5 => Uint32,
-
-            // Skinning
-            6 => Sint32, // Skin offset
-            7 => Uint32, // Animation ID
-            8 => Float32, // Animation time
-        ],
-    };
-}
 
 struct GeometryOutput {
     texture: wgpu::Texture,
@@ -100,20 +54,12 @@ pub struct GeometryPass {
     pub textures: TexturesManager,
     pub materials: MaterialsManager,
     pub meshes: MeshesManager,
+    pub instances: InstancesManager,
     pub skins: SkinsManager,
     pub animations: AnimationsManager,
 
     albedo_metallic: GeometryOutput,
     normal_roughness: GeometryOutput,
-
-    instances: wgpu::Buffer,
-    culled_instances: wgpu::Buffer,
-    indirect: wgpu::Buffer,
-
-    cull_bind_group: wgpu::BindGroup,
-    cull_init_pipeline: wgpu::ComputePipeline,
-    cull_pipeline: wgpu::ComputePipeline,
-    cull_count_pipeline: wgpu::ComputePipeline,
 
     render_pipeline: wgpu::RenderPipeline,
 }
@@ -129,183 +75,15 @@ impl GeometryPass {
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-    const INDIRECT_SIZE: wgpu::BufferAddress =
-        std::mem::size_of::<wgpu::util::DrawIndexedIndirect>() as _;
-    const INDIRECT_COUNT_SIZE: wgpu::BufferAddress = std::mem::size_of::<u32>() as _;
-
-    const MAX_INSTANCES: usize = 1000;
-
     pub fn new(renderer: &Renderer) -> Self {
         let textures = TexturesManager::new(&renderer.device);
         let materials = MaterialsManager::new(&renderer.device);
         let meshes = MeshesManager::new(&renderer.device);
+        let instances = InstancesManager::new(&renderer.device);
         let skins = SkinsManager::new(&renderer.device);
         let animations = AnimationsManager::new(&renderer.device);
 
         let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
-
-        let instances = renderer.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Geometry meshes instances"),
-            size: (std::mem::size_of::<[MeshInstance; Self::MAX_INSTANCES]>()) as _,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: false,
-        });
-
-        let culled_instances = renderer.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Geometry culled meshes instances"),
-            size: (std::mem::size_of::<[CulledMeshInstance; Self::MAX_INSTANCES]>()) as _,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: false,
-        });
-
-        let indirect = renderer.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Geometry draw indirect"),
-            size: Self::INDIRECT_COUNT_SIZE
-                + Self::INDIRECT_SIZE * MeshesManager::MAX_MESHES as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::INDIRECT,
-            mapped_at_creation: false,
-        });
-
-        let (cull_bind_group, cull_init_pipeline, cull_pipeline, cull_count_pipeline) = {
-            let shader = renderer
-                .device
-                .create_shader_module(wgpu::include_wgsl!("shaders/geometry.cull.wgsl"));
-
-            let bind_group_layout =
-                renderer
-                    .device
-                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("Geometry[cull] bind group layout"),
-                        entries: &[
-                            // Mesh data
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::COMPUTE,
-                                ty: wgpu::BindingType::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                    has_dynamic_offset: false,
-                                    min_binding_size: wgpu::BufferSize::new(MeshData::SIZE),
-                                },
-                                count: None,
-                            },
-                            // Mesh instances
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::COMPUTE,
-                                ty: wgpu::BindingType::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                    has_dynamic_offset: false,
-                                    min_binding_size: wgpu::BufferSize::new(MeshInstance::SIZE),
-                                },
-                                count: None,
-                            },
-                            // Culled instances
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 2,
-                                visibility: wgpu::ShaderStages::COMPUTE,
-                                ty: wgpu::BindingType::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                                    has_dynamic_offset: false,
-                                    min_binding_size: wgpu::BufferSize::new(
-                                        CulledMeshInstance::SIZE,
-                                    ),
-                                },
-                                count: None,
-                            },
-                            // Indirect draws
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 3,
-                                visibility: wgpu::ShaderStages::COMPUTE,
-                                ty: wgpu::BindingType::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                                    has_dynamic_offset: false,
-                                    min_binding_size: wgpu::BufferSize::new(
-                                        Self::INDIRECT_COUNT_SIZE + Self::INDIRECT_SIZE,
-                                    ),
-                                },
-                                count: None,
-                            },
-                        ],
-                    });
-
-            let bind_group = renderer
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Geometry[cull] bind group"),
-                    layout: &bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: meshes.meshes_data.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: instances.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: culled_instances.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: indirect.as_entire_binding(),
-                        },
-                    ],
-                });
-
-            let pipeline_layout =
-                renderer
-                    .device
-                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Geometry[cull] pipeline layout"),
-                        bind_group_layouts: &[
-                            &renderer.camera.bind_group_layout,
-                            &bind_group_layout,
-                        ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::COMPUTE,
-                            range: 0..(std::mem::size_of::<u32>() as _),
-                        }],
-                    });
-
-            let init_pipeline =
-                renderer
-                    .device
-                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some("Geometry[cull] init pipeline"),
-                        layout: Some(&pipeline_layout),
-                        module: &shader,
-                        entry_point: "init",
-                    });
-
-            let pipeline =
-                renderer
-                    .device
-                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some("Geometry[cull] pipeline"),
-                        layout: Some(&pipeline_layout),
-                        module: &shader,
-                        entry_point: "cull",
-                    });
-
-            let count_pipeline =
-                renderer
-                    .device
-                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some("Geometry[cull] count pipeline"),
-                        layout: Some(&pipeline_layout),
-                        module: &shader,
-                        entry_point: "count",
-                    });
-
-            (bind_group, init_pipeline, pipeline, count_pipeline)
-        };
 
         let render_pipeline = {
             let shader = renderer
@@ -343,7 +121,7 @@ impl GeometryPass {
                         module: &shader,
                         entry_point: "vs_main",
                         buffers: &[
-                            CulledMeshInstance::LAYOUT,
+                            CulledInstance::LAYOUT,
                             // Positions
                             wgpu::VertexBufferLayout {
                                 array_stride: MeshesManager::VERTEX_SIZE as _,
@@ -405,20 +183,12 @@ impl GeometryPass {
             textures,
             materials,
             meshes,
+            instances,
             skins,
             animations,
 
             albedo_metallic,
             normal_roughness,
-
-            instances,
-            culled_instances,
-            indirect,
-
-            cull_bind_group,
-            cull_init_pipeline,
-            cull_pipeline,
-            cull_count_pipeline,
 
             render_pipeline,
         }
@@ -442,38 +212,10 @@ impl GeometryPass {
         (self.albedo_metallic, self.normal_roughness) = Self::make_textures(renderer);
     }
 
-    pub fn render<'e, 'data: 'e>(
-        &self,
-        ctx: &mut RenderContext,
-        instances: &[MeshInstance], // cb: impl FnOnce(&mut dyn FnMut(&'data MeshId, &'data [MeshInstance])),
-    ) {
+    pub fn render<'e, 'data: 'e>(&self, ctx: &mut RenderContext) {
         ctx.encoder.profile_start("Geometry");
 
-        ctx.queue
-            .write_buffer(&self.instances, 0, bytemuck::cast_slice(instances));
-
-        let mut cpass = ctx
-            .encoder
-            .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Geometry[cull]"),
-            });
-
-        let instances_count = instances.len() as u32;
-
-        cpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
-        cpass.set_bind_group(1, &self.cull_bind_group, &[]);
-
-        cpass.set_pipeline(&self.cull_init_pipeline);
-        cpass.set_push_constants(0, bytemuck::bytes_of(&instances_count));
-        cpass.dispatch_workgroups(self.meshes.count() as _, 1, 1);
-
-        cpass.set_pipeline(&self.cull_pipeline);
-        cpass.dispatch_workgroups(instances.len() as _, 1, 1);
-
-        cpass.set_pipeline(&self.cull_count_pipeline);
-        cpass.dispatch_workgroups(MeshesManager::MAX_MESHES as _, 1, 1);
-
-        drop(cpass);
+        self.instances.cull(ctx.camera, ctx.queue, &mut ctx.encoder);
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),
@@ -499,7 +241,7 @@ impl GeometryPass {
         rpass.set_bind_group(3, &self.skins.bind_group, &[]);
         rpass.set_bind_group(4, &self.animations.bind_group, &[]);
 
-        rpass.set_vertex_buffer(0, self.culled_instances.slice(..));
+        rpass.set_vertex_buffer(0, self.instances.culled_instances.slice(..));
         rpass.set_vertex_buffer(1, self.meshes.vertices.slice(..));
         rpass.set_vertex_buffer(2, self.meshes.normals.slice(..));
         rpass.set_vertex_buffer(3, self.meshes.tangents.slice(..));
@@ -508,9 +250,9 @@ impl GeometryPass {
         rpass.set_index_buffer(self.meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 
         rpass.multi_draw_indexed_indirect_count(
-            &self.indirect,
-            Self::INDIRECT_COUNT_SIZE,
-            &self.indirect,
+            &self.instances.indirect_draws,
+            std::mem::size_of::<u32>() as _,
+            &self.instances.indirect_draws,
             0,
             MeshesManager::MAX_MESHES as _,
         );

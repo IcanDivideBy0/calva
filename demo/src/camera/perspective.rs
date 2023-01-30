@@ -25,8 +25,8 @@ impl Perspective {
 }
 
 impl Perspective {
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.aspect = size.width as f32 / size.height as f32;
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.aspect = width as f32 / height as f32;
     }
 }
 

@@ -31,7 +31,8 @@ async fn main() -> Result<()> {
     )
     .inverse();
 
-    let mut renderer = Renderer::new(&window).await?;
+    let size = window.inner_size();
+    let mut renderer = Renderer::new(&window, size.width, size.height).await?;
 
     let mut geometry = GeometryPass::new(&renderer);
     let skybox = {
@@ -95,43 +96,33 @@ async fn main() -> Result<()> {
             &mut renderer,
             &mut geometry,
             &mut std::fs::File::open("./demo/assets/zombie.glb")?,
-        )?, // .map(|mut zombie| {
-            //     let instance = zombie.instances[0];
+        )
+        .map(|mut zombie| {
+            let instance = zombie.instances[0];
 
-            //     zombie.instances = (0..100)
-            //         .map(|idx| {
-            //             let mut i = instance;
-            //             i.transform =
-            //                 glam::Mat4::from_translation(glam::vec3(4.0 * idx as f32, 0.0, 0.0))
-            //                     * i.transform;
-            //             i
-            //         })
-            //         .collect();
+            zombie.instances = (0..6_000)
+                .map(|idx| {
+                    let mut i = instance;
+                    i.transform = glam::Mat4::from_translation(glam::vec3(
+                        4.0 * (idx % 100) as f32,
+                        0.0,
+                        (idx / 100) as f32 * 4.0,
+                    )) * i.transform;
+                    i
+                })
+                .collect();
 
-            //     zombie
-            // })?,
+            zombie
+        })?,
     ];
 
-    // let objects = [
-    //     // "./demo/assets/sphere.glb",
-    //     "./demo/assets/sponza.glb",
-    //     // "./demo/assets/plane.glb",
-    //     "./demo/assets/zombie.glb",
-    // ]
-    // .iter()
-    // .map(|path| {
-    //     GltfModel::from_reader(
-    //         &mut renderer,
-    //         &mut geometry,
-    //         &mut std::fs::File::open(path)?,
-    //     )
-    // })
-    // .collect::<Result<Vec<_>>>()?;
-
-    let mut instances = models
-        .iter()
-        .flat_map(|model| model.instances.iter().copied())
-        .collect::<Vec<_>>();
+    for model in &models {
+        for instance in &model.instances {
+            geometry
+                .instances
+                .add(&renderer.queue, &geometry.meshes, *instance)
+        }
+    }
 
     let point_lights = models
         .iter()
@@ -148,8 +139,8 @@ async fn main() -> Result<()> {
                 );
                 let window_size = window.inner_size();
                 if size != window_size {
-                    camera.resize(window_size);
-                    renderer.resize(window_size);
+                    camera.resize(window_size.width, window_size.height);
+                    renderer.resize(window_size.width, window_size.height);
                     geometry.resize(&renderer);
                     ambient.resize(&renderer, geometry.albedo_metallic_view());
                     lights.resize(
@@ -159,6 +150,7 @@ async fn main() -> Result<()> {
                         &renderer.depth,
                     );
                     ssao.resize(&renderer, geometry.normal_roughness_view(), &renderer.depth);
+                    egui.resize(window_size.width, window_size.height)
                 }
 
                 let dt = last_render_time.elapsed();
@@ -188,30 +180,24 @@ async fn main() -> Result<()> {
                     )
                 };
 
-                for instance in instances.iter_mut() {
+                for instance in geometry.instances.iter_mut() {
                     instance.animation.time += dt.as_secs_f32();
                 }
 
                 let result = renderer.render(|ctx| {
-                    geometry.render(ctx, &instances);
+                    geometry.render(ctx);
                     ambient.render(ctx, demo_app.gamma);
                     lights.render(ctx, demo_app.gamma, &point_lights);
                     ssao.render(ctx);
                     skybox.render(ctx, demo_app.gamma);
 
-                    egui.render(
-                        ctx,
-                        &paint_jobs,
-                        &textures_delta,
-                        1.0,
-                        // window.scale_factor() as _,
-                    );
+                    egui.render(ctx, &paint_jobs, &textures_delta);
                 });
 
                 match result {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => renderer.resize(PhysicalSize::new(0, 0)),
+                    Err(wgpu::SurfaceError::Lost) => renderer.resize(0, 0),
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // All other errors (Outdated, Timeout) should be resolved by the next frame

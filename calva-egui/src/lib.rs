@@ -6,19 +6,38 @@ use thousands::Separable;
 pub use egui;
 
 pub struct EguiPass {
-    renderer: egui_wgpu::Renderer,
+    egui_renderer: egui_wgpu::Renderer,
+    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
 }
 
 impl EguiPass {
     pub fn new(renderer: &Renderer) -> Self {
-        let renderer = egui_wgpu::Renderer::new(
+        let egui_renderer = egui_wgpu::Renderer::new(
             &renderer.device,
             renderer.surface_config.format,
             Some(Renderer::DEPTH_FORMAT),
             Renderer::MULTISAMPLE_STATE.count,
         );
 
-        Self { renderer }
+        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [
+                renderer.surface_config.width,
+                renderer.surface_config.height,
+            ],
+            pixels_per_point: 1.0,
+        };
+
+        Self {
+            egui_renderer,
+            screen_descriptor,
+        }
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [width, height],
+            pixels_per_point: 1.0,
+        };
     }
 
     pub fn render(
@@ -26,30 +45,24 @@ impl EguiPass {
         ctx: &mut RenderContext,
         paint_jobs: &[egui::ClippedPrimitive],
         textures_delta: &egui::TexturesDelta,
-        pixels_per_point: f32,
     ) {
-        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: [ctx.surface_config.width, ctx.surface_config.height],
-            pixels_per_point,
-        };
-
         for (texture_id, image_delta) in &textures_delta.set {
-            self.renderer
+            self.egui_renderer
                 .update_texture(ctx.device, ctx.queue, *texture_id, image_delta);
         }
         for texture_id in &textures_delta.free {
-            self.renderer.free_texture(texture_id);
+            self.egui_renderer.free_texture(texture_id);
         }
 
-        self.renderer.update_buffers(
+        self.egui_renderer.update_buffers(
             ctx.device,
             ctx.queue,
             &mut ctx.encoder,
             paint_jobs,
-            &screen_descriptor,
+            &self.screen_descriptor,
         );
 
-        self.renderer.render(
+        self.egui_renderer.render(
             &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -67,7 +80,7 @@ impl EguiPass {
                 }),
             }),
             paint_jobs,
-            &screen_descriptor,
+            &self.screen_descriptor,
         );
     }
 

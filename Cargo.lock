@@ -439,11 +439,10 @@ dependencies = [
  "bitflags",
  "bytemuck",
  "glam",
- "gpp",
  "rand",
+ "raw-window-handle 0.5.0",
  "wgpu",
  "wgpu-profiler",
- "winit",
 ]
 
 [[package]]
@@ -1237,12 +1236,6 @@ dependencies = [
  "serde_derive",
  "serde_json",
 ]
-
-[[package]]
-name = "gpp"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "083168a3a8cdb2a7d48be1e1bcc25bd63dd72e5fa89aa9c6506c1a78e083aa6d"
 
 [[package]]
 name = "gpu-alloc"

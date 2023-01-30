@@ -1,6 +1,6 @@
 use calva::renderer::Renderer;
 use std::time::Duration;
-use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
+use winit::{event::WindowEvent, window::Window};
 
 mod flying_camera;
 mod perspective;
@@ -27,8 +27,8 @@ impl MyCamera {
         self.controller.handle_event(event)
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.projection.resize(size)
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.projection.resize(width, height)
     }
 
     pub fn _update(&mut self, renderer: &mut Renderer, dt: Duration) {
