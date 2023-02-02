@@ -1,7 +1,4 @@
-use crate::{
-    AnimationState, CameraManager, MaterialId, MeshData, MeshId, MeshesManager,
-    ProfilerCommandEncoder,
-};
+use crate::{AnimationState, MaterialId, MeshData, MeshId, MeshesManager, ProfilerCommandEncoder};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -61,7 +58,7 @@ struct DrawIndexedIndirect {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct Frustum([glam::Vec4; 6]);
+struct Frustum(pub [glam::Vec4; 6]);
 
 impl Frustum {
     const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
@@ -93,13 +90,13 @@ pub struct InstancesManager {
     frustum: wgpu::Buffer,
     meshes_data: wgpu::Buffer,
 
-    indirect_draws_data: Vec<DrawIndexedIndirect>,
-    pub(crate) indirect_draws: wgpu::Buffer,
-
     instances_data: Vec<Instance>,
     instances: wgpu::Buffer,
 
     pub(crate) culled_instances: wgpu::Buffer,
+
+    indirect_draws_data: Vec<DrawIndexedIndirect>,
+    pub(crate) indirect_draws: wgpu::Buffer,
 
     cull_bind_group: wgpu::BindGroup,
     cull_pipeline: wgpu::ComputePipeline,
@@ -124,18 +121,6 @@ impl InstancesManager {
             mapped_at_creation: false,
         });
 
-        let indirect_draws_data = Vec::with_capacity(MeshesManager::MAX_MESHES);
-        let indirect_draws = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("InstancesManager indirect draws"),
-            size: (std::mem::size_of::<u32>()
-                + std::mem::size_of::<[DrawIndexedIndirect; MeshesManager::MAX_MESHES]>())
-                as _,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::INDIRECT,
-            mapped_at_creation: false,
-        });
-
         let instances_data = Vec::with_capacity(Self::MAX_INSTANCES);
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager instances"),
@@ -152,6 +137,18 @@ impl InstancesManager {
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: false,
+        });
+
+        let indirect_draws_data = Vec::with_capacity(MeshesManager::MAX_MESHES);
+        let indirect_draws = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("InstancesManager indirect draws"),
+            size: (std::mem::size_of::<u32>()
+                + std::mem::size_of::<[DrawIndexedIndirect; MeshesManager::MAX_MESHES]>())
+                as _,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::INDIRECT,
             mapped_at_creation: false,
         });
 
@@ -338,14 +335,14 @@ impl InstancesManager {
 
     pub(crate) fn cull(
         &self,
-        camera: &CameraManager,
         queue: &wgpu::Queue,
         encoder: &mut ProfilerCommandEncoder,
+        view_proj: &glam::Mat4,
     ) {
         queue.write_buffer(
             &self.frustum,
             0,
-            bytemuck::bytes_of(&Frustum::from(&(camera.proj * camera.view))),
+            bytemuck::bytes_of(&Frustum::from(view_proj)),
         );
 
         queue.write_buffer(

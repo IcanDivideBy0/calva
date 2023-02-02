@@ -43,7 +43,8 @@ struct IndirectsBuffer {
     draws: array<DrawIndexedIndirect>,
 }
 
-@group(0) @binding(0) var<uniform> frustum: array<vec4<f32>, 6>;
+@group(0) @binding(0)
+var<uniform> frustum: array<vec4<f32>, 6>;
 
 @group(0) @binding(1)
 var<storage, read> meshes_data: array<MeshData>;
