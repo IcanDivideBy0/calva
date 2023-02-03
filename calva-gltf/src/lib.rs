@@ -65,7 +65,7 @@ impl GltfModel {
             .nodes()
             .filter_map(|node| {
                 let mesh = node.mesh()?;
-                let mesh_data = meshes.get(mesh.index())?;
+                let primitives = meshes.get(mesh.index())?;
                 let transform = nodes_transforms.get(&node.index()).copied()?;
 
                 let animation_state = node
@@ -80,7 +80,7 @@ impl GltfModel {
 
                 let mesh_instances = mesh
                     .primitives()
-                    .zip(mesh_data)
+                    .zip(primitives)
                     .map(|(primitive, &mesh_id)| {
                         let material_id = primitive
                             .material()

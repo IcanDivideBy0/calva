@@ -3,7 +3,7 @@ struct MeshBoundingSphere {
     radius: f32,
 }
 
-struct MeshData {
+struct MeshInfo {
     vertex_count: u32,
     base_index: u32,
     vertex_offset: i32,
@@ -47,17 +47,36 @@ struct IndirectsBuffer {
 var<uniform> frustum: array<vec4<f32>, 6>;
 
 @group(0) @binding(1)
-var<storage, read> meshes_data: array<MeshData>;
+var<storage, read> meshes_info: array<MeshInfo>;
 
 @group(0) @binding(2)
+var<storage, read> base_instances: array<u32>;
+
+@group(0) @binding(3)
 var<storage, read> instances_input: array<InstanceInput>;
 var<push_constant> instances_count: u32;
 
-@group(0) @binding(3)
+@group(0) @binding(4)
 var<storage, read_write> instances_output: array<InstanceOutput>;
 
-@group(0) @binding(4)
+@group(0) @binding(5)
 var<storage, read_write> indirects: IndirectsBuffer;
+
+@compute @workgroup_size(32)
+fn reset(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let mesh_id = global_id.x;
+
+    let mesh_info = &meshes_info[mesh_id];
+
+    let draw = &indirects.draws[mesh_id];
+
+    (*draw).vertex_count = (*mesh_info).vertex_count;
+    (*draw).base_index = (*mesh_info).base_index;
+    (*draw).vertex_offset = (*mesh_info).vertex_offset;
+    (*draw).base_instance = base_instances[mesh_id];
+
+    atomicStore(&(*draw).instance_count, 0u);
+}
 
 fn plane_distance_to_point(plane: vec4<f32>, p: vec3<f32>) -> f32 {
     return dot(plane.xyz, p) + plane.w;
@@ -144,34 +163,38 @@ fn mat_quat(m: mat4x4<f32>) -> vec4<f32> {
 
 @compute @workgroup_size(32)
 fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    if global_id.x >= instances_count {
+    let instance_index = global_id.x;
+
+    if instance_index >= instances_count {
         return;
     }
 
-    let instance_input = &instances_input[global_id.x];
+    let instance_input = &instances_input[instance_index];
     let transform = &(*instance_input).transform;
-    let mesh_data = &meshes_data[(*instance_input).mesh_id];
+    let mesh_info = &meshes_info[(*instance_input).mesh_id];
 
-    if !sphere_visible((*mesh_data).bounding_sphere, (*transform)) {
+    if !sphere_visible((*mesh_info).bounding_sphere, (*transform)) {
         return;
     }
 
     let draw = &indirects.draws[(*instance_input).mesh_id];
-    let instance_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
+    let instance_output_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
 
     var out: InstanceOutput;
     out.transform = *transform;
     out.normal_quat = mat_quat(*transform);
     out.material_id = (*instance_input).material_id;
-    out.skin_offset = (*mesh_data).skin_offset;
+    out.skin_offset = (*mesh_info).skin_offset;
     out.animation = (*instance_input).animation;
 
-    instances_output[instance_index] = out;
+    instances_output[instance_output_index] = out;
 }
 
 @compute @workgroup_size(32)
 fn count(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let draw = &indirects.draws[global_id.x];
+    let mesh_id = global_id.x;
+
+    let draw = &indirects.draws[mesh_id];
     if atomicLoad(&(*draw).instance_count) > 0u {
         indirects.draws[atomicAdd(&indirects.count, 1u)] = *draw;
     }

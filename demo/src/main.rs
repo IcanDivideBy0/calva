@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         &renderer.depth,
     );
     let mut ssao =
-        SsaoPass::<800, 600>::new(&renderer, geometry.normal_roughness_view(), &renderer.depth);
+        SsaoPass::<640, 480>::new(&renderer, geometry.normal_roughness_view(), &renderer.depth);
 
     let egui_context = egui::Context::default();
     let mut egui_state = egui_winit::State::new(&event_loop);

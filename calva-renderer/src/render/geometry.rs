@@ -79,7 +79,7 @@ impl GeometryPass {
         let textures = TexturesManager::new(&renderer.device);
         let materials = MaterialsManager::new(&renderer.device);
         let meshes = MeshesManager::new(&renderer.device);
-        let instances = InstancesManager::new(&renderer.device);
+        let instances = InstancesManager::new(&renderer.device, &meshes);
         let skins = SkinsManager::new(&renderer.device);
         let animations = AnimationsManager::new(&renderer.device);
 
