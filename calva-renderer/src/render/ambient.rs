@@ -1,9 +1,7 @@
-use wgpu::util::DeviceExt;
-
-use crate::{RenderContext, Renderer};
+use crate::{GeometryPass, RenderContext, Renderer};
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct AmbientConfig {
     pub factor: f32,
 }
@@ -19,7 +17,6 @@ impl Default for AmbientConfig {
 }
 
 pub struct AmbientPass {
-    pub config: AmbientConfig,
     config_buffer: wgpu::Buffer,
 
     bind_group_layout: wgpu::BindGroupLayout,
@@ -28,16 +25,13 @@ pub struct AmbientPass {
 }
 
 impl AmbientPass {
-    pub fn new(renderer: &Renderer, albedo: &wgpu::TextureView) -> Self {
-        let config = AmbientConfig::default();
-
-        let config_buffer = renderer
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Ambient config buffer"),
-                contents: bytemuck::bytes_of(&config),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+        let config_buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ambient config buffer"),
+            size: AmbientConfig::SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let bind_group_layout =
             renderer
@@ -70,8 +64,12 @@ impl AmbientPass {
                     ],
                 });
 
-        let bind_group =
-            Self::make_bind_group(&renderer.device, &bind_group_layout, &config_buffer, albedo);
+        let bind_group = Self::make_bind_group(
+            &renderer.device,
+            &bind_group_layout,
+            &config_buffer,
+            geometry,
+        );
 
         let shader = renderer
             .device
@@ -115,7 +113,6 @@ impl AmbientPass {
             });
 
         Self {
-            config,
             config_buffer,
 
             bind_group_layout,
@@ -124,18 +121,18 @@ impl AmbientPass {
         }
     }
 
-    pub fn resize(&mut self, renderer: &Renderer, albedo: &wgpu::TextureView) {
+    pub fn resize(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
         self.bind_group = Self::make_bind_group(
             &renderer.device,
             &self.bind_group_layout,
             &self.config_buffer,
-            albedo,
+            geometry,
         );
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, gamma: f32) {
+    pub fn render(&self, ctx: &mut RenderContext, config: &AmbientConfig, gamma: f32) {
         ctx.queue
-            .write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(&self.config));
+            .write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(config));
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ambient"),
@@ -163,7 +160,7 @@ impl AmbientPass {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         config_buffer: &wgpu::Buffer,
-        albedo: &wgpu::TextureView,
+        geometry: &GeometryPass,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Ambient bind group"),
@@ -175,7 +172,7 @@ impl AmbientPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(albedo),
+                    resource: wgpu::BindingResource::TextureView(geometry.albedo_metallic_view()),
                 },
             ],
         })

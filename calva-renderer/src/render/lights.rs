@@ -1,35 +1,18 @@
-use crate::{PointLight, RenderContext, Renderer};
+use crate::{GeometryPass, PointLight, RenderContext, Renderer};
 
 pub struct LightsPass {
     point_lights_pass: PointLightsPass,
 }
 
 impl LightsPass {
-    pub fn new(
-        renderer: &Renderer,
-        albedo_metallic: &wgpu::TextureView,
-        normal_roughness: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-    ) -> Self {
+    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
         Self {
-            point_lights_pass: PointLightsPass::new(
-                renderer,
-                albedo_metallic,
-                normal_roughness,
-                depth,
-            ),
+            point_lights_pass: PointLightsPass::new(renderer, geometry),
         }
     }
 
-    pub fn resize(
-        &mut self,
-        renderer: &Renderer,
-        albedo_metallic: &wgpu::TextureView,
-        normal_roughness: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-    ) {
-        self.point_lights_pass
-            .resize(renderer, albedo_metallic, normal_roughness, depth);
+    pub fn resize(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
+        self.point_lights_pass.resize(renderer, geometry);
     }
 
     pub fn render(&self, ctx: &mut RenderContext, gamma: f32, point_lights: &[PointLight]) {
@@ -40,7 +23,7 @@ use point_lights::*;
 mod point_lights {
     use wgpu::util::DeviceExt;
 
-    use crate::{util::icosphere::Icosphere, PointLight, RenderContext, Renderer};
+    use crate::{util::icosphere::Icosphere, GeometryPass, PointLight, RenderContext, Renderer};
 
     pub struct PointLightsPass {
         vertex_count: u32,
@@ -58,12 +41,7 @@ mod point_lights {
     impl PointLightsPass {
         pub const MAX_LIGHTS: usize = 1 << 12;
 
-        pub fn new(
-            renderer: &Renderer,
-            albedo_metallic: &wgpu::TextureView,
-            normal_roughness: &wgpu::TextureView,
-            depth: &wgpu::TextureView,
-        ) -> Self {
+        pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
             let icosphere = Icosphere::new(1);
 
             let vertices = renderer
@@ -208,13 +186,7 @@ mod point_lights {
                         ],
                     });
 
-            let bind_group = Self::make_bind_group(
-                &renderer.device,
-                &bind_group_layout,
-                albedo_metallic,
-                normal_roughness,
-                depth,
-            );
+            let bind_group = Self::make_bind_group(renderer, geometry, &bind_group_layout);
 
             let lighting_pipeline = {
                 let pipeline_layout =
@@ -307,20 +279,8 @@ mod point_lights {
             }
         }
 
-        pub fn resize(
-            &mut self,
-            renderer: &Renderer,
-            albedo_metallic: &wgpu::TextureView,
-            normal_roughness: &wgpu::TextureView,
-            depth: &wgpu::TextureView,
-        ) {
-            self.bind_group = Self::make_bind_group(
-                &renderer.device,
-                &self.bind_group_layout,
-                albedo_metallic,
-                normal_roughness,
-                depth,
-            );
+        pub fn resize(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
+            self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
         }
 
         pub fn render(&self, ctx: &mut RenderContext, gamma: f32, point_lights: &[PointLight]) {
@@ -391,30 +351,34 @@ mod point_lights {
         }
 
         fn make_bind_group(
-            device: &wgpu::Device,
+            renderer: &Renderer,
+            geometry: &GeometryPass,
             layout: &wgpu::BindGroupLayout,
-            albedo_metallic: &wgpu::TextureView,
-            normal_roughness: &wgpu::TextureView,
-            depth: &wgpu::TextureView,
         ) -> wgpu::BindGroup {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("PointLights[lighting] bind group"),
-                layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(albedo_metallic),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(normal_roughness),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(depth),
-                    },
-                ],
-            })
+            renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("PointLights[lighting] bind group"),
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                geometry.albedo_metallic_view(),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                geometry.normal_roughness_view(),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&renderer.depth),
+                        },
+                    ],
+                })
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    AnimationsManager, CulledInstance, InstancesManager, MaterialsManager, MeshesManager,
+    AnimationsManager, GpuMeshInstance, InstancesManager, MaterialsManager, MeshesManager,
     RenderContext, Renderer, SkinsManager, TexturesManager,
 };
 
@@ -34,7 +34,7 @@ impl GeometryOutput {
         }
     }
 
-    fn as_attachment(&self) -> wgpu::RenderPassColorAttachment<'_> {
+    fn attachment(&self) -> wgpu::RenderPassColorAttachment<'_> {
         wgpu::RenderPassColorAttachment {
             view: &self.view,
             resolve_target: self.resolve_target.as_ref(),
@@ -51,13 +51,6 @@ impl GeometryOutput {
 }
 
 pub struct GeometryPass {
-    pub textures: TexturesManager,
-    pub materials: MaterialsManager,
-    pub meshes: MeshesManager,
-    pub instances: InstancesManager,
-    pub skins: SkinsManager,
-    pub animations: AnimationsManager,
-
     albedo_metallic: GeometryOutput,
     normal_roughness: GeometryOutput,
 
@@ -75,14 +68,13 @@ impl GeometryPass {
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-    pub fn new(renderer: &Renderer) -> Self {
-        let textures = TexturesManager::new(&renderer.device);
-        let materials = MaterialsManager::new(&renderer.device);
-        let meshes = MeshesManager::new(&renderer.device);
-        let instances = InstancesManager::new(&renderer.device, &meshes);
-        let skins = SkinsManager::new(&renderer.device);
-        let animations = AnimationsManager::new(&renderer.device);
-
+    pub fn new(
+        renderer: &Renderer,
+        textures: &TexturesManager,
+        materials: &MaterialsManager,
+        skins: &SkinsManager,
+        animations: &AnimationsManager,
+    ) -> Self {
         let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
 
         let render_pipeline = {
@@ -121,7 +113,7 @@ impl GeometryPass {
                         module: &shader,
                         entry_point: "vs_main",
                         buffers: &[
-                            CulledInstance::LAYOUT,
+                            GpuMeshInstance::LAYOUT,
                             // Positions
                             wgpu::VertexBufferLayout {
                                 array_stride: MeshesManager::VERTEX_SIZE as _,
@@ -180,13 +172,6 @@ impl GeometryPass {
         };
 
         GeometryPass {
-            textures,
-            materials,
-            meshes,
-            instances,
-            skins,
-            animations,
-
             albedo_metallic,
             normal_roughness,
 
@@ -212,10 +197,20 @@ impl GeometryPass {
         (self.albedo_metallic, self.normal_roughness) = Self::make_textures(renderer);
     }
 
-    pub fn render<'e, 'data: 'e>(&self, ctx: &mut RenderContext) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn render<'e, 'data: 'e>(
+        &self,
+        ctx: &mut RenderContext,
+        textures: &TexturesManager,
+        materials: &MaterialsManager,
+        meshes: &MeshesManager,
+        skins: &SkinsManager,
+        animations: &AnimationsManager,
+        instances: &InstancesManager,
+    ) {
         ctx.encoder.profile_start("Geometry");
 
-        self.instances.cull(
+        instances.cull(
             ctx.queue,
             &mut ctx.encoder,
             &(ctx.camera.proj * ctx.camera.view),
@@ -224,8 +219,8 @@ impl GeometryPass {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),
             color_attachments: &[
-                Some(self.albedo_metallic.as_attachment()),
-                Some(self.normal_roughness.as_attachment()),
+                Some(self.albedo_metallic.attachment()),
+                Some(self.normal_roughness.attachment()),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: ctx.output.depth_stencil,
@@ -240,23 +235,23 @@ impl GeometryPass {
         rpass.set_pipeline(&self.render_pipeline);
 
         rpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
-        rpass.set_bind_group(1, &self.textures.bind_group, &[]);
-        rpass.set_bind_group(2, &self.materials.bind_group, &[]);
-        rpass.set_bind_group(3, &self.skins.bind_group, &[]);
-        rpass.set_bind_group(4, &self.animations.bind_group, &[]);
+        rpass.set_bind_group(1, &textures.bind_group, &[]);
+        rpass.set_bind_group(2, &materials.bind_group, &[]);
+        rpass.set_bind_group(3, &skins.bind_group, &[]);
+        rpass.set_bind_group(4, &animations.bind_group, &[]);
 
-        rpass.set_vertex_buffer(0, self.instances.culled_instances.slice(..));
-        rpass.set_vertex_buffer(1, self.meshes.vertices.slice(..));
-        rpass.set_vertex_buffer(2, self.meshes.normals.slice(..));
-        rpass.set_vertex_buffer(3, self.meshes.tangents.slice(..));
-        rpass.set_vertex_buffer(4, self.meshes.tex_coords0.slice(..));
+        rpass.set_vertex_buffer(0, instances.culled_instances.slice(..));
+        rpass.set_vertex_buffer(1, meshes.vertices.slice(..));
+        rpass.set_vertex_buffer(2, meshes.normals.slice(..));
+        rpass.set_vertex_buffer(3, meshes.tangents.slice(..));
+        rpass.set_vertex_buffer(4, meshes.tex_coords0.slice(..));
 
-        rpass.set_index_buffer(self.meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
+        rpass.set_index_buffer(meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 
         rpass.multi_draw_indexed_indirect_count(
-            &self.instances.indirect_draws,
+            &instances.indirect_draws,
             std::mem::size_of::<u32>() as _,
-            &self.instances.indirect_draws,
+            &instances.indirect_draws,
             0,
             MeshesManager::MAX_MESHES as _,
         );

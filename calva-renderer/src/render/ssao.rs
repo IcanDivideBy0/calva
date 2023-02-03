@@ -1,9 +1,9 @@
 use wgpu::util::DeviceExt;
 
-use crate::{RenderContext, Renderer};
+use crate::{GeometryPass, RenderContext, Renderer};
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SsaoConfig {
     pub radius: f32,
     pub bias: f32,
@@ -77,7 +77,6 @@ impl SsaoRandomUniform {
 }
 
 pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
-    pub config: SsaoConfig,
     config_buffer: wgpu::Buffer,
     random_buffer: wgpu::Buffer,
     sampler: wgpu::Sampler,
@@ -94,16 +93,13 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 
-    pub fn new(renderer: &Renderer, normal: &wgpu::TextureView, depth: &wgpu::TextureView) -> Self {
-        let config = SsaoConfig::default();
-
-        let config_buffer = renderer
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Ssao config buffer"),
-                contents: bytemuck::bytes_of(&config),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+        let config_buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ssao config buffer"),
+            size: SsaoConfig::SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let random_buffer = renderer
             .device
@@ -184,14 +180,13 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                     ],
                 });
 
-        let bind_group = Self::create_bind_group(
+        let bind_group = Self::make_bind_group(
             renderer,
+            geometry,
             &bind_group_layout,
             &config_buffer,
             &random_buffer,
             &sampler,
-            normal,
-            depth,
         );
 
         let pipeline_layout =
@@ -239,7 +234,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         let blit = blit::SsaoBlit::new(renderer, &output);
 
         Self {
-            config,
             config_buffer,
             random_buffer,
             sampler,
@@ -254,32 +248,26 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         }
     }
 
-    pub fn resize(
-        &mut self,
-        renderer: &Renderer,
-        normal: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-    ) {
-        self.bind_group = Self::create_bind_group(
+    pub fn resize(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
+        self.bind_group = Self::make_bind_group(
             renderer,
+            geometry,
             &self.bind_group_layout,
             &self.config_buffer,
             &self.random_buffer,
             &self.sampler,
-            normal,
-            depth,
         );
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
-        if self.config.radius == 0.0 || self.config.power == 0.0 {
+    pub fn render(&self, ctx: &mut RenderContext, config: &SsaoConfig) {
+        if config.radius == 0.0 || config.power == 0.0 {
             return;
         }
 
         ctx.encoder.profile_start("Ssao");
 
         ctx.queue
-            .write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(&self.config));
+            .write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(config));
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ssao[render]"),
@@ -325,14 +313,13 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         })
     }
 
-    fn create_bind_group(
+    fn make_bind_group(
         renderer: &Renderer,
+        geometry: &GeometryPass,
         layout: &wgpu::BindGroupLayout,
         config_buffer: &wgpu::Buffer,
         random_buffer: &wgpu::Buffer,
         sampler: &wgpu::Sampler,
-        normal: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
     ) -> wgpu::BindGroup {
         renderer
             .device
@@ -354,11 +341,13 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: wgpu::BindingResource::TextureView(normal),
+                        resource: wgpu::BindingResource::TextureView(
+                            geometry.normal_roughness_view(),
+                        ),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::TextureView(depth),
+                        resource: wgpu::BindingResource::TextureView(&renderer.depth),
                     },
                 ],
             })
@@ -432,7 +421,7 @@ mod blur {
                 let bind_group = renderer
                     .device
                     .create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some(format!("SsaoBlur[{}] bind group", direction).as_str()),
+                        label: Some(format!("SsaoBlur[{direction}] bind group").as_str()),
                         layout: &bind_group_layout,
                         entries: &[wgpu::BindGroupEntry {
                             binding: 0,
@@ -447,7 +436,7 @@ mod blur {
                     renderer
                         .device
                         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                            label: Some(format!("SsaoBlur[{}] pipeline", direction).as_str()),
+                            label: Some(format!("SsaoBlur[{direction}] pipeline").as_str()),
                             layout: Some(&pipeline_layout),
                             vertex: wgpu::VertexState {
                                 module: &shader,
@@ -456,7 +445,7 @@ mod blur {
                             },
                             fragment: Some(wgpu::FragmentState {
                                 module: &shader,
-                                entry_point: format!("fs_main_{}", direction).as_str(),
+                                entry_point: format!("fs_main_{direction}").as_str(),
                                 targets: &[Some(wgpu::ColorTargetState {
                                     format: SsaoPass::<WIDTH, HEIGHT>::OUTPUT_FORMAT,
                                     blend: None,
@@ -471,7 +460,7 @@ mod blur {
 
                 let mut encoder = renderer.device.create_render_bundle_encoder(
                     &wgpu::RenderBundleEncoderDescriptor {
-                        label: Some(format!("SsaoBlur[{}] render bundle", direction).as_str()),
+                        label: Some(format!("SsaoBlur[{direction}] render bundle").as_str()),
                         color_formats: &[Some(SsaoPass::<WIDTH, HEIGHT>::OUTPUT_FORMAT)],
                         depth_stencil: None,
                         sample_count: 1,

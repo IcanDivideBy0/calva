@@ -89,6 +89,7 @@ impl SkinsManager {
             offset: AtomicU32::new(1),
             joints,
             weights,
+
             bind_group_layout,
             bind_group,
         }

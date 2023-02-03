@@ -1,13 +1,12 @@
 #![warn(clippy::all)]
 
-use renderer::{wgpu, AmbientConfig, ProfilerResult, RenderContext, Renderer, SsaoConfig};
+use renderer::{wgpu, AmbientConfig, Engine, ProfilerResult, RenderContext, Renderer, SsaoConfig};
 use thousands::Separable;
 
 pub use egui;
 
 pub struct EguiPass {
     egui_renderer: egui_wgpu::Renderer,
-    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
 }
 
 impl EguiPass {
@@ -19,25 +18,7 @@ impl EguiPass {
             Renderer::MULTISAMPLE_STATE.count,
         );
 
-        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: [
-                renderer.surface_config.width,
-                renderer.surface_config.height,
-            ],
-            pixels_per_point: 1.0,
-        };
-
-        Self {
-            egui_renderer,
-            screen_descriptor,
-        }
-    }
-
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: [width, height],
-            pixels_per_point: 1.0,
-        };
+        Self { egui_renderer }
     }
 
     pub fn render(
@@ -54,12 +35,17 @@ impl EguiPass {
             self.egui_renderer.free_texture(texture_id);
         }
 
+        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [ctx.surface_config.width, ctx.surface_config.height],
+            pixels_per_point: 1.0,
+        };
+
         self.egui_renderer.update_buffers(
             ctx.device,
             ctx.queue,
             &mut ctx.encoder,
             paint_jobs,
-            &self.screen_descriptor,
+            &screen_descriptor,
         );
 
         self.egui_renderer.render(
@@ -80,8 +66,35 @@ impl EguiPass {
                 }),
             }),
             paint_jobs,
-            &self.screen_descriptor,
+            &screen_descriptor,
         );
+    }
+
+    pub fn engine_ui(engine: &mut Engine) -> impl FnOnce(&mut egui::Ui) + '_ {
+        move |ui| {
+            egui::CollapsingHeader::new("Adapter")
+                .default_open(true)
+                .show(ui, EguiPass::adapter_info_ui(&engine.renderer.adapter_info));
+
+            egui::CollapsingHeader::new("Profiler")
+                .default_open(true)
+                .show(
+                    ui,
+                    EguiPass::profiler_ui(&engine.renderer.profiler_results()),
+                );
+
+            egui::CollapsingHeader::new("Gamma")
+                .default_open(true)
+                .show(ui, EguiPass::gamma_config_ui(&mut engine.config.gamma));
+
+            egui::CollapsingHeader::new("Ambient")
+                .default_open(true)
+                .show(ui, EguiPass::ambient_config_ui(&mut engine.config.ambient));
+
+            egui::CollapsingHeader::new("SSAO")
+                .default_open(true)
+                .show(ui, EguiPass::ssao_config_ui(&mut engine.config.ssao));
+        }
     }
 
     pub fn adapter_info_ui(adapter_info: &wgpu::AdapterInfo) -> impl FnOnce(&mut egui::Ui) + '_ {
@@ -138,13 +151,25 @@ impl EguiPass {
         }
     }
 
-    pub fn ambient_config_ui(config: &mut AmbientConfig) -> impl FnOnce(&mut egui::Ui) + '_ {
+    pub fn gamma_config_ui<'cfg: 'ui, 'ui>(
+        gamma: &'cfg mut f32,
+    ) -> impl FnOnce(&mut egui::Ui) + 'ui {
+        move |ui| {
+            ui.add(egui::Slider::new(gamma, 1.0..=3.0).text("Gamma"));
+        }
+    }
+
+    pub fn ambient_config_ui<'cfg: 'ui, 'ui>(
+        config: &'cfg mut AmbientConfig,
+    ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
             ui.add(egui::Slider::new(&mut config.factor, 0.0..=1.0).text("Factor"));
         }
     }
 
-    pub fn ssao_config_ui(config: &mut SsaoConfig) -> impl FnOnce(&mut egui::Ui) + '_ {
+    pub fn ssao_config_ui<'cfg: 'ui, 'ui>(
+        config: &'cfg mut SsaoConfig,
+    ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
             ui.add(egui::Slider::new(&mut config.radius, 0.0..=4.0).text("Radius"));
             ui.add(egui::Slider::new(&mut config.bias, 0.0..=0.1).text("Bias"));

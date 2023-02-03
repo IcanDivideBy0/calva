@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use std::cell::{Ref, RefCell};
 use wgpu_profiler::{GpuProfiler, GpuTimerScopeResult};
 
 use crate::CameraManager;
@@ -18,7 +19,7 @@ pub struct Renderer {
 
     pub camera: CameraManager,
 
-    profiler: GpuProfiler,
+    profiler: RefCell<RendererProfiler>,
 }
 
 impl Renderer {
@@ -47,8 +48,7 @@ impl Renderer {
 
     pub async fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         window: &W,
-        width: u32,
-        height: u32,
+        size: (u32, u32),
     ) -> Result<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
@@ -90,8 +90,8 @@ impl Renderer {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width,
-            height,
+            width: size.0,
+            height: size.1,
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
@@ -104,6 +104,10 @@ impl Renderer {
 
         let mut profiler = GpuProfiler::new(4, queue.get_timestamp_period(), device.features());
         profiler.enable_debug_marker = false;
+        let profiler = RefCell::new(RendererProfiler {
+            inner: profiler,
+            results: vec![],
+        });
 
         Ok(Self {
             adapter,
@@ -123,26 +127,25 @@ impl Renderer {
         })
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.surface_config.width = width;
-        self.surface_config.height = height;
+    pub fn resize(&mut self, size: (u32, u32)) {
+        self.surface_config.width = size.0;
+        self.surface_config.height = size.1;
         self.surface.configure(&self.device, &self.surface_config);
 
         (self.msaa, self.depth, self.depth_stencil) =
             Self::make_textures(&self.device, &self.surface_config);
     }
 
-    pub fn render(
-        &mut self,
-        cb: impl FnOnce(&mut RenderContext),
-    ) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<()> {
         let mut encoder = self.device.create_command_encoder(&Default::default());
 
         let frame = self.surface.get_current_texture()?;
         let frame_view = frame.texture.create_view(&Default::default());
 
-        self.profiler
-            .begin_scope("RenderFrame", &mut encoder, &self.device);
+        let mut renderer_profiler = self.profiler.try_borrow_mut()?;
+        let profiler = &mut renderer_profiler.inner;
+
+        profiler.begin_scope("RenderFrame", &mut encoder, &self.device);
 
         let mut context = RenderContext {
             surface_config: &self.surface_config,
@@ -156,26 +159,30 @@ impl Renderer {
             },
             encoder: ProfilerCommandEncoder {
                 device: &self.device,
-                profiler: &mut self.profiler,
                 encoder: &mut encoder,
+                profiler,
             },
         };
 
         cb(&mut context);
 
-        self.profiler.end_scope(&mut encoder);
-        self.profiler.resolve_queries(&mut encoder);
+        profiler.end_scope(&mut encoder);
+        profiler.resolve_queries(&mut encoder);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        self.profiler.end_frame().unwrap();
+        profiler.end_frame().unwrap();
+
+        if let Some(results) = profiler.process_finished_frame() {
+            renderer_profiler.results = results
+        }
 
         Ok(())
     }
 
-    pub fn profiler(&mut self) -> Option<Vec<ProfilerResult>> {
-        self.profiler.process_finished_frame()
+    pub fn profiler_results(&self) -> impl std::ops::Deref<Target = Vec<ProfilerResult>> + '_ {
+        Ref::map(self.profiler.borrow(), |p| &p.results)
     }
 
     fn make_textures(
@@ -224,6 +231,10 @@ impl Renderer {
 }
 
 pub type ProfilerResult = GpuTimerScopeResult;
+struct RendererProfiler {
+    inner: GpuProfiler,
+    pub results: Vec<ProfilerResult>,
+}
 
 pub struct RenderContext<'a> {
     pub surface_config: &'a wgpu::SurfaceConfiguration,
@@ -242,8 +253,8 @@ pub struct RenderOutput<'a> {
 
 pub struct ProfilerCommandEncoder<'a> {
     device: &'a wgpu::Device,
-    profiler: &'a mut GpuProfiler,
     encoder: &'a mut wgpu::CommandEncoder,
+    profiler: &'a mut GpuProfiler,
 }
 
 impl<'a> ProfilerCommandEncoder<'a> {

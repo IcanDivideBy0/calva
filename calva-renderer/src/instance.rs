@@ -2,52 +2,6 @@ use crate::{AnimationState, MaterialId, MeshId, MeshInfo, MeshesManager, Profile
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Instance {
-    pub transform: glam::Mat4,
-    pub mesh: MeshId,
-    pub material: MaterialId,
-    pub animation: AnimationState,
-}
-impl Instance {
-    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct CulledInstance {
-    _model_matrix: [f32; 16],
-    _normal_quat: [f32; 4],
-    _material: MaterialId,
-    _skin_offset: i32,
-    _animation: AnimationState,
-}
-impl CulledInstance {
-    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
-
-    pub(crate) const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        array_stride: Self::SIZE,
-        step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &wgpu::vertex_attr_array![
-            // Model matrix
-            0 => Float32x4,
-            1 => Float32x4,
-            2 => Float32x4,
-            3 => Float32x4,
-            // Normal quat
-            4 => Float32x4,
-            // Material
-            5 => Uint32,
-
-            // Skinning
-            6 => Sint32, // Skin offset
-            7 => Uint32, // Animation ID
-            8 => Float32, // Animation time
-        ],
-    };
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawIndexedIndirect {
     vertex_count: u32,
     instance_count: u32,
@@ -86,6 +40,52 @@ impl From<&glam::Mat4> for Frustum {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct GpuMeshInstance {
+    _model_matrix: [f32; 16],
+    _normal_quat: [f32; 4],
+    _material: MaterialId,
+    _skin_offset: i32,
+    _animation: AnimationState,
+}
+impl GpuMeshInstance {
+    pub(crate) const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
+
+    pub(crate) const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: Self::SIZE,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array![
+            // Model matrix
+            0 => Float32x4,
+            1 => Float32x4,
+            2 => Float32x4,
+            3 => Float32x4,
+            // Normal quat
+            4 => Float32x4,
+            // Material
+            5 => Uint32,
+
+            // Skinning
+            6 => Sint32, // Skin offset
+            7 => Uint32, // Animation ID
+            8 => Float32, // Animation time
+        ],
+    };
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Instance {
+    pub transform: glam::Mat4,
+    pub mesh: MeshId,
+    pub material: MaterialId,
+    pub animation: AnimationState,
+}
+impl Instance {
+    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
+}
+
 pub struct InstancesManager {
     frustum: wgpu::Buffer,
     base_instances_data: Vec<u32>,
@@ -97,10 +97,15 @@ pub struct InstancesManager {
     pub(crate) culled_instances: wgpu::Buffer,
     pub(crate) indirect_draws: wgpu::Buffer,
 
+    anim_bind_group: wgpu::BindGroup,
+    anim_pipeline: wgpu::ComputePipeline,
+
     cull_bind_group: wgpu::BindGroup,
-    cull_reset_pipeline: wgpu::ComputePipeline,
-    cull_pipeline: wgpu::ComputePipeline,
-    cull_count_pipeline: wgpu::ComputePipeline,
+    cull_pipelines: (
+        wgpu::ComputePipeline, // reset
+        wgpu::ComputePipeline, // cull
+        wgpu::ComputePipeline, // count
+    ),
 }
 
 impl InstancesManager {
@@ -134,7 +139,7 @@ impl InstancesManager {
 
         let culled_instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager culled instances"),
-            size: (std::mem::size_of::<[CulledInstance; Self::MAX_INSTANCES]>()) as _,
+            size: (std::mem::size_of::<[GpuMeshInstance; Self::MAX_INSTANCES]>()) as _,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::VERTEX,
@@ -152,9 +157,56 @@ impl InstancesManager {
             mapped_at_creation: false,
         });
 
-        let (cull_bind_group, cull_reset_pipeline, cull_pipeline, cull_count_pipeline) = {
-            let shader = device.create_shader_module(wgpu::include_wgsl!("instance.cull.wgsl"));
+        let (anim_bind_group, anim_pipeline) = {
+            let bind_group_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("InstancesManager[anim] bind group layout"),
+                    entries: &[
+                        // Mesh instances
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: wgpu::BufferSize::new(Instance::SIZE),
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("InstancesManager[anim] bind group"),
+                layout: &bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: instances.as_entire_binding(),
+                }],
+            });
+
+            let shader = device.create_shader_module(wgpu::include_wgsl!("instance.anim.wgsl"));
+
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("InstancesManager[anim] pipeline layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::COMPUTE,
+                    range: 0..(std::mem::size_of::<f32>() as _),
+                }],
+            });
+
+            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("InstancesManager[anim] pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: "main",
+            });
+
+            (bind_group, pipeline)
+        };
+
+        let (cull_bind_group, cull_pipelines) = {
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("InstancesManager[cull] bind group layout"),
@@ -212,7 +264,7 @@ impl InstancesManager {
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: false },
                                 has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(CulledInstance::SIZE),
+                                min_binding_size: wgpu::BufferSize::new(GpuMeshInstance::SIZE),
                             },
                             count: None,
                         },
@@ -264,6 +316,8 @@ impl InstancesManager {
                 ],
             });
 
+            let shader = device.create_shader_module(wgpu::include_wgsl!("instance.cull.wgsl"));
+
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("InstancesManager[cull] pipeline layout"),
                 bind_group_layouts: &[&bind_group_layout],
@@ -280,8 +334,8 @@ impl InstancesManager {
                 entry_point: "reset",
             });
 
-            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("InstancesManager[cull] pipeline"),
+            let cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("InstancesManager[cull] cull pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
                 entry_point: "cull",
@@ -294,7 +348,7 @@ impl InstancesManager {
                 entry_point: "count",
             });
 
-            (bind_group, reset_pipeline, pipeline, count_pipeline)
+            (bind_group, (reset_pipeline, cull_pipeline, count_pipeline))
         };
 
         Self {
@@ -309,16 +363,19 @@ impl InstancesManager {
             culled_instances,
             indirect_draws,
 
+            anim_bind_group,
+            anim_pipeline,
+
             cull_bind_group,
-            cull_reset_pipeline,
-            cull_pipeline,
-            cull_count_pipeline,
+            cull_pipelines,
         }
     }
 
     pub fn add(&mut self, queue: &wgpu::Queue, meshes: &MeshesManager, instance: Instance) {
-        self.base_instances_data
-            .resize(meshes.count() as _, self.instances_data.len() as _);
+        if meshes.count() > self.base_instances_data.len() as _ {
+            self.base_instances_data
+                .resize(meshes.count() as _, self.instances_data.len() as _);
+        }
 
         let mesh_index: usize = instance.mesh.into();
 
@@ -330,6 +387,11 @@ impl InstancesManager {
         }
 
         queue.write_buffer(
+            &self.instances,
+            base_instance as wgpu::BufferAddress * Instance::SIZE,
+            bytemuck::cast_slice(&self.instances_data[(base_instance as _)..]),
+        );
+        queue.write_buffer(
             &self.base_instances,
             0,
             bytemuck::cast_slice(&self.base_instances_data),
@@ -340,7 +402,18 @@ impl InstancesManager {
         self.instances_data.iter_mut()
     }
 
-    pub(crate) fn cull(
+    pub fn anim(&self, encoder: &mut ProfilerCommandEncoder, dt: &std::time::Duration) {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("InstancesManager[anim]"),
+        });
+
+        cpass.set_pipeline(&self.anim_pipeline);
+        cpass.set_bind_group(0, &self.anim_bind_group, &[]);
+        cpass.set_push_constants(0, bytemuck::bytes_of(&dt.as_secs_f32()));
+        cpass.dispatch_workgroups(self.instances_data.len() as _, 1, 1);
+    }
+
+    pub fn cull(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut ProfilerCommandEncoder,
@@ -352,14 +425,6 @@ impl InstancesManager {
             bytemuck::bytes_of(&Frustum::from(view_proj)),
         );
 
-        queue.write_buffer(
-            &self.instances,
-            0,
-            bytemuck::cast_slice(&self.instances_data),
-        );
-
-        queue.write_buffer(&self.indirect_draws, 0, bytemuck::bytes_of(&0_u32));
-
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("InstancesManager[cull]"),
         });
@@ -367,16 +432,16 @@ impl InstancesManager {
         let meshes_count: u32 = self.base_instances_data.len() as _;
         let instances_count: u32 = self.instances_data.len() as _;
 
-        cpass.set_pipeline(&self.cull_reset_pipeline);
+        cpass.set_pipeline(&self.cull_pipelines.0);
         cpass.set_bind_group(0, &self.cull_bind_group, &[]);
         cpass.dispatch_workgroups(meshes_count, 1, 1);
 
-        cpass.set_pipeline(&self.cull_pipeline);
+        cpass.set_pipeline(&self.cull_pipelines.1);
         cpass.set_bind_group(0, &self.cull_bind_group, &[]);
         cpass.set_push_constants(0, bytemuck::bytes_of(&instances_count));
         cpass.dispatch_workgroups(instances_count, 1, 1);
 
-        cpass.set_pipeline(&self.cull_count_pipeline);
+        cpass.set_pipeline(&self.cull_pipelines.2);
         cpass.dispatch_workgroups(meshes_count, 1, 1);
     }
 }

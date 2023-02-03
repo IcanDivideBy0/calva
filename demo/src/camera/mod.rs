@@ -27,8 +27,8 @@ impl MyCamera {
         self.controller.handle_event(event)
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.projection.resize(width, height)
+    pub fn resize(&mut self, size: (u32, u32)) {
+        self.projection.resize(size)
     }
 
     pub fn _update(&mut self, renderer: &mut Renderer, dt: Duration) {

@@ -16,14 +16,14 @@ struct AnimationState {
     time: f32,
 }
 
-struct InstanceInput {
+struct CullInstance {
     transform: mat4x4<f32>,
     mesh_id: u32,
     material_id: u32,
     animation: AnimationState,
 }
 
-struct InstanceOutput {
+struct MeshInstance {
     transform: mat4x4<f32>,
     normal_quat: vec4<f32>,
     material_id: u32,
@@ -53,11 +53,11 @@ var<storage, read> meshes_info: array<MeshInfo>;
 var<storage, read> base_instances: array<u32>;
 
 @group(0) @binding(3)
-var<storage, read> instances_input: array<InstanceInput>;
-var<push_constant> instances_count: u32;
+var<storage, read> cull_instances: array<CullInstance>;
+var<push_constant> cull_instances_count: u32;
 
 @group(0) @binding(4)
-var<storage, read_write> instances_output: array<InstanceOutput>;
+var<storage, read_write> mesh_instances: array<MeshInstance>;
 
 @group(0) @binding(5)
 var<storage, read_write> indirects: IndirectsBuffer;
@@ -65,17 +65,16 @@ var<storage, read_write> indirects: IndirectsBuffer;
 @compute @workgroup_size(32)
 fn reset(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mesh_id = global_id.x;
-
     let mesh_info = &meshes_info[mesh_id];
-
     let draw = &indirects.draws[mesh_id];
 
     (*draw).vertex_count = (*mesh_info).vertex_count;
+    (*draw).instance_count = 0u;
     (*draw).base_index = (*mesh_info).base_index;
     (*draw).vertex_offset = (*mesh_info).vertex_offset;
     (*draw).base_instance = base_instances[mesh_id];
 
-    atomicStore(&(*draw).instance_count, 0u);
+    indirects.count = 0u;
 }
 
 fn plane_distance_to_point(plane: vec4<f32>, p: vec3<f32>) -> f32 {
@@ -163,31 +162,29 @@ fn mat_quat(m: mat4x4<f32>) -> vec4<f32> {
 
 @compute @workgroup_size(32)
 fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let instance_index = global_id.x;
+    let cull_instance_index = global_id.x;
 
-    if instance_index >= instances_count {
+    if cull_instance_index >= cull_instances_count {
         return;
     }
 
-    let instance_input = &instances_input[instance_index];
-    let transform = &(*instance_input).transform;
-    let mesh_info = &meshes_info[(*instance_input).mesh_id];
+    let cull_instance = &cull_instances[cull_instance_index];
+    let transform = &(*cull_instance).transform;
+    let mesh_info = &meshes_info[(*cull_instance).mesh_id];
 
     if !sphere_visible((*mesh_info).bounding_sphere, (*transform)) {
         return;
     }
 
-    let draw = &indirects.draws[(*instance_input).mesh_id];
-    let instance_output_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
+    let draw = &indirects.draws[(*cull_instance).mesh_id];
+    let mesh_instance_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
 
-    var out: InstanceOutput;
-    out.transform = *transform;
-    out.normal_quat = mat_quat(*transform);
-    out.material_id = (*instance_input).material_id;
-    out.skin_offset = (*mesh_info).skin_offset;
-    out.animation = (*instance_input).animation;
-
-    instances_output[instance_output_index] = out;
+    let mesh_instance = &mesh_instances[mesh_instance_index];
+    (*mesh_instance).transform = *transform;
+    (*mesh_instance).normal_quat = mat_quat(*transform);
+    (*mesh_instance).material_id = (*cull_instance).material_id;
+    (*mesh_instance).skin_offset = (*mesh_info).skin_offset;
+    (*mesh_instance).animation = (*cull_instance).animation;
 }
 
 @compute @workgroup_size(32)
@@ -195,7 +192,7 @@ fn count(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mesh_id = global_id.x;
 
     let draw = &indirects.draws[mesh_id];
-    if atomicLoad(&(*draw).instance_count) > 0u {
+    if (*draw).instance_count > 0u {
         indirects.draws[atomicAdd(&indirects.count, 1u)] = *draw;
     }
 }

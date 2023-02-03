@@ -4,17 +4,15 @@ use anyhow::Result;
 use calva::{
     egui::{egui, EguiPass},
     gltf::GltfModel,
-    renderer::{wgpu, AmbientPass, GeometryPass, LightsPass, Renderer, SkyboxPass, SsaoPass},
+    renderer::{Engine, EngineRenderData},
 };
 use std::time::Instant;
 use winit::{
-    dpi::PhysicalSize,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-mod app;
 mod camera;
 
 #[async_std::main]
@@ -31,45 +29,27 @@ async fn main() -> Result<()> {
     )
     .inverse();
 
-    let size = window.inner_size();
-    let mut renderer = Renderer::new(&window, size.width, size.height).await?;
-
-    let mut geometry = GeometryPass::new(&renderer);
-    let skybox = {
-        let mut size = 0;
-        let mut bytes = vec![];
-
-        let images = [
-            image::open("./demo/assets/sky/right.jpg")?,
-            image::open("./demo/assets/sky/left.jpg")?,
-            image::open("./demo/assets/sky/top.jpg")?,
-            image::open("./demo/assets/sky/bottom.jpg")?,
-            image::open("./demo/assets/sky/front.jpg")?,
-            image::open("./demo/assets/sky/back.jpg")?,
-        ];
-
-        for image in images {
-            let image = image.to_rgba8();
-            size = image.width();
-            bytes.append(&mut image.to_vec());
-        }
-
-        SkyboxPass::new(&renderer, size, &bytes)
-    };
-    let mut ambient = AmbientPass::new(&renderer, geometry.albedo_metallic_view());
-    let mut lights = LightsPass::new(
-        &renderer,
-        geometry.albedo_metallic_view(),
-        geometry.normal_roughness_view(),
-        &renderer.depth,
+    let mut engine = Engine::new(&window, window.inner_size().into()).await?;
+    let skybox = engine.create_skybox(
+        &[
+            "./demo/assets/sky/right.jpg",
+            "./demo/assets/sky/left.jpg",
+            "./demo/assets/sky/top.jpg",
+            "./demo/assets/sky/bottom.jpg",
+            "./demo/assets/sky/front.jpg",
+            "./demo/assets/sky/back.jpg",
+        ]
+        .iter()
+        .try_fold(vec![], |mut bytes, filepath| {
+            let image = image::open(filepath)?;
+            bytes.append(&mut image.to_rgba8().to_vec());
+            Ok::<_, image::ImageError>(bytes)
+        })?,
     );
-    let mut ssao =
-        SsaoPass::<640, 480>::new(&renderer, geometry.normal_roughness_view(), &renderer.depth);
 
     let egui_context = egui::Context::default();
     let mut egui_state = egui_winit::State::new(&event_loop);
-    let mut egui = EguiPass::new(&renderer);
-    let mut demo_app = app::DemoApp::default();
+    let mut egui = EguiPass::new(&engine.renderer);
 
     let models = vec![
         // GltfModel::from_reader(
@@ -88,13 +68,11 @@ async fn main() -> Result<()> {
         //     &mut std::fs::File::open("./demo/assets/plane.glb")?,
         // )?,
         GltfModel::from_reader(
-            &mut renderer,
-            &mut geometry,
+            &mut engine,
             &mut std::fs::File::open("./demo/assets/dungeon.glb")?,
         )?,
         GltfModel::from_reader(
-            &mut renderer,
-            &mut geometry,
+            &mut engine,
             &mut std::fs::File::open("./demo/assets/zombie.glb")?,
         )
         .map(|mut zombie| {
@@ -118,9 +96,9 @@ async fn main() -> Result<()> {
 
     for model in &models {
         for instance in &model.instances {
-            geometry
+            engine
                 .instances
-                .add(&renderer.queue, &geometry.meshes, *instance)
+                .add(&engine.renderer.queue, &engine.meshes, *instance)
         }
     }
 
@@ -133,75 +111,60 @@ async fn main() -> Result<()> {
     event_loop.run(move |event, _, control_flow| {
         match event {
             Event::RedrawRequested(_) => {
-                let size = PhysicalSize::new(
-                    renderer.surface_config.width,
-                    renderer.surface_config.height,
-                );
-                let window_size = window.inner_size();
-                if size != window_size {
-                    camera.resize(window_size.width, window_size.height);
-                    renderer.resize(window_size.width, window_size.height);
-                    geometry.resize(&renderer);
-                    ambient.resize(&renderer, geometry.albedo_metallic_view());
-                    lights.resize(
-                        &renderer,
-                        geometry.albedo_metallic_view(),
-                        geometry.normal_roughness_view(),
-                        &renderer.depth,
-                    );
-                    ssao.resize(&renderer, geometry.normal_roughness_view(), &renderer.depth);
-                    egui.resize(window_size.width, window_size.height)
-                }
+                let size = window.inner_size().into();
+                camera.resize(size);
+                engine.resize(size);
 
                 let dt = last_render_time.elapsed();
                 last_render_time = Instant::now();
 
                 camera.controller.update(dt);
-                renderer.camera.update(
-                    &renderer.queue,
+                engine.renderer.camera.update(
+                    &engine.renderer.queue,
                     camera.controller.transform.inverse(),
                     camera.projection.into(),
                 );
 
-                let (paint_jobs, textures_delta) = {
-                    let output = egui_context.run(egui_state.take_egui_input(&window), |ctx| {
-                        demo_app.ui(ctx, &mut renderer, &mut ambient.config, &mut ssao.config)
-                    });
-
-                    egui_state.handle_platform_output(
-                        &window,
-                        &egui_context,
-                        output.platform_output,
-                    );
-
-                    (
-                        egui_context.tessellate(output.shapes),
-                        output.textures_delta,
-                    )
-                };
-
-                for instance in geometry.instances.iter_mut() {
-                    instance.animation.time += dt.as_secs_f32();
-                }
-
-                let result = renderer.render(|ctx| {
-                    geometry.render(ctx);
-                    ambient.render(ctx, demo_app.gamma);
-                    lights.render(ctx, demo_app.gamma, &point_lights);
-                    ssao.render(ctx);
-                    skybox.render(ctx, demo_app.gamma);
-
-                    egui.render(ctx, &paint_jobs, &textures_delta);
+                let egui_output = egui_context.run(egui_state.take_egui_input(&window), |ctx| {
+                    egui::SidePanel::right("engine_panel")
+                        .min_width(320.0)
+                        .frame(egui::containers::Frame {
+                            inner_margin: egui::Vec2::splat(10.0).into(),
+                            fill: egui::Color32::from_black_alpha(200),
+                            ..Default::default()
+                        })
+                        .show(ctx, EguiPass::engine_ui(&mut engine));
                 });
+
+                egui_state.handle_platform_output(
+                    &window,
+                    &egui_context,
+                    egui_output.platform_output,
+                );
+
+                let result = engine.render(
+                    &EngineRenderData {
+                        dt,
+                        point_lights: &point_lights,
+                        skybox: &skybox,
+                    },
+                    |ctx| {
+                        egui.render(
+                            ctx,
+                            &egui_context.tessellate(egui_output.shapes),
+                            &egui_output.textures_delta,
+                        );
+                    },
+                );
 
                 match result {
                     Ok(_) => {}
-                    // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => renderer.resize(0, 0),
-                    // The system is out of memory, we should probably quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    // // Reconfigure the surface if lost
+                    // Err(wgpu::SurfaceError::Lost) => renderer.resize(0, 0),
+                    // // The system is out of memory, we should probably quit
+                    // Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // All other errors (Outdated, Timeout) should be resolved by the next frame
-                    Err(e) => eprintln!("{:?}", e),
+                    Err(e) => eprintln!("{e:?}"),
                 }
             }
 
