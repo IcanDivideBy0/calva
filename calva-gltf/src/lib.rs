@@ -2,8 +2,8 @@
 
 use anyhow::{anyhow, Result};
 use renderer::{
-    wgpu, AnimationId, AnimationState, AnimationsManager, Engine, Instance, Material, MaterialId,
-    MeshId, PointLight, TextureId,
+    wgpu, AnimationId, AnimationsManager, Engine, Instance, Material, MaterialId, MeshId,
+    PointLight, TextureId,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
@@ -19,6 +19,10 @@ pub struct GltfModel {
 }
 
 impl GltfModel {
+    pub fn from_path(engine: &mut Engine, path: &str) -> Result<Self> {
+        Self::from_reader(engine, &mut std::fs::File::open(path)?)
+    }
+
     pub fn from_reader(engine: &mut Engine, reader: &mut dyn Read) -> Result<Self> {
         let mut gltf_buffer = Vec::new();
         reader.read_to_end(&mut gltf_buffer)?;
@@ -51,16 +55,6 @@ impl GltfModel {
                 let primitives = meshes.get(mesh.index())?;
                 let transform = nodes_transforms.get(&node.index()).copied()?;
 
-                let animation_state = node
-                    .skin()
-                    .and_then(|skin| skins_animations.get(skin.index()))
-                    .and_then(|animations| animations.get("roar"))
-                    .map(|&animation| AnimationState {
-                        animation,
-                        time: 0.0,
-                    })
-                    .unwrap_or_default();
-
                 let mesh_instances = mesh
                     .primitives()
                     .zip(primitives)
@@ -75,7 +69,7 @@ impl GltfModel {
                             transform,
                             mesh: mesh_id,
                             material: material_id,
-                            animation: animation_state,
+                            ..Default::default()
                         }
                     })
                     .collect::<Vec<_>>();
@@ -431,5 +425,32 @@ impl GltfModel {
                     .collect::<HashMap<_, _>>()
             })
             .collect()
+    }
+
+    pub fn instanciate(&self, engine: &mut Engine, instances: &[(glam::Mat4, Option<&str>)]) {
+        let instances: Vec<_> = instances
+            .iter()
+            .flat_map(|&(transform, animation)| {
+                let mut instances = self.instances.clone();
+                for mut i in instances.iter_mut() {
+                    i.transform = transform * i.transform;
+                    i.animation = animation
+                        .and_then(|name| self.animations.get(name))
+                        .copied()
+                        .unwrap_or_default()
+                        .into();
+                }
+
+                instances
+            })
+            .collect();
+
+        engine
+            .instances
+            .add(&engine.renderer.queue, &engine.meshes, &instances);
+
+        engine
+            .lights
+            .add_point_lights(&engine.renderer.queue, &self.point_lights);
     }
 }

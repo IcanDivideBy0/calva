@@ -2,16 +2,16 @@ use anyhow::Result;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::{
-    AmbientConfig, AmbientPass, AnimationsManager, GeometryPass, InstancesManager, LightsPass,
-    MaterialsManager, MeshesManager, PointLight, RenderContext, Renderer, SkinsManager, Skybox,
+    AmbientConfig, AmbientPass, AnimationsManager, GeometryPass, InstancesManager, LightingPass,
+    LightsManager, MaterialsManager, MeshesManager, RenderContext, Renderer, SkinsManager, Skybox,
     SkyboxPass, SsaoConfig, SsaoPass, TexturesManager,
 };
 
-#[derive(Debug, Copy, Clone)]
 pub struct EngineConfig {
     pub gamma: f32,
     pub ambient: AmbientConfig,
     pub ssao: SsaoConfig,
+    pub skybox: Option<Skybox>,
 }
 
 impl Default for EngineConfig {
@@ -20,6 +20,7 @@ impl Default for EngineConfig {
             gamma: 2.2,
             ambient: AmbientConfig::default(),
             ssao: SsaoConfig::default(),
+            skybox: None,
         }
     }
 }
@@ -30,13 +31,14 @@ pub struct Engine {
     pub textures: TexturesManager,
     pub materials: MaterialsManager,
     pub meshes: MeshesManager,
-    pub instances: InstancesManager,
     pub skins: SkinsManager,
     pub animations: AnimationsManager,
+    pub instances: InstancesManager,
+    pub lights: LightsManager,
 
     geometry: GeometryPass,
     ambient: AmbientPass,
-    lights: LightsPass,
+    lighting: LightingPass,
     ssao: SsaoPass<640, 480>,
     skybox: SkyboxPass,
 
@@ -44,22 +46,30 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
-        window: &W,
-        size: (u32, u32),
-    ) -> Result<Self> {
+    pub async fn new<W>(window: &W, size: (u32, u32)) -> Result<Self>
+    where
+        W: HasRawWindowHandle + HasRawDisplayHandle,
+    {
         let renderer = Renderer::new(&window, size).await?;
 
         let textures = TexturesManager::new(&renderer.device);
         let materials = MaterialsManager::new(&renderer.device);
         let meshes = MeshesManager::new(&renderer.device);
-        let instances = InstancesManager::new(&renderer.device, &meshes);
         let skins = SkinsManager::new(&renderer.device);
         let animations = AnimationsManager::new(&renderer.device);
+        let instances = InstancesManager::new(&renderer.device, &meshes);
+        let lights = LightsManager::new(&renderer.device);
 
-        let geometry = GeometryPass::new(&renderer, &textures, &materials, &skins, &animations);
+        let geometry = GeometryPass::new(
+            &renderer,
+            &textures,
+            &materials,
+            &skins,
+            &animations,
+            &instances,
+        );
         let ambient = AmbientPass::new(&renderer, &geometry);
-        let lights = LightsPass::new(&renderer, &geometry);
+        let lighting = LightingPass::new(&renderer, &geometry);
         let ssao = SsaoPass::<640, 480>::new(&renderer, &geometry);
         let skybox = SkyboxPass::new(&renderer);
 
@@ -72,10 +82,11 @@ impl Engine {
             instances,
             skins,
             animations,
+            lights,
 
             geometry,
             ambient,
-            lights,
+            lighting,
             ssao,
             skybox,
 
@@ -96,37 +107,36 @@ impl Engine {
         self.renderer.resize(size);
         self.geometry.resize(&self.renderer);
         self.ambient.resize(&self.renderer, &self.geometry);
-        self.lights.resize(&self.renderer, &self.geometry);
+        self.lighting.resize(&self.renderer, &self.geometry);
         self.ssao.resize(&self.renderer, &self.geometry);
-    }
-
-    pub fn draw(&self, ctx: &mut RenderContext, data: &EngineRenderData) {
-        self.instances.anim(&mut ctx.encoder, &data.dt);
-
-        self.geometry.render(
-            ctx,
-            &self.textures,
-            &self.materials,
-            &self.meshes,
-            &self.skins,
-            &self.animations,
-            &self.instances,
-        );
-        self.ambient
-            .render(ctx, &self.config.ambient, self.config.gamma);
-        self.lights
-            .render(ctx, self.config.gamma, data.point_lights);
-        self.ssao.render(ctx, &self.config.ssao);
-        self.skybox.render(ctx, self.config.gamma, data.skybox);
     }
 
     pub fn render(
         &self,
-        data: &EngineRenderData,
+        dt: std::time::Duration,
         cb: impl FnOnce(&mut RenderContext),
     ) -> Result<()> {
         self.renderer.render(|ctx| {
-            self.draw(ctx, data);
+            self.instances.anim(&mut ctx.encoder, &dt);
+
+            self.geometry.render(
+                ctx,
+                &self.textures,
+                &self.materials,
+                &self.meshes,
+                &self.skins,
+                &self.animations,
+                &self.instances,
+            );
+            self.ambient
+                .render(ctx, &self.config.ambient, self.config.gamma);
+            self.lighting.render(ctx, self.config.gamma, &self.lights);
+            self.ssao.render(ctx, &self.config.ssao);
+
+            if let Some(skybox) = &self.config.skybox {
+                self.skybox.render(ctx, self.config.gamma, skybox);
+            }
+
             cb(ctx);
         })
     }
@@ -135,10 +145,4 @@ impl Engine {
         self.skybox
             .create_skybox(&self.renderer.device, &self.renderer.queue, pixels)
     }
-}
-
-pub struct EngineRenderData<'a> {
-    pub dt: std::time::Duration,
-    pub point_lights: &'a [PointLight],
-    pub skybox: &'a Skybox,
 }

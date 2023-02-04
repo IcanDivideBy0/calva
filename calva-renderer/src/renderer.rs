@@ -46,10 +46,10 @@ impl Renderer {
 
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
-    pub async fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
-        window: &W,
-        size: (u32, u32),
-    ) -> Result<Self> {
+    pub async fn new<W>(window: &W, size: (u32, u32)) -> Result<Self>
+    where
+        W: HasRawWindowHandle + HasRawDisplayHandle,
+    {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..Default::default()
@@ -93,6 +93,7 @@ impl Renderer {
             width: size.0,
             height: size.1,
             present_mode: wgpu::PresentMode::AutoNoVsync,
+            // present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
         };

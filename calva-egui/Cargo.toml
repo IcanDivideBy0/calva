@@ -3,9 +3,14 @@ name = "calva-egui"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["winit"]
+winit = ["dep:winit", "dep:egui-winit"]
+
 [dependencies]
 renderer = { package = "calva-renderer", path = "../calva-renderer" }
 thousands = "0.2"
 egui = "0.20"
+egui-winit = { version = "0.20", optional = true }
 egui-wgpu = "0.20"
-winit = "0.27"
+winit = { version = "0.27", optional = true }

@@ -135,7 +135,7 @@ impl SkyboxPass {
 
         let view = device
             .create_texture_with_data(
-                &queue,
+                queue,
                 &wgpu::TextureDescriptor {
                     label: Some("Skybox texture"),
                     size: wgpu::Extent3d {

@@ -1,10 +1,10 @@
-use crate::{GeometryPass, PointLight, RenderContext, Renderer};
+use crate::{GeometryPass, LightsManager, RenderContext, Renderer};
 
-pub struct LightsPass {
+pub struct LightingPass {
     point_lights_pass: PointLightsPass,
 }
 
-impl LightsPass {
+impl LightingPass {
     pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
         Self {
             point_lights_pass: PointLightsPass::new(renderer, geometry),
@@ -15,21 +15,24 @@ impl LightsPass {
         self.point_lights_pass.resize(renderer, geometry);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, gamma: f32, point_lights: &[PointLight]) {
-        self.point_lights_pass.render(ctx, gamma, point_lights);
+    pub fn render(&self, ctx: &mut RenderContext, gamma: f32, lights: &LightsManager) {
+        self.point_lights_pass.render(ctx, gamma, lights);
     }
 }
+
 use point_lights::*;
 mod point_lights {
     use wgpu::util::DeviceExt;
 
-    use crate::{util::icosphere::Icosphere, GeometryPass, PointLight, RenderContext, Renderer};
+    use crate::{
+        util::icosphere::Icosphere, GeometryPass, LightsManager, PointLight, RenderContext,
+        Renderer,
+    };
 
     pub struct PointLightsPass {
         vertex_count: u32,
         vertices: wgpu::Buffer,
         indices: wgpu::Buffer,
-        instances: wgpu::Buffer,
 
         bind_group_layout: wgpu::BindGroupLayout,
         bind_group: wgpu::BindGroup,
@@ -39,8 +42,6 @@ mod point_lights {
     }
 
     impl PointLightsPass {
-        pub const MAX_LIGHTS: usize = 1 << 12;
-
         pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
             let icosphere = Icosphere::new(1);
 
@@ -58,14 +59,6 @@ mod point_lights {
                     label: Some("PointLights mesh indices buffer"),
                     contents: bytemuck::cast_slice(&icosphere.indices),
                     usage: wgpu::BufferUsages::INDEX,
-                });
-
-            let instances = renderer
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("PointLights instances buffer"),
-                    contents: bytemuck::cast_slice(&[PointLight::default(); Self::MAX_LIGHTS]),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });
 
             let vertex_buffers_layout = [
@@ -269,7 +262,6 @@ mod point_lights {
                 vertex_count: icosphere.count,
                 vertices,
                 indices,
-                instances,
 
                 bind_group_layout,
                 bind_group,
@@ -283,11 +275,8 @@ mod point_lights {
             self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
         }
 
-        pub fn render(&self, ctx: &mut RenderContext, gamma: f32, point_lights: &[PointLight]) {
+        pub fn render(&self, ctx: &mut RenderContext, gamma: f32, lights: &LightsManager) {
             ctx.encoder.profile_start("PointLights");
-
-            ctx.queue
-                .write_buffer(&self.instances, 0, bytemuck::cast_slice(point_lights));
 
             let mut stencil_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("PointLights[stencil]"),
@@ -305,11 +294,11 @@ mod point_lights {
             stencil_pass.set_pipeline(&self.stencil_pipeline);
             stencil_pass.set_bind_group(0, &ctx.camera.bind_group, &[]);
 
-            stencil_pass.set_vertex_buffer(0, self.instances.slice(..));
+            stencil_pass.set_vertex_buffer(0, lights.point_lights.slice(..));
             stencil_pass.set_vertex_buffer(1, self.vertices.slice(..));
             stencil_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-            stencil_pass.draw_indexed(0..self.vertex_count, 0, 0..(point_lights.len() as _));
+            stencil_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
 
             drop(stencil_pass);
 
@@ -339,11 +328,11 @@ mod point_lights {
                 bytemuck::bytes_of(&gamma),
             );
 
-            lighting_pass.set_vertex_buffer(0, self.instances.slice(..));
+            lighting_pass.set_vertex_buffer(0, lights.point_lights.slice(..));
             lighting_pass.set_vertex_buffer(1, self.vertices.slice(..));
             lighting_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-            lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..(point_lights.len() as _));
+            lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
 
             drop(lighting_pass);
 

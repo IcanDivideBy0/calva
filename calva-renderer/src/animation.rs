@@ -11,6 +11,15 @@ pub struct AnimationState {
     pub time: f32,
 }
 
+impl From<AnimationId> for AnimationState {
+    fn from(animation: AnimationId) -> Self {
+        Self {
+            animation,
+            time: 0.0,
+        }
+    }
+}
+
 pub struct AnimationsManager {
     views: Vec<wgpu::TextureView>,
     sampler: wgpu::Sampler,

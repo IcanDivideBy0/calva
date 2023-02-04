@@ -3,36 +3,49 @@
 use renderer::{wgpu, AmbientConfig, Engine, ProfilerResult, RenderContext, Renderer, SsaoConfig};
 use thousands::Separable;
 
+#[cfg(feature = "winit")]
+use winit::event_loop::EventLoop;
+
 pub use egui;
 
 pub struct EguiPass {
-    egui_renderer: egui_wgpu::Renderer,
+    pub context: egui::Context,
+    renderer: egui_wgpu::Renderer,
 }
 
 impl EguiPass {
-    pub fn new(renderer: &Renderer) -> Self {
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &renderer.device,
-            renderer.surface_config.format,
+    pub fn new(engine: &Engine) -> Self {
+        let renderer = egui_wgpu::Renderer::new(
+            &engine.renderer.device,
+            engine.renderer.surface_config.format,
             Some(Renderer::DEPTH_FORMAT),
             Renderer::MULTISAMPLE_STATE.count,
         );
 
-        Self { egui_renderer }
+        Self {
+            context: Default::default(),
+            renderer,
+        }
+    }
+
+    pub fn run(&self, input: egui::RawInput, ui: impl FnOnce(&egui::Context)) -> egui::FullOutput {
+        self.context.run(input, ui)
     }
 
     pub fn render(
         &mut self,
         ctx: &mut RenderContext,
-        paint_jobs: &[egui::ClippedPrimitive],
-        textures_delta: &egui::TexturesDelta,
+        shapes: Vec<egui::epaint::ClippedShape>,
+        textures_delta: egui::TexturesDelta,
     ) {
+        let paint_jobs = &self.context.tessellate(shapes);
+
         for (texture_id, image_delta) in &textures_delta.set {
-            self.egui_renderer
+            self.renderer
                 .update_texture(ctx.device, ctx.queue, *texture_id, image_delta);
         }
         for texture_id in &textures_delta.free {
-            self.egui_renderer.free_texture(texture_id);
+            self.renderer.free_texture(texture_id);
         }
 
         let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
@@ -40,7 +53,7 @@ impl EguiPass {
             pixels_per_point: 1.0,
         };
 
-        self.egui_renderer.update_buffers(
+        self.renderer.update_buffers(
             ctx.device,
             ctx.queue,
             &mut ctx.encoder,
@@ -48,7 +61,7 @@ impl EguiPass {
             &screen_descriptor,
         );
 
-        self.egui_renderer.render(
+        self.renderer.render(
             &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -70,18 +83,11 @@ impl EguiPass {
         );
     }
 
-    pub fn engine_ui(engine: &mut Engine) -> impl FnOnce(&mut egui::Ui) + '_ {
+    pub fn engine_ui<'e: 'ui, 'ui>(engine: &'e mut Engine) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
             egui::CollapsingHeader::new("Adapter")
                 .default_open(true)
                 .show(ui, EguiPass::adapter_info_ui(&engine.renderer.adapter_info));
-
-            egui::CollapsingHeader::new("Profiler")
-                .default_open(true)
-                .show(
-                    ui,
-                    EguiPass::profiler_ui(&engine.renderer.profiler_results()),
-                );
 
             egui::CollapsingHeader::new("Gamma")
                 .default_open(true)
@@ -94,6 +100,13 @@ impl EguiPass {
             egui::CollapsingHeader::new("SSAO")
                 .default_open(true)
                 .show(ui, EguiPass::ssao_config_ui(&mut engine.config.ssao));
+
+            egui::CollapsingHeader::new("Profiler")
+                .default_open(true)
+                .show(
+                    ui,
+                    EguiPass::profiler_ui(&engine.renderer.profiler_results()),
+                );
         }
     }
 
@@ -175,5 +188,52 @@ impl EguiPass {
             ui.add(egui::Slider::new(&mut config.bias, 0.0..=0.1).text("Bias"));
             ui.add(egui::Slider::new(&mut config.power, 0.0..=8.0).text("Power"));
         }
+    }
+}
+
+#[cfg(feature = "winit")]
+pub struct EguiWinitPass {
+    pass: EguiPass,
+    state: egui_winit::State,
+}
+
+impl EguiWinitPass {
+    pub fn new(engine: &Engine, event_loop: &EventLoop<()>) -> Self {
+        Self {
+            pass: EguiPass::new(engine),
+            state: egui_winit::State::new(event_loop),
+        }
+    }
+
+    pub fn run(
+        &mut self,
+        window: &winit::window::Window,
+        ui: impl FnOnce(&egui::Context),
+    ) -> egui::FullOutput {
+        self.pass.run(self.state.take_egui_input(window), ui)
+    }
+
+    pub fn on_event(&mut self, event: &winit::event::WindowEvent) -> egui_winit::EventResponse {
+        self.state.on_event(&self.pass.context, event)
+    }
+
+    pub fn render(
+        &mut self,
+        ctx: &mut RenderContext,
+        window: &winit::window::Window,
+        output: egui::FullOutput,
+    ) {
+        self.state
+            .handle_platform_output(window, &self.pass.context, output.platform_output);
+
+        self.pass.render(ctx, output.shapes, output.textures_delta);
+    }
+}
+
+impl std::ops::Deref for EguiWinitPass {
+    type Target = EguiPass;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pass
     }
 }

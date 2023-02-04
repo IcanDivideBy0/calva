@@ -406,6 +406,7 @@ dependencies = [
  "calva-renderer",
  "egui",
  "egui-wgpu",
+ "egui-winit",
  "thousands",
  "winit",
 ]

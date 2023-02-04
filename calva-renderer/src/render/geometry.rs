@@ -1,6 +1,6 @@
 use crate::{
-    AnimationsManager, GpuMeshInstance, InstancesManager, MaterialsManager, MeshesManager,
-    RenderContext, Renderer, SkinsManager, TexturesManager,
+    AnimationsManager, CullOutput, GpuMeshInstance, InstancesManager, MaterialsManager,
+    MeshesManager, RenderContext, Renderer, SkinsManager, TexturesManager,
 };
 
 struct GeometryOutput {
@@ -53,8 +53,9 @@ impl GeometryOutput {
 pub struct GeometryPass {
     albedo_metallic: GeometryOutput,
     normal_roughness: GeometryOutput,
+    cull_output: CullOutput,
 
-    render_pipeline: wgpu::RenderPipeline,
+    pipeline: wgpu::RenderPipeline,
 }
 
 impl GeometryPass {
@@ -74,108 +75,110 @@ impl GeometryPass {
         materials: &MaterialsManager,
         skins: &SkinsManager,
         animations: &AnimationsManager,
+        instances: &InstancesManager,
     ) -> Self {
         let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
 
-        let render_pipeline = {
-            let shader = renderer
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("Geometry[render] shader"),
-                    source: wgpu::ShaderSource::Wgsl(include_str!("shaders/geometry.wgsl").into()),
-                });
+        let cull_output = instances.create_cull_output(&renderer.device);
 
-            let pipeline_layout =
-                renderer
-                    .device
-                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Geometry[render] render pipeline layout"),
-                        bind_group_layouts: &[
-                            &renderer.camera.bind_group_layout,
-                            &textures.bind_group_layout,
-                            &materials.bind_group_layout,
-                            &skins.bind_group_layout,
-                            &animations.bind_group_layout,
-                        ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::VERTEX,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
-                    });
+        let shader = renderer
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Geometry[render] shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/geometry.wgsl").into()),
+            });
 
+        let pipeline_layout =
             renderer
                 .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Geometry[render] render pipeline"),
-                    layout: Some(&pipeline_layout),
-                    multiview: None,
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: "vs_main",
-                        buffers: &[
-                            GpuMeshInstance::LAYOUT,
-                            // Positions
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::VERTEX_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![10 => Float32x3],
-                            },
-                            // Normals
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::NORMAL_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![11 => Float32x3],
-                            },
-                            // Tangents
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::TANGENT_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![12 => Float32x4],
-                            },
-                            // UV
-                            wgpu::VertexBufferLayout {
-                                array_stride: MeshesManager::TEX_COORD_SIZE as _,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &wgpu::vertex_attr_array![13 => Float32x2],
-                            },
-                        ],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: "fs_main",
-                        targets: &[
-                            Some(wgpu::ColorTargetState {
-                                format: Self::ALBEDO_METALLIC_FORMAT,
-                                blend: None,
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }),
-                            Some(wgpu::ColorTargetState {
-                                format: Self::NORMAL_ROUGHNESS_FORMAT,
-                                blend: None,
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }),
-                        ],
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        cull_mode: Some(wgpu::Face::Back),
-                        ..Default::default()
-                    },
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: Renderer::DEPTH_FORMAT,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less,
-                        stencil: Default::default(),
-                        bias: Default::default(),
-                    }),
-                    multisample: Renderer::MULTISAMPLE_STATE,
-                })
-        };
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Geometry[render] render pipeline layout"),
+                    bind_group_layouts: &[
+                        &renderer.camera.bind_group_layout,
+                        &textures.bind_group_layout,
+                        &materials.bind_group_layout,
+                        &skins.bind_group_layout,
+                        &animations.bind_group_layout,
+                    ],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        stages: wgpu::ShaderStages::VERTEX,
+                        range: 0..(std::mem::size_of::<f32>() as _),
+                    }],
+                });
+
+        let pipeline = renderer
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Geometry[render] render pipeline"),
+                layout: Some(&pipeline_layout),
+                multiview: None,
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[
+                        GpuMeshInstance::LAYOUT,
+                        // Positions
+                        wgpu::VertexBufferLayout {
+                            array_stride: MeshesManager::VERTEX_SIZE as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![10 => Float32x3],
+                        },
+                        // Normals
+                        wgpu::VertexBufferLayout {
+                            array_stride: MeshesManager::NORMAL_SIZE as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![11 => Float32x3],
+                        },
+                        // Tangents
+                        wgpu::VertexBufferLayout {
+                            array_stride: MeshesManager::TANGENT_SIZE as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![12 => Float32x4],
+                        },
+                        // UV
+                        wgpu::VertexBufferLayout {
+                            array_stride: MeshesManager::TEX_COORD_SIZE as _,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![13 => Float32x2],
+                        },
+                    ],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: &[
+                        Some(wgpu::ColorTargetState {
+                            format: Self::ALBEDO_METALLIC_FORMAT,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
+                        Some(wgpu::ColorTargetState {
+                            format: Self::NORMAL_ROUGHNESS_FORMAT,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
+                    ],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Renderer::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Renderer::MULTISAMPLE_STATE,
+            });
 
         GeometryPass {
             albedo_metallic,
             normal_roughness,
+            cull_output,
 
-            render_pipeline,
+            pipeline,
         }
     }
 
@@ -214,6 +217,7 @@ impl GeometryPass {
             ctx.queue,
             &mut ctx.encoder,
             &(ctx.camera.proj * ctx.camera.view),
+            &self.cull_output,
         );
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -232,7 +236,7 @@ impl GeometryPass {
             }),
         });
 
-        rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_pipeline(&self.pipeline);
 
         rpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
         rpass.set_bind_group(1, &textures.bind_group, &[]);
@@ -240,7 +244,7 @@ impl GeometryPass {
         rpass.set_bind_group(3, &skins.bind_group, &[]);
         rpass.set_bind_group(4, &animations.bind_group, &[]);
 
-        rpass.set_vertex_buffer(0, instances.culled_instances.slice(..));
+        rpass.set_vertex_buffer(0, self.cull_output.instances.slice(..));
         rpass.set_vertex_buffer(1, meshes.vertices.slice(..));
         rpass.set_vertex_buffer(2, meshes.normals.slice(..));
         rpass.set_vertex_buffer(3, meshes.tangents.slice(..));
@@ -249,9 +253,9 @@ impl GeometryPass {
         rpass.set_index_buffer(meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 
         rpass.multi_draw_indexed_indirect_count(
-            &instances.indirect_draws,
+            &self.cull_output.indirects,
             std::mem::size_of::<u32>() as _,
-            &instances.indirect_draws,
+            &self.cull_output.indirects,
             0,
             MeshesManager::MAX_MESHES as _,
         );

@@ -56,10 +56,10 @@ var<storage, read> base_instances: array<u32>;
 var<storage, read> cull_instances: array<CullInstance>;
 var<push_constant> cull_instances_count: u32;
 
-@group(0) @binding(4)
+@group(1) @binding(0)
 var<storage, read_write> mesh_instances: array<MeshInstance>;
 
-@group(0) @binding(5)
+@group(1) @binding(1)
 var<storage, read_write> indirects: IndirectsBuffer;
 
 @compute @workgroup_size(32)
@@ -80,11 +80,14 @@ fn reset(@builtin(global_invocation_id) global_id: vec3<u32>) {
 fn plane_distance_to_point(plane: vec4<f32>, p: vec3<f32>) -> f32 {
     return dot(plane.xyz, p) + plane.w;
 }
-fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
+fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>, scale: vec3<f32>) -> bool {
     let p = transform * vec4<f32>(sphere.center, 1.0);
     let pos = p.xyz / p.w;
 
-    let neg_radius = -sphere.radius;
+
+    let max_scale = max(max(scale.x, scale.y), scale.z);
+    let neg_radius = -(sphere.radius * max_scale);
+
     return !(
         plane_distance_to_point(frustum[0], pos) < neg_radius ||
         plane_distance_to_point(frustum[1], pos) < neg_radius ||
@@ -95,17 +98,7 @@ fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
     );
 }
 
-fn mat_quat(m: mat4x4<f32>) -> vec4<f32> {
-    let inv_scale = 1.0 / vec3<f32>(
-        length(m[0].xyz) * sign(determinant(m)),
-        length(m[1].xyz),
-        length(m[2].xyz),
-    );
-
-    let x_axis = m[0].xyz * inv_scale.x;
-    let y_axis = m[1].xyz * inv_scale.y;
-    let z_axis = m[2].xyz * inv_scale.z;
-    
+fn axis_quat(x_axis: vec3<f32>, y_axis: vec3<f32>, z_axis: vec3<f32>) -> vec4<f32> {
     // Based on https://github.com/microsoft/DirectXMath `XM$quaternionRotationMatrix`
     if z_axis.z <= 0.0 {
         // x^2 + y^2 >= z^2 + w^2
@@ -170,18 +163,33 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let cull_instance = &cull_instances[cull_instance_index];
     let transform = &(*cull_instance).transform;
-    let mesh_info = &meshes_info[(*cull_instance).mesh_id];
+    let mesh_id = (*cull_instance).mesh_id;
+    let mesh_info = &meshes_info[mesh_id];
 
-    if !sphere_visible((*mesh_info).bounding_sphere, (*transform)) {
+    let det = determinant(*transform);
+    let scale = vec3<f32>(
+        length((*transform)[0].xyz) * sign(det),
+        length((*transform)[1].xyz),
+        length((*transform)[2].xyz),
+    );
+
+    if !sphere_visible((*mesh_info).bounding_sphere, (*transform), scale) {
         return;
     }
 
-    let draw = &indirects.draws[(*cull_instance).mesh_id];
+    let draw = &indirects.draws[mesh_id];
     let mesh_instance_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);
 
     let mesh_instance = &mesh_instances[mesh_instance_index];
     (*mesh_instance).transform = *transform;
-    (*mesh_instance).normal_quat = mat_quat(*transform);
+
+    let inv_scale = 1.0 / scale;
+    (*mesh_instance).normal_quat = axis_quat(
+        (*transform)[0].xyz * inv_scale.x,
+        (*transform)[1].xyz * inv_scale.y,
+        (*transform)[2].xyz * inv_scale.z,
+    );
+
     (*mesh_instance).material_id = (*cull_instance).material_id;
     (*mesh_instance).skin_offset = (*mesh_info).skin_offset;
     (*mesh_instance).animation = (*cull_instance).animation;
@@ -192,7 +200,16 @@ fn count(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mesh_id = global_id.x;
 
     let draw = &indirects.draws[mesh_id];
+
+    var draw_copy: DrawIndexedIndirect;
+    draw_copy.vertex_count = (*draw).vertex_count;
+    draw_copy.instance_count = (*draw).instance_count;
+    draw_copy.base_index = (*draw).base_index;
+    draw_copy.vertex_offset = (*draw).vertex_offset;
+    draw_copy.base_instance = (*draw).base_instance;
+
+
     if (*draw).instance_count > 0u {
-        indirects.draws[atomicAdd(&indirects.count, 1u)] = *draw;
+        indirects.draws[atomicAdd(&indirects.count, 1u)] = draw_copy;
     }
 }
