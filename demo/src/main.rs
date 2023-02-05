@@ -4,7 +4,7 @@ use anyhow::Result;
 use calva::{
     egui::{egui, EguiPass, EguiWinitPass},
     gltf::GltfModel,
-    renderer::{Engine, Renderer},
+    renderer::{DirectionalLight, Engine, Renderer},
 };
 use std::time::Instant;
 use winit::{
@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = window::WindowBuilder::new()
-        // .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
+        .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
         .build(&event_loop)?;
 
     let mut camera = camera::MyCamera::new(&window);
@@ -74,6 +74,11 @@ async fn main() -> Result<()> {
             .collect::<Vec<_>>(),
     );
 
+    let mut directional_light = DirectionalLight {
+        color: glam::vec4(1.0, 1.0, 1.0, 1.0),
+        direction: glam::vec3(-1.0, -1.0, -1.0),
+    };
+
     let mut render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -103,12 +108,34 @@ async fn main() -> Result<()> {
                         })
                         .show(ctx, |ui| {
                             EguiPass::engine_config_ui(&mut engine)(ui);
+
+                            egui::CollapsingHeader::new("Directional light")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    ui.columns(2, |columns| {
+                                        columns[0].add(
+                                            egui::Slider::new(
+                                                &mut directional_light.direction.x,
+                                                -1.0..=1.0,
+                                            )
+                                            .text("X"),
+                                        );
+                                        columns[1].add(
+                                            egui::Slider::new(
+                                                &mut directional_light.direction.z,
+                                                -1.0..=1.0,
+                                            )
+                                            .text("Z"),
+                                        );
+                                    });
+                                });
+
                             EguiPass::renderer_ui(&renderer)(ui);
                         });
                 });
 
                 let result = renderer.render(|ctx| {
-                    engine.render(ctx, dt);
+                    engine.render(ctx, dt, &directional_light);
                     egui.render(ctx, &window, egui_output);
                 });
 

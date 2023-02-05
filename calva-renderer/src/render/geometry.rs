@@ -104,10 +104,7 @@ impl GeometryPass {
                         &skins.bind_group_layout,
                         &animations.bind_group_layout,
                     ],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStages::VERTEX,
-                        range: 0..(std::mem::size_of::<f32>() as _),
-                    }],
+                    push_constant_ranges: &[],
                 });
 
         let pipeline = renderer

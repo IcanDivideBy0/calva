@@ -1,18 +1,18 @@
 use crate::{GeometryPass, RenderContext, Renderer};
 
-pub struct AmbientPass {
+pub struct AmbientLightPass {
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl AmbientPass {
+impl AmbientLightPass {
     pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
         let bind_group_layout =
             renderer
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Ambient bind group layout"),
+                    label: Some("AmbientLight bind group layout"),
                     entries: &[
                         // albedo
                         wgpu::BindGroupLayoutEntry {
@@ -28,17 +28,17 @@ impl AmbientPass {
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(&renderer.device, &bind_group_layout, geometry);
+        let bind_group = Self::make_bind_group(renderer, geometry, &bind_group_layout);
 
         let shader = renderer
             .device
-            .create_shader_module(wgpu::include_wgsl!("ambient.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("ambient_light.wgsl"));
 
         let pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Ambient pipeline layout"),
+                    label: Some("AmbientLight pipeline layout"),
                     bind_group_layouts: &[&bind_group_layout],
                     push_constant_ranges: &[wgpu::PushConstantRange {
                         stages: wgpu::ShaderStages::FRAGMENT,
@@ -49,7 +49,7 @@ impl AmbientPass {
         let pipeline = renderer
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Ambient pipeline"),
+                label: Some("AmbientLight pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -79,13 +79,12 @@ impl AmbientPass {
     }
 
     pub fn rebind(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
-        self.bind_group =
-            Self::make_bind_group(&renderer.device, &self.bind_group_layout, geometry);
+        self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
     }
 
     pub fn render(&self, ctx: &mut RenderContext, gamma: f32, factor: f32) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Ambient"),
+            label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.output.view,
                 resolve_target: ctx.output.resolve_target,
@@ -111,17 +110,19 @@ impl AmbientPass {
     }
 
     fn make_bind_group(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
+        renderer: &Renderer,
         geometry: &GeometryPass,
+        layout: &wgpu::BindGroupLayout,
     ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Ambient bind group"),
-            layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(geometry.albedo_metallic_view()),
-            }],
-        })
+        renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("AmbientLight bind group"),
+                layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(geometry.albedo_metallic_view()),
+                }],
+            })
     }
 }

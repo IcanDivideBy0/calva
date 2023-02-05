@@ -1,7 +1,8 @@
 use crate::{
-    AnimationsManager, GeometryPass, InstancesManager, LightingPass, LightsManager,
-    MaterialsManager, MeshesManager, RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass,
-    SsaoConfig, SsaoPass, TexturesManager,
+    AmbientLightPass, AnimationsManager, DirectionalLight, DirectionalLightPass, GeometryPass,
+    InstancesManager, LightsManager, MaterialsManager, MeshesManager, PointLightsPass,
+    RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SsaoConfig, SsaoPass,
+    TexturesManager,
 };
 
 pub struct EngineConfig {
@@ -32,7 +33,9 @@ pub struct Engine {
     pub lights: LightsManager,
 
     geometry: GeometryPass,
-    lighting: LightingPass,
+    ambient_light: AmbientLightPass,
+    directional_light: DirectionalLightPass,
+    point_lights: PointLightsPass,
     ssao: SsaoPass<640, 480>,
     skybox: SkyboxPass,
 
@@ -57,8 +60,11 @@ impl Engine {
             &animations,
             &instances,
         );
-        let lighting = LightingPass::new(&renderer, &geometry);
-        let ssao = SsaoPass::<640, 480>::new(&renderer, &geometry);
+        let ambient_light = AmbientLightPass::new(renderer, &geometry);
+        let directional_light =
+            DirectionalLightPass::new(renderer, &geometry, &skins, &animations, &instances);
+        let point_lights = PointLightsPass::new(renderer, &geometry);
+        let ssao = SsaoPass::new(&renderer, &geometry);
         let skybox = SkyboxPass::new(&renderer);
 
         Self {
@@ -71,7 +77,9 @@ impl Engine {
             lights,
 
             geometry,
-            lighting,
+            ambient_light,
+            directional_light,
+            point_lights,
             ssao,
             skybox,
 
@@ -85,11 +93,18 @@ impl Engine {
         }
 
         self.geometry.resize(&renderer);
-        self.lighting.rebind(&renderer, &self.geometry);
+        self.ambient_light.rebind(renderer, &self.geometry);
+        self.directional_light.rebind(renderer, &self.geometry);
+        self.point_lights.rebind(renderer, &self.geometry);
         self.ssao.rebind(&renderer, &self.geometry);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, dt: std::time::Duration) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        dt: std::time::Duration,
+        directional_light: &DirectionalLight,
+    ) {
         self.instances.anim(&mut ctx.encoder, &dt);
 
         self.geometry.render(
@@ -101,8 +116,19 @@ impl Engine {
             &self.animations,
             &self.instances,
         );
-        self.lighting
-            .render(ctx, self.config.gamma, self.config.ambient, &self.lights);
+        self.ambient_light
+            .render(ctx, self.config.gamma, self.config.ambient);
+        self.directional_light.render(
+            ctx,
+            &self.meshes,
+            &self.skins,
+            &self.animations,
+            &self.instances,
+            self.config.gamma,
+            directional_light,
+        );
+        self.point_lights
+            .render(ctx, self.config.gamma, &self.lights);
         self.ssao.render(ctx, &self.config.ssao);
 
         if let Some(skybox) = &self.config.skybox {

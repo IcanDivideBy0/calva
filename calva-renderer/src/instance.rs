@@ -87,7 +87,6 @@ impl Instance {
 }
 
 pub struct InstancesManager {
-    frustum: wgpu::Buffer,
     base_instances_data: Vec<u32>,
     base_instances: wgpu::Buffer,
 
@@ -110,13 +109,6 @@ impl InstancesManager {
     pub const MAX_INSTANCES: usize = 1_000_000;
 
     pub fn new(device: &wgpu::Device, meshes: &MeshesManager) -> Self {
-        let frustum = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("InstancesManager frustum data"),
-            size: Frustum::SIZE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         let base_instances_data = Vec::with_capacity(MeshesManager::MAX_MESHES);
         let base_instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager base instances"),
@@ -189,20 +181,9 @@ impl InstancesManager {
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("InstancesManager[cull] bind group layout"),
                     entries: &[
-                        // Frustum
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(Frustum::SIZE),
-                            },
-                            count: None,
-                        },
                         // Mesh data
                         wgpu::BindGroupLayoutEntry {
-                            binding: 1,
+                            binding: 0,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -213,7 +194,7 @@ impl InstancesManager {
                         },
                         // Base instances
                         wgpu::BindGroupLayoutEntry {
-                            binding: 2,
+                            binding: 1,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -226,7 +207,7 @@ impl InstancesManager {
                         },
                         // Cull instances
                         wgpu::BindGroupLayoutEntry {
-                            binding: 3,
+                            binding: 2,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -244,18 +225,14 @@ impl InstancesManager {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: frustum.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
                         resource: meshes.meshes_info.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 2,
+                        binding: 1,
                         resource: base_instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 3,
+                        binding: 2,
                         resource: instances.as_entire_binding(),
                     },
                 ],
@@ -265,9 +242,20 @@ impl InstancesManager {
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("InstancesManager[cull] output bind group layout"),
                     entries: &[
-                        // Meshes instances
+                        // Frustum
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: wgpu::BufferSize::new(Frustum::SIZE),
+                            },
+                            count: None,
+                        },
+                        // Meshes instances
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -278,7 +266,7 @@ impl InstancesManager {
                         },
                         // Indirect draws
                         wgpu::BindGroupLayoutEntry {
-                            binding: 1,
+                            binding: 2,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -333,8 +321,6 @@ impl InstancesManager {
         };
 
         Self {
-            frustum,
-
             base_instances_data,
             base_instances,
 
@@ -409,7 +395,7 @@ impl InstancesManager {
         cull_output: &CullOutput,
     ) {
         queue.write_buffer(
-            &self.frustum,
+            &cull_output.frustum,
             0,
             bytemuck::bytes_of(&Frustum::from(view_proj)),
         );
@@ -439,6 +425,13 @@ impl InstancesManager {
     }
 
     pub fn create_cull_output(&self, device: &wgpu::Device) -> CullOutput {
+        let frustum = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("InstancesManager frustum data"),
+            size: Frustum::SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager[cull] meshes instances"),
             size: (std::mem::size_of::<[GpuMeshInstance; Self::MAX_INSTANCES]>()) as _,
@@ -465,16 +458,21 @@ impl InstancesManager {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: instances.as_entire_binding(),
+                    resource: frustum.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: instances.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
                     resource: indirects.as_entire_binding(),
                 },
             ],
         });
 
         CullOutput {
+            frustum,
             instances,
             indirects,
             bind_group,
@@ -483,6 +481,7 @@ impl InstancesManager {
 }
 
 pub struct CullOutput {
+    pub frustum: wgpu::Buffer,
     pub instances: wgpu::Buffer,
     pub indirects: wgpu::Buffer,
 

@@ -1,11 +1,13 @@
-// mod ambient;
+mod ambient_light;
+mod directional_light;
 mod geometry;
-mod lighting;
+mod point_lights;
 mod skybox;
 mod ssao;
 
-// pub use ambient::*;
+pub use ambient_light::*;
+pub use directional_light::*;
 pub use geometry::*;
-pub use lighting::*;
+pub use point_lights::*;
 pub use skybox::*;
 pub use ssao::*;

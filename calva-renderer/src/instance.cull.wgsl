@@ -44,22 +44,22 @@ struct IndirectsBuffer {
 }
 
 @group(0) @binding(0)
-var<uniform> frustum: array<vec4<f32>, 6>;
-
-@group(0) @binding(1)
 var<storage, read> meshes_info: array<MeshInfo>;
 
-@group(0) @binding(2)
+@group(0) @binding(1)
 var<storage, read> base_instances: array<u32>;
 
-@group(0) @binding(3)
+@group(0) @binding(2)
 var<storage, read> cull_instances: array<CullInstance>;
 var<push_constant> cull_instances_count: u32;
 
 @group(1) @binding(0)
-var<storage, read_write> mesh_instances: array<MeshInstance>;
+var<uniform> frustum: array<vec4<f32>, 6>;
 
 @group(1) @binding(1)
+var<storage, read_write> mesh_instances: array<MeshInstance>;
+
+@group(1) @binding(2)
 var<storage, read_write> indirects: IndirectsBuffer;
 
 @compute @workgroup_size(32)
@@ -84,7 +84,7 @@ fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>, scale: vec
     let p = transform * vec4<f32>(sphere.center, 1.0);
     let pos = p.xyz / p.w;
 
-
+    let abs_scale = abs(scale);
     let max_scale = max(max(scale.x, scale.y), scale.z);
     let neg_radius = -(sphere.radius * max_scale);
 
@@ -207,7 +207,6 @@ fn count(@builtin(global_invocation_id) global_id: vec3<u32>) {
     draw_copy.base_index = (*draw).base_index;
     draw_copy.vertex_offset = (*draw).vertex_offset;
     draw_copy.base_instance = (*draw).base_instance;
-
 
     if (*draw).instance_count > 0u {
         indirects.draws[atomicAdd(&indirects.count, 1u)] = draw_copy;
