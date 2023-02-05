@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu, AnimationId, AnimationsManager, Engine, Instance, Material, MaterialId, MeshId,
-    PointLight, TextureId,
+    PointLight, Renderer, TextureId,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
@@ -19,34 +19,40 @@ pub struct GltfModel {
 }
 
 impl GltfModel {
-    pub fn from_path(engine: &mut Engine, path: &str) -> Result<Self> {
-        Self::from_reader(engine, &mut std::fs::File::open(path)?)
+    pub fn from_path(renderer: &Renderer, engine: &mut Engine, path: &str) -> Result<Self> {
+        Self::from_reader(renderer, engine, &mut std::fs::File::open(path)?)
     }
 
-    pub fn from_reader(engine: &mut Engine, reader: &mut dyn Read) -> Result<Self> {
+    pub fn from_reader(
+        renderer: &Renderer,
+        engine: &mut Engine,
+        reader: &mut dyn Read,
+    ) -> Result<Self> {
         let mut gltf_buffer = Vec::new();
         reader.read_to_end(&mut gltf_buffer)?;
 
         let (doc, buffers, images) = gltf::import_slice(&gltf_buffer)?;
 
-        Self::new(engine, &doc, &buffers, &images)
+        Self::new(renderer, engine, &doc, &buffers, &images)
     }
 
     pub fn new(
+        renderer: &Renderer,
         engine: &mut Engine,
         doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
         images: &[gltf::image::Data],
     ) -> Result<Self> {
-        let textures = Self::build_textures(engine, doc, images)?;
+        let textures = Self::build_textures(renderer, engine, doc, images)?;
 
-        let materials: Vec<MaterialId> = Self::build_materials(engine, doc, &textures)?;
+        let materials: Vec<MaterialId> = Self::build_materials(renderer, engine, doc, &textures)?;
 
-        let meshes = Self::build_meshes(engine, doc, buffers)?;
+        let meshes = Self::build_meshes(renderer, engine, doc, buffers)?;
 
         let nodes_transforms = Self::build_nodes_transforms(doc);
 
-        let skins_animations = Self::build_skin_animations(engine, doc, &nodes_transforms, buffers);
+        let skins_animations =
+            Self::build_skin_animations(renderer, engine, doc, &nodes_transforms, buffers);
 
         let instances: Vec<Instance> = doc
             .nodes()
@@ -117,6 +123,7 @@ impl GltfModel {
     }
 
     fn build_textures(
+        renderer: &Renderer,
         engine: &mut Engine,
         doc: &gltf::Document,
         images: &[gltf::image::Data],
@@ -166,9 +173,9 @@ impl GltfModel {
                     view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
                 };
 
-                let texture = engine.renderer.device.create_texture(&desc);
+                let texture = renderer.device.create_texture(&desc);
 
-                engine.renderer.queue.write_texture(
+                renderer.queue.write_texture(
                     texture.as_image_copy(),
                     &buf.to_rgba8(),
                     wgpu::ImageDataLayout {
@@ -180,21 +187,21 @@ impl GltfModel {
                 );
 
                 engine.textures.generate_mipmaps(
-                    &engine.renderer.device,
-                    &engine.renderer.queue,
+                    &renderer.device,
+                    &renderer.queue,
                     &texture,
                     &desc,
                 )?;
 
-                Ok(engine.textures.add(
-                    &engine.renderer.device,
-                    texture.create_view(&Default::default()),
-                ))
+                Ok(engine
+                    .textures
+                    .add(&renderer.device, texture.create_view(&Default::default())))
             })
             .collect()
     }
 
     fn build_materials(
+        renderer: &Renderer,
         engine: &mut Engine,
         doc: &gltf::Document,
         textures: &[TextureId],
@@ -219,7 +226,7 @@ impl GltfModel {
                     .unwrap_or_default();
 
                 Ok(engine.materials.add(
-                    &engine.renderer.queue,
+                    &renderer.queue,
                     Material {
                         albedo,
                         normal,
@@ -231,6 +238,7 @@ impl GltfModel {
     }
 
     fn build_meshes(
+        renderer: &Renderer,
         engine: &mut Engine,
         doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
@@ -299,11 +307,11 @@ impl GltfModel {
                             get_data(&gltf::Semantic::Weights(0)),
                         )
                         .map(|(joints, weights)| {
-                            engine.skins.add(&engine.renderer.queue, joints, weights)
+                            engine.skins.add(&renderer.queue, joints, weights)
                         });
 
                         let mesh = engine.meshes.add(
-                            &engine.renderer.queue,
+                            &renderer.queue,
                             bounding_sphere,
                             get_data_res(&gltf::Semantic::Positions)?,
                             get_data_res(&gltf::Semantic::Normals)?,
@@ -353,6 +361,7 @@ impl GltfModel {
     }
 
     fn build_skin_animations(
+        renderer: &Renderer,
         engine: &mut Engine,
         doc: &gltf::Document,
         nodes_transforms: &BTreeMap<usize, glam::Mat4>,
@@ -412,11 +421,9 @@ impl GltfModel {
                         time += Duration::from_secs_f32(1.0 / AnimationsManager::SAMPLES_PER_SEC);
                     }
 
-                    engine.animations.add(
-                        &engine.renderer.device,
-                        &engine.renderer.queue,
-                        animation,
-                    )
+                    engine
+                        .animations
+                        .add(&renderer.device, &renderer.queue, animation)
                 });
 
                 doc.animations()
@@ -427,7 +434,12 @@ impl GltfModel {
             .collect()
     }
 
-    pub fn instanciate(&self, engine: &mut Engine, instances: &[(glam::Mat4, Option<&str>)]) {
+    pub fn instanciate(
+        &self,
+        renderer: &Renderer,
+        engine: &mut Engine,
+        instances: &[(glam::Mat4, Option<&str>)],
+    ) {
         let instances: Vec<_> = instances
             .iter()
             .flat_map(|&(transform, animation)| {
@@ -447,10 +459,10 @@ impl GltfModel {
 
         engine
             .instances
-            .add(&engine.renderer.queue, &engine.meshes, &instances);
+            .add(&renderer.queue, &engine.meshes, &instances);
 
         engine
             .lights
-            .add_point_lights(&engine.renderer.queue, &self.point_lights);
+            .add_point_lights(&renderer.queue, &self.point_lights);
     }
 }

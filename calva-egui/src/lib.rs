@@ -1,6 +1,6 @@
 #![warn(clippy::all)]
 
-use renderer::{wgpu, AmbientConfig, Engine, ProfilerResult, RenderContext, Renderer, SsaoConfig};
+use renderer::{wgpu, Engine, ProfilerResult, RenderContext, Renderer, SsaoConfig};
 use thousands::Separable;
 
 #[cfg(feature = "winit")]
@@ -10,21 +10,21 @@ pub use egui;
 
 pub struct EguiPass {
     pub context: egui::Context,
-    renderer: egui_wgpu::Renderer,
+    egui_renderer: egui_wgpu::Renderer,
 }
 
 impl EguiPass {
-    pub fn new(engine: &Engine) -> Self {
-        let renderer = egui_wgpu::Renderer::new(
-            &engine.renderer.device,
-            engine.renderer.surface_config.format,
+    pub fn new(renderer: &Renderer) -> Self {
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &renderer.device,
+            renderer.surface_config.format,
             Some(Renderer::DEPTH_FORMAT),
             Renderer::MULTISAMPLE_STATE.count,
         );
 
         Self {
             context: Default::default(),
-            renderer,
+            egui_renderer,
         }
     }
 
@@ -41,11 +41,11 @@ impl EguiPass {
         let paint_jobs = &self.context.tessellate(shapes);
 
         for (texture_id, image_delta) in &textures_delta.set {
-            self.renderer
+            self.egui_renderer
                 .update_texture(ctx.device, ctx.queue, *texture_id, image_delta);
         }
         for texture_id in &textures_delta.free {
-            self.renderer.free_texture(texture_id);
+            self.egui_renderer.free_texture(texture_id);
         }
 
         let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
@@ -53,7 +53,7 @@ impl EguiPass {
             pixels_per_point: 1.0,
         };
 
-        self.renderer.update_buffers(
+        self.egui_renderer.update_buffers(
             ctx.device,
             ctx.queue,
             &mut ctx.encoder,
@@ -61,7 +61,7 @@ impl EguiPass {
             &screen_descriptor,
         );
 
-        self.renderer.render(
+        self.egui_renderer.render(
             &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -83,30 +83,15 @@ impl EguiPass {
         );
     }
 
-    pub fn engine_ui<'e: 'ui, 'ui>(engine: &'e mut Engine) -> impl FnOnce(&mut egui::Ui) + 'ui {
+    pub fn renderer_ui<'r: 'ui, 'ui>(renderer: &'r Renderer) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
             egui::CollapsingHeader::new("Adapter")
                 .default_open(true)
-                .show(ui, EguiPass::adapter_info_ui(&engine.renderer.adapter_info));
-
-            egui::CollapsingHeader::new("Gamma")
-                .default_open(true)
-                .show(ui, EguiPass::gamma_config_ui(&mut engine.config.gamma));
-
-            egui::CollapsingHeader::new("Ambient")
-                .default_open(true)
-                .show(ui, EguiPass::ambient_config_ui(&mut engine.config.ambient));
-
-            egui::CollapsingHeader::new("SSAO")
-                .default_open(true)
-                .show(ui, EguiPass::ssao_config_ui(&mut engine.config.ssao));
+                .show(ui, EguiPass::adapter_info_ui(&renderer.adapter_info));
 
             egui::CollapsingHeader::new("Profiler")
                 .default_open(true)
-                .show(
-                    ui,
-                    EguiPass::profiler_ui(&engine.renderer.profiler_results()),
-                );
+                .show(ui, EguiPass::profiler_ui(&renderer.profiler_results()));
         }
     }
 
@@ -164,6 +149,24 @@ impl EguiPass {
         }
     }
 
+    pub fn engine_config_ui<'e: 'ui, 'ui>(
+        engine: &'e mut Engine,
+    ) -> impl FnOnce(&mut egui::Ui) + 'ui {
+        move |ui| {
+            egui::CollapsingHeader::new("Gamma")
+                .default_open(true)
+                .show(ui, EguiPass::gamma_config_ui(&mut engine.config.gamma));
+
+            egui::CollapsingHeader::new("Ambient")
+                .default_open(true)
+                .show(ui, EguiPass::ambient_config_ui(&mut engine.config.ambient));
+
+            egui::CollapsingHeader::new("SSAO")
+                .default_open(true)
+                .show(ui, EguiPass::ssao_config_ui(&mut engine.config.ssao));
+        }
+    }
+
     pub fn gamma_config_ui<'cfg: 'ui, 'ui>(
         gamma: &'cfg mut f32,
     ) -> impl FnOnce(&mut egui::Ui) + 'ui {
@@ -173,10 +176,10 @@ impl EguiPass {
     }
 
     pub fn ambient_config_ui<'cfg: 'ui, 'ui>(
-        config: &'cfg mut AmbientConfig,
+        factor: &'cfg mut f32,
     ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
-            ui.add(egui::Slider::new(&mut config.factor, 0.0..=1.0).text("Factor"));
+            ui.add(egui::Slider::new(factor, 0.0..=1.0).text("Factor"));
         }
     }
 
@@ -198,9 +201,9 @@ pub struct EguiWinitPass {
 }
 
 impl EguiWinitPass {
-    pub fn new(engine: &Engine, event_loop: &EventLoop<()>) -> Self {
+    pub fn new(renderer: &Renderer, event_loop: &EventLoop<()>) -> Self {
         Self {
-            pass: EguiPass::new(engine),
+            pass: EguiPass::new(renderer),
             state: egui_winit::State::new(event_loop),
         }
     }

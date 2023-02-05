@@ -48,6 +48,10 @@ impl GeometryOutput {
     fn resolve_view(&self) -> &wgpu::TextureView {
         self.resolve_target.as_ref().unwrap_or(&self.view)
     }
+
+    fn size(&self) -> (u32, u32) {
+        (self.texture.width(), self.texture.height())
+    }
 }
 
 pub struct GeometryPass {
@@ -85,7 +89,7 @@ impl GeometryPass {
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry[render] shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/geometry.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("geometry.wgsl").into()),
             });
 
         let pipeline_layout =
@@ -194,6 +198,10 @@ impl GeometryPass {
     }
     pub fn normal_roughness_view(&self) -> &wgpu::TextureView {
         self.normal_roughness.resolve_view()
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        self.albedo_metallic.size()
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {

@@ -4,7 +4,7 @@ use anyhow::Result;
 use calva::{
     egui::{egui, EguiPass, EguiWinitPass},
     gltf::GltfModel,
-    renderer::Engine,
+    renderer::{Engine, Renderer},
 };
 use std::time::Instant;
 use winit::{
@@ -31,7 +31,9 @@ async fn main() -> Result<()> {
     )
     .inverse();
 
-    let mut engine = Engine::new(&window, window.inner_size().into()).await?;
+    let mut renderer = Renderer::new(&window, window.inner_size().into()).await?;
+    let mut engine = Engine::new(&renderer);
+
     engine.config.skybox = [
         "./demo/assets/sky/right.jpg",
         "./demo/assets/sky/left.jpg",
@@ -47,16 +49,17 @@ async fn main() -> Result<()> {
         Ok::<_, image::ImageError>(bytes)
     })
     .ok()
-    .map(|pixels| engine.create_skybox(&pixels));
+    .map(|pixels| engine.create_skybox(&renderer, &pixels));
 
-    let mut egui = EguiWinitPass::new(&engine, &event_loop);
+    let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
-    let dungeon = GltfModel::from_path(&mut engine, "./demo/assets/dungeon.glb")?;
-    dungeon.instanciate(&mut engine, &[(glam::Mat4::IDENTITY, None)]);
+    let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
+    dungeon.instanciate(&renderer, &mut engine, &[(glam::Mat4::IDENTITY, None)]);
 
-    let zombie = GltfModel::from_path(&mut engine, "./demo/assets/zombie.glb")?;
+    let zombie = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/zombie.glb")?;
     let zombie_anims = zombie.animations.keys().collect::<Vec<_>>();
     zombie.instanciate(
+        &renderer,
         &mut engine,
         &(0..60_000)
             .map(|i| {
@@ -77,14 +80,15 @@ async fn main() -> Result<()> {
             Event::RedrawRequested(_) => {
                 let size = window.inner_size().into();
                 camera.resize(size);
-                engine.resize(size);
+                renderer.resize(size);
+                engine.resize(&renderer);
 
                 let dt = render_time.elapsed();
                 render_time = Instant::now();
 
                 camera.controller.update(dt);
-                engine.renderer.camera.update(
-                    &engine.renderer.queue,
+                renderer.camera.update(
+                    &renderer.queue,
                     camera.controller.transform.inverse(),
                     camera.projection.into(),
                 );
@@ -98,11 +102,13 @@ async fn main() -> Result<()> {
                             ..Default::default()
                         })
                         .show(ctx, |ui| {
-                            EguiPass::engine_ui(&mut engine)(ui);
+                            EguiPass::engine_config_ui(&mut engine)(ui);
+                            EguiPass::renderer_ui(&renderer)(ui);
                         });
                 });
 
-                let result = engine.render(dt, |ctx| {
+                let result = renderer.render(|ctx| {
+                    engine.render(ctx, dt);
                     egui.render(ctx, &window, egui_output);
                 });
 

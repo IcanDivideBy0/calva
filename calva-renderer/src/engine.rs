@@ -1,15 +1,12 @@
-use anyhow::Result;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-
 use crate::{
-    AmbientConfig, AmbientPass, AnimationsManager, GeometryPass, InstancesManager, LightingPass,
-    LightsManager, MaterialsManager, MeshesManager, RenderContext, Renderer, SkinsManager, Skybox,
-    SkyboxPass, SsaoConfig, SsaoPass, TexturesManager,
+    AnimationsManager, GeometryPass, InstancesManager, LightingPass, LightsManager,
+    MaterialsManager, MeshesManager, RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass,
+    SsaoConfig, SsaoPass, TexturesManager,
 };
 
 pub struct EngineConfig {
     pub gamma: f32,
-    pub ambient: AmbientConfig,
+    pub ambient: f32,
     pub ssao: SsaoConfig,
     pub skybox: Option<Skybox>,
 }
@@ -18,7 +15,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             gamma: 2.2,
-            ambient: AmbientConfig::default(),
+            ambient: 0.1,
             ssao: SsaoConfig::default(),
             skybox: None,
         }
@@ -26,8 +23,6 @@ impl Default for EngineConfig {
 }
 
 pub struct Engine {
-    pub renderer: Renderer,
-
     pub textures: TexturesManager,
     pub materials: MaterialsManager,
     pub meshes: MeshesManager,
@@ -37,7 +32,6 @@ pub struct Engine {
     pub lights: LightsManager,
 
     geometry: GeometryPass,
-    ambient: AmbientPass,
     lighting: LightingPass,
     ssao: SsaoPass<640, 480>,
     skybox: SkyboxPass,
@@ -46,12 +40,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new<W>(window: &W, size: (u32, u32)) -> Result<Self>
-    where
-        W: HasRawWindowHandle + HasRawDisplayHandle,
-    {
-        let renderer = Renderer::new(&window, size).await?;
-
+    pub fn new(renderer: &Renderer) -> Self {
         let textures = TexturesManager::new(&renderer.device);
         let materials = MaterialsManager::new(&renderer.device);
         let meshes = MeshesManager::new(&renderer.device);
@@ -68,14 +57,11 @@ impl Engine {
             &animations,
             &instances,
         );
-        let ambient = AmbientPass::new(&renderer, &geometry);
         let lighting = LightingPass::new(&renderer, &geometry);
         let ssao = SsaoPass::<640, 480>::new(&renderer, &geometry);
         let skybox = SkyboxPass::new(&renderer);
 
-        Ok(Self {
-            renderer,
-
+        Self {
             textures,
             materials,
             meshes,
@@ -85,64 +71,46 @@ impl Engine {
             lights,
 
             geometry,
-            ambient,
             lighting,
             ssao,
             skybox,
 
             config: Default::default(),
-        })
+        }
     }
 
-    pub fn resize(&mut self, size: (u32, u32)) {
-        let s = (
-            self.renderer.surface_config.width,
-            self.renderer.surface_config.height,
-        );
-
-        if size == s {
+    pub fn resize(&mut self, renderer: &Renderer) {
+        if self.geometry.size() == renderer.size() {
             return;
         }
 
-        self.renderer.resize(size);
-        self.geometry.resize(&self.renderer);
-        self.ambient.resize(&self.renderer, &self.geometry);
-        self.lighting.resize(&self.renderer, &self.geometry);
-        self.ssao.resize(&self.renderer, &self.geometry);
+        self.geometry.resize(&renderer);
+        self.lighting.rebind(&renderer, &self.geometry);
+        self.ssao.rebind(&renderer, &self.geometry);
     }
 
-    pub fn render(
-        &self,
-        dt: std::time::Duration,
-        cb: impl FnOnce(&mut RenderContext),
-    ) -> Result<()> {
-        self.renderer.render(|ctx| {
-            self.instances.anim(&mut ctx.encoder, &dt);
+    pub fn render(&self, ctx: &mut RenderContext, dt: std::time::Duration) {
+        self.instances.anim(&mut ctx.encoder, &dt);
 
-            self.geometry.render(
-                ctx,
-                &self.textures,
-                &self.materials,
-                &self.meshes,
-                &self.skins,
-                &self.animations,
-                &self.instances,
-            );
-            self.ambient
-                .render(ctx, &self.config.ambient, self.config.gamma);
-            self.lighting.render(ctx, self.config.gamma, &self.lights);
-            self.ssao.render(ctx, &self.config.ssao);
+        self.geometry.render(
+            ctx,
+            &self.textures,
+            &self.materials,
+            &self.meshes,
+            &self.skins,
+            &self.animations,
+            &self.instances,
+        );
+        self.lighting
+            .render(ctx, self.config.gamma, self.config.ambient, &self.lights);
+        self.ssao.render(ctx, &self.config.ssao);
 
-            if let Some(skybox) = &self.config.skybox {
-                self.skybox.render(ctx, self.config.gamma, skybox);
-            }
-
-            cb(ctx);
-        })
+        if let Some(skybox) = &self.config.skybox {
+            self.skybox.render(ctx, self.config.gamma, skybox);
+        }
     }
 
-    pub fn create_skybox(&self, pixels: &[u8]) -> Skybox {
-        self.skybox
-            .create_skybox(&self.renderer.device, &self.renderer.queue, pixels)
+    pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {
+        self.skybox.create_skybox(renderer, pixels)
     }
 }

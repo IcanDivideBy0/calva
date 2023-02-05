@@ -128,7 +128,15 @@ impl Renderer {
         })
     }
 
+    pub fn size(&self) -> (u32, u32) {
+        (self.surface_config.width, self.surface_config.height)
+    }
+
     pub fn resize(&mut self, size: (u32, u32)) {
+        if size == self.size() {
+            return;
+        }
+
         self.surface_config.width = size.0;
         self.surface_config.height = size.1;
         self.surface.configure(&self.device, &self.surface_config);

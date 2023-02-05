@@ -59,7 +59,7 @@ impl SkyboxPass {
 
         let shader = renderer
             .device
-            .create_shader_module(wgpu::include_wgsl!("shaders/skybox.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("skybox.wgsl"));
 
         let pipeline = renderer
             .device
@@ -125,17 +125,13 @@ impl SkyboxPass {
         rpass.draw(0..3, 0..1);
     }
 
-    pub fn create_skybox(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        pixels: &[u8],
-    ) -> Skybox {
+    pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {
         let size = (pixels.len() as f32 / (4.0 * 6.0)).sqrt() as _;
 
-        let view = device
+        let view = renderer
+            .device
             .create_texture_with_data(
-                queue,
+                &renderer.queue,
                 &wgpu::TextureDescriptor {
                     label: Some("Skybox texture"),
                     size: wgpu::Extent3d {
@@ -159,20 +155,22 @@ impl SkyboxPass {
                 ..Default::default()
             });
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Skybox bind group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        let bind_group = renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Skybox bind group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
 
         Skybox { bind_group }
     }
