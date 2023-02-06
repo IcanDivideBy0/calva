@@ -14,6 +14,10 @@ pub struct PointLight {
 
 impl PointLight {
     pub(crate) const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
+
+    pub fn transform(&mut self, transform: glam::Mat4) {
+        self.position = (transform * self.position.extend(1.0)).truncate();
+    }
 }
 
 pub struct DirectionalLight {

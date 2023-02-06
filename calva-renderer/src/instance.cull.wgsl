@@ -200,15 +200,9 @@ fn count(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mesh_id = global_id.x;
 
     let draw = &indirects.draws[mesh_id];
-
-    var draw_copy: DrawIndexedIndirect;
-    draw_copy.vertex_count = (*draw).vertex_count;
-    draw_copy.instance_count = (*draw).instance_count;
-    draw_copy.base_index = (*draw).base_index;
-    draw_copy.vertex_offset = (*draw).vertex_offset;
-    draw_copy.base_instance = (*draw).base_instance;
+    let copy = *draw;
 
     if (*draw).instance_count > 0u {
-        indirects.draws[atomicAdd(&indirects.count, 1u)] = draw_copy;
+        indirects.draws[atomicAdd(&indirects.count, 1u)] = copy;
     }
 }

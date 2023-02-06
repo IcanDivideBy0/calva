@@ -54,7 +54,14 @@ async fn main() -> Result<()> {
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
     let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
-    dungeon.instanciate(&renderer, &mut engine, &[(glam::Mat4::IDENTITY, None)]);
+    dungeon.instanciate(
+        &renderer,
+        &mut engine,
+        &vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
+            .iter()
+            .map(|translation| (glam::Mat4::from_translation(*translation), None))
+            .collect::<Vec<_>>(),
+    );
 
     let zombie = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/zombie.glb")?;
     let zombie_anims = zombie.animations.keys().collect::<Vec<_>>();
@@ -63,13 +70,14 @@ async fn main() -> Result<()> {
         &mut engine,
         &(0..60_000)
             .map(|i| {
-                let x = 4.0 * (i % 100) as f32;
-                let z = 4.0 * (i / 100) as f32;
-                let transform = glam::Mat4::from_translation(glam::vec3(x, 0.0, z));
-
-                let anim = zombie_anims[i % zombie_anims.len()];
-
-                (transform, Some(anim.as_str()))
+                (
+                    glam::Mat4::from_translation(glam::vec3(
+                        4.0 * (i % 100) as f32,
+                        0.0,
+                        4.0 * (i / 100) as f32,
+                    )),
+                    Some(zombie_anims[i % zombie_anims.len()].as_str()),
+                )
             })
             .collect::<Vec<_>>(),
     );

@@ -327,12 +327,8 @@ impl DirectionalLightPass {
 
         let uniform = DirectionalLightUniform::new(ctx.camera, directional_light);
 
-        instances.cull(
-            ctx.queue,
-            &mut ctx.encoder,
-            &uniform.view_proj,
-            &self.cull_output,
-        );
+        self.cull_output.update(&ctx.queue, &uniform.view_proj);
+        instances.cull(&mut ctx.encoder, &self.cull_output);
 
         ctx.queue
             .write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));

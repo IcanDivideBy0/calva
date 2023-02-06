@@ -127,7 +127,7 @@ impl MeshesManager {
 
     #[allow(clippy::too_many_arguments)]
     pub fn add(
-        &mut self,
+        &self,
         queue: &wgpu::Queue,
         bounding_sphere: (glam::Vec3, f32),
         vertices: &[u8],

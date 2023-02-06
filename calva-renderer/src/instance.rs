@@ -1,4 +1,7 @@
-use crate::{AnimationState, MaterialId, MeshId, MeshInfo, MeshesManager, ProfilerCommandEncoder};
+use crate::{
+    AnimationId, AnimationState, MaterialId, MeshId, MeshInfo, MeshesManager,
+    ProfilerCommandEncoder,
+};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -84,6 +87,17 @@ pub struct Instance {
 }
 impl Instance {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
+
+    pub fn transform(&mut self, transform: glam::Mat4) {
+        self.transform = transform * self.transform;
+    }
+
+    pub fn animate(&mut self, animation: AnimationId) {
+        self.animation = AnimationState {
+            animation,
+            time: 0.0,
+        };
+    }
 }
 
 pub struct InstancesManager {
@@ -109,7 +123,7 @@ impl InstancesManager {
     pub const MAX_INSTANCES: usize = 1_000_000;
 
     pub fn new(device: &wgpu::Device, meshes: &MeshesManager) -> Self {
-        let base_instances_data = Vec::with_capacity(MeshesManager::MAX_MESHES);
+        let base_instances_data = vec![0; MeshesManager::MAX_MESHES];
         let base_instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager base instances"),
             size: std::mem::size_of::<[u32; MeshesManager::MAX_MESHES]>() as _,
@@ -336,44 +350,31 @@ impl InstancesManager {
         }
     }
 
-    pub fn add(&mut self, queue: &wgpu::Queue, meshes: &MeshesManager, instances: &[Instance]) {
-        if meshes.count() > self.base_instances_data.len() as _ {
-            self.base_instances_data
-                .resize(meshes.count() as _, self.instances_data.len() as _);
-        }
+    pub fn add(&mut self, queue: &wgpu::Queue, instances: &[Instance]) {
+        self.instances_data.extend(instances);
 
-        let mut min_base_instance: wgpu::BufferAddress =
-            self.base_instances_data.last().copied().unwrap_or_default() as _;
         let mut min_mesh_index: wgpu::BufferAddress = self.base_instances_data.len() as _;
-
         for instance in instances {
             let mesh_index: usize = instance.mesh.into();
-
-            let base_instance = self.base_instances_data[mesh_index];
-            self.instances_data.insert(base_instance as _, *instance);
 
             for base_instance in self.base_instances_data[(mesh_index + 1)..].iter_mut() {
                 *base_instance += 1;
             }
 
-            min_base_instance = min_base_instance.min(base_instance as _);
             min_mesh_index = min_mesh_index.min(mesh_index as _);
         }
 
+        let first_instance_index = self.instances_data.len() - instances.len();
         queue.write_buffer(
             &self.instances,
-            min_base_instance * Instance::SIZE,
-            bytemuck::cast_slice(&self.instances_data[(min_base_instance as _)..]),
+            first_instance_index as wgpu::BufferAddress * Instance::SIZE,
+            bytemuck::cast_slice(&self.instances_data[first_instance_index..]),
         );
         queue.write_buffer(
             &self.base_instances,
             min_mesh_index * std::mem::size_of::<u32>() as wgpu::BufferAddress,
             bytemuck::cast_slice(&self.base_instances_data[(min_mesh_index as _)..]),
         );
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Instance> {
-        self.instances_data.iter_mut()
     }
 
     pub fn anim(&self, encoder: &mut ProfilerCommandEncoder, dt: &std::time::Duration) {
@@ -387,19 +388,7 @@ impl InstancesManager {
         cpass.dispatch_workgroups(self.instances_data.len() as _, 1, 1);
     }
 
-    pub fn cull(
-        &self,
-        queue: &wgpu::Queue,
-        encoder: &mut ProfilerCommandEncoder,
-        view_proj: &glam::Mat4,
-        cull_output: &CullOutput,
-    ) {
-        queue.write_buffer(
-            &cull_output.frustum,
-            0,
-            bytemuck::bytes_of(&Frustum::from(view_proj)),
-        );
-
+    pub fn cull(&self, encoder: &mut ProfilerCommandEncoder, cull_output: &CullOutput) {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("InstancesManager[cull]"),
         });
@@ -486,4 +475,14 @@ pub struct CullOutput {
     pub indirects: wgpu::Buffer,
 
     bind_group: wgpu::BindGroup,
+}
+
+impl CullOutput {
+    pub fn update(&self, queue: &wgpu::Queue, view_proj: &glam::Mat4) {
+        queue.write_buffer(
+            &self.frustum,
+            0,
+            bytemuck::bytes_of(&Frustum::from(view_proj)),
+        );
+    }
 }

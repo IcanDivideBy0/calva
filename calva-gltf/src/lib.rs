@@ -440,29 +440,41 @@ impl GltfModel {
         engine: &mut Engine,
         instances: &[(glam::Mat4, Option<&str>)],
     ) {
-        let instances: Vec<_> = instances
-            .iter()
-            .flat_map(|&(transform, animation)| {
-                let mut instances = self.instances.clone();
-                for mut i in instances.iter_mut() {
-                    i.transform = transform * i.transform;
-                    i.animation = animation
-                        .and_then(|name| self.animations.get(name))
-                        .copied()
-                        .unwrap_or_default()
-                        .into();
-                }
+        engine.instances.add(
+            &renderer.queue,
+            &instances
+                .iter()
+                .flat_map(|&(transform, animation)| {
+                    let mut instances = self.instances.clone();
+                    for mut i in instances.iter_mut() {
+                        i.transform = transform * i.transform;
+                        i.animation = animation
+                            .and_then(|name| self.animations.get(name))
+                            .copied()
+                            .unwrap_or_default()
+                            .into();
+                    }
 
-                instances
-            })
-            .collect();
+                    instances
+                })
+                .collect::<Vec<_>>(),
+        );
 
-        engine
-            .instances
-            .add(&renderer.queue, &engine.meshes, &instances);
+        engine.lights.add_point_lights(
+            &renderer.queue,
+            &instances
+                .iter()
+                .flat_map(|&(transform, _)| {
+                    let mut point_lights = self.point_lights.clone();
 
-        engine
-            .lights
-            .add_point_lights(&renderer.queue, &self.point_lights);
+                    for mut point_light in point_lights.iter_mut() {
+                        point_light.position =
+                            (transform * point_light.position.extend(1.0)).truncate();
+                    }
+
+                    point_lights
+                })
+                .collect::<Vec<_>>(),
+        );
     }
 }
