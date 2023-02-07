@@ -26,6 +26,6 @@ pub use renderer::*;
 pub use skin::*;
 pub use texture::*;
 
-pub(crate) mod util {
+pub mod util {
     pub mod icosphere;
 }

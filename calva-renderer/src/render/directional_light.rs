@@ -467,37 +467,32 @@ impl DirectionalLightUniform {
         let light_dir = directional_light.direction.normalize();
         let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
-        #[rustfmt::skip]
-        const CAMERA_FRUSTRUM: [glam::Vec3; 8] = [
-            // near
-            glam::vec3(-1.0,  1.0, 0.0), // top left
-            glam::vec3( 1.0,  1.0, 0.0), // top right
-            glam::vec3(-1.0, -1.0, 0.0), // bottom left
-            glam::vec3( 1.0, -1.0, 0.0), // bottom right
-            // far
-            glam::vec3(-1.0,  1.0, 1.0), // top left
-            glam::vec3( 1.0,  1.0, 1.0), // top right
-            glam::vec3(-1.0, -1.0, 1.0), // bottom left
-            glam::vec3( 1.0, -1.0, 1.0), // bottom right
-        ];
+        // Frustum bounding sphere in view space
+        // https://lxjk.github.io/2017/04/15/Calculate-Minimal-Bounding-Sphere-of-Frustum.html
+        // https://stackoverflow.com/questions/2194812/finding-a-minimum-bounding-sphere-for-a-frustum
+        // https://stackoverflow.com/questions/56428880/how-to-extract-camera-parameters-from-projection-matrix
+        let znear = camera.proj.w_axis.z / (camera.proj.z_axis.z - 1.0);
+        let zfar = camera.proj.w_axis.z / (camera.proj.z_axis.z + 1.0);
 
-        let transform = light_view * (camera.proj * camera.view).inverse();
-        let corners = CAMERA_FRUSTRUM
-            .iter()
-            .map(|v| {
-                let v = transform * v.extend(1.0);
-                v.truncate() / v.w
-            })
-            .collect::<Vec<_>>();
+        let k = f32::sqrt(1.0 + (camera.proj.x_axis.x / camera.proj.y_axis.y).powi(2))
+            * camera.proj.x_axis.x.recip();
+        let k2 = k.powi(2);
 
-        // Frustrum center in world space
-        let mut center =
-            corners.iter().fold(glam::Vec3::ZERO, |acc, &v| acc + v) / corners.len() as f32;
+        let (mut center, mut radius) = if k2 >= (zfar - znear) / (zfar + znear) {
+            (glam::vec3(0.0, 0.0, -zfar), zfar * k)
+        } else {
+            (
+                glam::vec3(0.0, 0.0, -0.5 * (zfar + znear) * (1.0 + k2)),
+                0.5 * f32::sqrt(
+                    f32::powi(zfar - znear, 2)
+                        + 2.0 * (zfar.powi(2) + znear.powi(2)) * k2
+                        + f32::powi(zfar + znear, 2) * k.powi(4),
+                ),
+            )
+        };
 
-        // Radius of the camera frustrum slice bounding sphere
-        let mut radius = corners
-            .iter()
-            .fold(0.0_f32, |acc, &v| acc.max(v.distance(center)));
+        // Move sphere to light view space
+        center = (light_view * camera.view.inverse() * center.extend(1.0)).truncate();
 
         // Avoid shadow swimming:
         // Prevent small radius changes due to float precision

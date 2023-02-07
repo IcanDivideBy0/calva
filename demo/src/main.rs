@@ -90,6 +90,11 @@ async fn main() -> Result<()> {
     let mut render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         match event {
+            Event::MainEventsCleared => {
+                // RedrawRequested will only trigger once, unless we manually request it.
+                window.request_redraw();
+            }
+
             Event::RedrawRequested(_) => {
                 let size = window.inner_size().into();
                 camera.resize(size);
@@ -156,11 +161,6 @@ async fn main() -> Result<()> {
                     // All other errors (Outdated, Timeout) should be resolved by the next frame
                     Err(e) => eprintln!("{e:?}"),
                 }
-            }
-
-            Event::MainEventsCleared => {
-                // RedrawRequested will only trigger once, unless we manually request it.
-                window.request_redraw();
             }
 
             Event::WindowEvent { ref event, .. } => {

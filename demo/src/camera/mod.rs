@@ -4,8 +4,8 @@ use winit::{event::WindowEvent, window::Window};
 
 mod flying_camera;
 mod perspective;
-use flying_camera::*;
-use perspective::*;
+pub use flying_camera::*;
+pub use perspective::*;
 
 pub struct MyCamera {
     pub controller: FlyingCamera,
