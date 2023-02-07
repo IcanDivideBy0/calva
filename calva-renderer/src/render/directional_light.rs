@@ -313,6 +313,7 @@ impl DirectionalLightPass {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         ctx: &mut RenderContext,
@@ -327,7 +328,7 @@ impl DirectionalLightPass {
 
         let uniform = DirectionalLightUniform::new(ctx.camera, directional_light);
 
-        self.cull_output.update(&ctx.queue, &uniform.view_proj);
+        self.cull_output.update(ctx.queue, &uniform.view_proj);
         instances.cull(&mut ctx.encoder, &self.cull_output);
 
         ctx.queue
@@ -428,11 +429,11 @@ impl DirectionalLightPass {
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: wgpu::BindingResource::TextureView(&depth),
+                        resource: wgpu::BindingResource::TextureView(depth),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
+                        resource: wgpu::BindingResource::Sampler(sampler),
                     },
                 ],
             })

@@ -53,7 +53,7 @@ impl Engine {
         let lights = LightsManager::new(&renderer.device);
 
         let geometry = GeometryPass::new(
-            &renderer,
+            renderer,
             &textures,
             &materials,
             &skins,
@@ -64,8 +64,8 @@ impl Engine {
         let directional_light =
             DirectionalLightPass::new(renderer, &geometry, &skins, &animations, &instances);
         let point_lights = PointLightsPass::new(renderer, &geometry);
-        let ssao = SsaoPass::new(&renderer, &geometry);
-        let skybox = SkyboxPass::new(&renderer);
+        let ssao = SsaoPass::new(renderer, &geometry);
+        let skybox = SkyboxPass::new(renderer);
 
         Self {
             textures,
@@ -92,11 +92,11 @@ impl Engine {
             return;
         }
 
-        self.geometry.resize(&renderer);
+        self.geometry.resize(renderer);
         self.ambient_light.rebind(renderer, &self.geometry);
         self.directional_light.rebind(renderer, &self.geometry);
         self.point_lights.rebind(renderer, &self.geometry);
-        self.ssao.rebind(&renderer, &self.geometry);
+        self.ssao.rebind(renderer, &self.geometry);
     }
 
     pub fn render(
