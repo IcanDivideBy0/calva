@@ -219,8 +219,8 @@ impl GeometryPass {
         ctx.encoder.profile_start("Geometry");
 
         self.cull_output
-            .update(ctx.queue, &(ctx.camera.proj * ctx.camera.view));
-        instances.cull(&mut ctx.encoder, &self.cull_output);
+            .update(ctx.queue, ctx.camera.proj * ctx.camera.view);
+        instances.cull(&mut ctx.encoder, &self.cull_output, 0);
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),

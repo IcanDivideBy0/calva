@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = window::WindowBuilder::new()
-        .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
+        // .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
         .build(&event_loop)?;
 
     let mut camera = camera::MyCamera::new(&window);
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
     zombie.instanciate(
         &renderer,
         &mut engine,
-        &(0..60_000)
+        &(0..6_000)
             .map(|i| {
                 (
                     glam::Mat4::from_translation(glam::vec3(
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 
     let mut directional_light = DirectionalLight {
         color: glam::vec4(1.0, 1.0, 1.0, 1.0),
-        direction: glam::vec3(-1.0, -1.0, -1.0),
+        direction: glam::vec3(0.0, -1.0, 0.0001),
     };
 
     let mut render_time = Instant::now();

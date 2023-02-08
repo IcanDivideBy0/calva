@@ -22,6 +22,15 @@ struct CullInstance {
     material_id: u32,
     animation: AnimationState,
 }
+struct CullInstances {
+    count: u32,
+    instances: array<CullInstance>
+}
+
+struct CullInfo {
+    view_proj: mat4x4<f32>,
+    frustum: array<vec4<f32>, 6>,
+}
 
 struct MeshInstance {
     transform: mat4x4<f32>,
@@ -50,17 +59,18 @@ var<storage, read> meshes_info: array<MeshInfo>;
 var<storage, read> base_instances: array<u32>;
 
 @group(0) @binding(2)
-var<storage, read> cull_instances: array<CullInstance>;
-var<push_constant> cull_instances_count: u32;
+var<storage, read> cull_instances: CullInstances;
 
 @group(1) @binding(0)
-var<uniform> frustum: array<vec4<f32>, 6>;
+var<uniform> cull_info: CullInfo;
 
 @group(1) @binding(1)
 var<storage, read_write> mesh_instances: array<MeshInstance>;
 
 @group(1) @binding(2)
 var<storage, read_write> indirects: IndirectsBuffer;
+
+var<push_constant> MODE: u32;
 
 @compute @workgroup_size(32)
 fn reset(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -89,13 +99,25 @@ fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>, scale: vec
     let neg_radius = -(sphere.radius * max_scale);
 
     return !(
-        plane_distance_to_point(frustum[0], pos) < neg_radius ||
-        plane_distance_to_point(frustum[1], pos) < neg_radius ||
-        plane_distance_to_point(frustum[2], pos) < neg_radius ||
-        plane_distance_to_point(frustum[3], pos) < neg_radius ||
-        plane_distance_to_point(frustum[4], pos) < neg_radius ||
-        plane_distance_to_point(frustum[5], pos) < neg_radius
+        plane_distance_to_point(cull_info.frustum[0], pos) < neg_radius ||
+        plane_distance_to_point(cull_info.frustum[1], pos) < neg_radius ||
+        plane_distance_to_point(cull_info.frustum[2], pos) < neg_radius ||
+        plane_distance_to_point(cull_info.frustum[3], pos) < neg_radius ||
+        plane_distance_to_point(cull_info.frustum[4], pos) < neg_radius ||
+        plane_distance_to_point(cull_info.frustum[5], pos) < neg_radius
     );
+}
+
+fn shadow_sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
+    let mvp = cull_info.view_proj * transform;
+
+    let p = mvp * vec4<f32>(sphere.center, 1.0);
+    let pos = p.xyz / p.w;
+
+    let r = mvp * vec4<f32>(sphere.radius, 0.0, 0.0, 1.0);
+    let radius_view = length(r.xyz / r.w - pos);
+
+    return length(pos.xy) - radius_view < 1.0;
 }
 
 fn axis_quat(x_axis: vec3<f32>, y_axis: vec3<f32>, z_axis: vec3<f32>) -> vec4<f32> {
@@ -157,11 +179,11 @@ fn axis_quat(x_axis: vec3<f32>, y_axis: vec3<f32>, z_axis: vec3<f32>) -> vec4<f3
 fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let cull_instance_index = global_id.x;
 
-    if cull_instance_index >= cull_instances_count {
+    if cull_instance_index >= cull_instances.count {
         return;
     }
 
-    let cull_instance = &cull_instances[cull_instance_index];
+    let cull_instance = &cull_instances.instances[cull_instance_index];
     let transform = &(*cull_instance).transform;
     let mesh_id = (*cull_instance).mesh_id;
     let mesh_info = &meshes_info[mesh_id];
@@ -173,9 +195,17 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
         length((*transform)[2].xyz),
     );
 
-    if !sphere_visible((*mesh_info).bounding_sphere, (*transform), scale) {
-        return;
+    if MODE == 0u {
+        if !sphere_visible((*mesh_info).bounding_sphere, (*transform), scale) {
+            return;
+        }
     }
+    if MODE == 1u {
+        if !shadow_sphere_visible((*mesh_info).bounding_sphere, (*transform)) {
+            return;
+        }
+    }
+
 
     let draw = &indirects.draws[mesh_id];
     let mesh_instance_index = (*draw).base_instance + atomicAdd(&(*draw).instance_count, 1u);

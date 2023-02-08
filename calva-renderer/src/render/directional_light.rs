@@ -21,7 +21,7 @@ pub struct DirectionalLightPass {
 }
 
 impl DirectionalLightPass {
-    const SIZE: u32 = 2048;
+    const SIZE: u32 = 512;
     const TEXTURE_SIZE: wgpu::Extent3d = wgpu::Extent3d {
         width: Self::SIZE,
         height: Self::SIZE,
@@ -328,8 +328,8 @@ impl DirectionalLightPass {
 
         let uniform = DirectionalLightUniform::new(ctx.camera, directional_light);
 
-        self.cull_output.update(ctx.queue, &uniform.view_proj);
-        instances.cull(&mut ctx.encoder, &self.cull_output);
+        self.cull_output.update(ctx.queue, uniform.view_proj);
+        instances.cull(&mut ctx.encoder, &self.cull_output, 1);
 
         ctx.queue
             .write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));

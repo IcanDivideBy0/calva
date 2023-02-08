@@ -15,31 +15,36 @@ struct DrawIndexedIndirect {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct Frustum(pub [glam::Vec4; 6]);
+struct CullInfo {
+    view_proj: glam::Mat4,
+    frustum: [glam::Vec4; 6],
+}
 
-impl Frustum {
+impl CullInfo {
     const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
 }
 
-impl From<&glam::Mat4> for Frustum {
-    fn from(value: &glam::Mat4) -> Self {
+impl From<glam::Mat4> for CullInfo {
+    fn from(view_proj: glam::Mat4) -> Self {
         use glam::Vec4Swizzles;
 
-        let l = value.row(3) + value.row(0); // left
-        let r = value.row(3) - value.row(0); // right
-        let b = value.row(3) + value.row(1); // bottom
-        let t = value.row(3) - value.row(1); // top
-        let n = value.row(3) + value.row(2); // near
-        let f = value.row(3) - value.row(2); // far
+        let l = view_proj.row(3) + view_proj.row(0); // left
+        let r = view_proj.row(3) - view_proj.row(0); // right
+        let b = view_proj.row(3) + view_proj.row(1); // bottom
+        let t = view_proj.row(3) - view_proj.row(1); // top
+        let n = view_proj.row(3) + view_proj.row(2); // near
+        let f = view_proj.row(3) - view_proj.row(2); // far
 
-        Self([
+        let frustum = [
             l / l.xyz().length(),
             r / r.xyz().length(),
             b / b.xyz().length(),
             t / t.xyz().length(),
             n / n.xyz().length(),
             f / f.xyz().length(),
-        ])
+        ];
+
+        Self { view_proj, frustum }
     }
 }
 
@@ -134,7 +139,8 @@ impl InstancesManager {
         let instances_data = Vec::with_capacity(Self::MAX_INSTANCES);
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager instances"),
-            size: std::mem::size_of::<[Instance; Self::MAX_INSTANCES]>() as _,
+            size: (std::mem::size_of::<[u32; 4]>()
+                + std::mem::size_of::<[Instance; Self::MAX_INSTANCES]>()) as _,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::VERTEX,
@@ -146,14 +152,17 @@ impl InstancesManager {
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("InstancesManager[anim] bind group layout"),
                     entries: &[
-                        // Mesh instances
+                        // Cull instances
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: false },
                                 has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(Instance::SIZE),
+                                min_binding_size: wgpu::BufferSize::new(
+                                    std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
+                                        + Instance::SIZE,
+                                ),
                             },
                             count: None,
                         },
@@ -226,7 +235,10 @@ impl InstancesManager {
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: true },
                                 has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(Instance::SIZE),
+                                min_binding_size: wgpu::BufferSize::new(
+                                    std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
+                                        + Instance::SIZE,
+                                ),
                             },
                             count: None,
                         },
@@ -256,14 +268,14 @@ impl InstancesManager {
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("InstancesManager[cull] output bind group layout"),
                     entries: &[
-                        // Frustum
+                        // Cull info
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Uniform,
                                 has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(Frustum::SIZE),
+                                min_binding_size: wgpu::BufferSize::new(CullInfo::SIZE),
                             },
                             count: None,
                         },
@@ -365,9 +377,16 @@ impl InstancesManager {
         }
 
         let first_instance_index = self.instances_data.len() - instances.len();
+
         queue.write_buffer(
             &self.instances,
-            first_instance_index as wgpu::BufferAddress * Instance::SIZE,
+            0,
+            bytemuck::bytes_of(&(self.instances_data.len() as u32)),
+        );
+        queue.write_buffer(
+            &self.instances,
+            std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
+                + first_instance_index as wgpu::BufferAddress * Instance::SIZE,
             bytemuck::cast_slice(&self.instances_data[first_instance_index..]),
         );
         queue.write_buffer(
@@ -388,7 +407,7 @@ impl InstancesManager {
         cpass.dispatch_workgroups(self.instances_data.len() as _, 1, 1);
     }
 
-    pub fn cull(&self, encoder: &mut ProfilerCommandEncoder, cull_output: &CullOutput) {
+    pub fn cull(&self, encoder: &mut ProfilerCommandEncoder, cull_output: &CullOutput, mode: u32) {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("InstancesManager[cull]"),
         });
@@ -404,7 +423,7 @@ impl InstancesManager {
         cpass.set_pipeline(&self.cull_pipelines.1);
         cpass.set_bind_group(0, &self.cull_bind_group, &[]);
         cpass.set_bind_group(1, &cull_output.bind_group, &[]);
-        cpass.set_push_constants(0, bytemuck::bytes_of(&instances_count));
+        cpass.set_push_constants(0, bytemuck::bytes_of(&mode));
         cpass.dispatch_workgroups(instances_count, 1, 1);
 
         cpass.set_pipeline(&self.cull_pipelines.2);
@@ -414,9 +433,9 @@ impl InstancesManager {
     }
 
     pub fn create_cull_output(&self, device: &wgpu::Device) -> CullOutput {
-        let frustum = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("InstancesManager frustum data"),
-            size: Frustum::SIZE,
+        let cull_info = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("InstancesManager cull info"),
+            size: CullInfo::SIZE,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -447,7 +466,7 @@ impl InstancesManager {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: frustum.as_entire_binding(),
+                    resource: cull_info.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -461,7 +480,7 @@ impl InstancesManager {
         });
 
         CullOutput {
-            frustum,
+            cull_info,
             instances,
             indirects,
             bind_group,
@@ -470,7 +489,7 @@ impl InstancesManager {
 }
 
 pub struct CullOutput {
-    pub frustum: wgpu::Buffer,
+    pub cull_info: wgpu::Buffer,
     pub instances: wgpu::Buffer,
     pub indirects: wgpu::Buffer,
 
@@ -478,11 +497,11 @@ pub struct CullOutput {
 }
 
 impl CullOutput {
-    pub fn update(&self, queue: &wgpu::Queue, view_proj: &glam::Mat4) {
+    pub fn update(&self, queue: &wgpu::Queue, view_proj: glam::Mat4) {
         queue.write_buffer(
-            &self.frustum,
+            &self.cull_info,
             0,
-            bytemuck::bytes_of(&Frustum::from(view_proj)),
+            bytemuck::bytes_of(&CullInfo::from(view_proj)),
         );
     }
 }
