@@ -109,15 +109,15 @@ impl SkyboxPass {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skybox"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.output.view,
-                resolve_target: ctx.output.resolve_target,
+                view: ctx.view,
+                resolve_target: ctx.resolve_target,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.output.depth_stencil,
+                view: ctx.depth_stencil,
                 depth_ops: None,
                 stencil_ops: None,
             }),

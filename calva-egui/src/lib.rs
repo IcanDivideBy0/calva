@@ -12,6 +12,7 @@ pub use egui;
 pub struct EguiPass {
     pub context: egui::Context,
     paint_jobs: Vec<ClippedPrimitive>,
+    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
     egui_renderer: egui_wgpu::Renderer,
 }
 
@@ -24,9 +25,18 @@ impl EguiPass {
             Renderer::MULTISAMPLE_STATE.count,
         );
 
+        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [
+                renderer.surface_config.width,
+                renderer.surface_config.height,
+            ],
+            pixels_per_point: 1.0,
+        };
+
         Self {
             context: Default::default(),
             paint_jobs: vec![],
+            screen_descriptor,
             egui_renderer,
         }
     }
@@ -41,6 +51,14 @@ impl EguiPass {
         shapes: Vec<egui::epaint::ClippedShape>,
         textures_delta: egui::TexturesDelta,
     ) {
+        self.screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [
+                renderer.surface_config.width,
+                renderer.surface_config.height,
+            ],
+            pixels_per_point: 1.0,
+        };
+
         self.paint_jobs = self.context.tessellate(shapes);
 
         for (texture_id, image_delta) in &textures_delta.set {
@@ -61,13 +79,7 @@ impl EguiPass {
             &renderer.queue,
             &mut encoder,
             &self.paint_jobs,
-            &egui_wgpu::renderer::ScreenDescriptor {
-                size_in_pixels: [
-                    renderer.surface_config.width,
-                    renderer.surface_config.height,
-                ],
-                pixels_per_point: 1.0,
-            },
+            &self.screen_descriptor,
         );
         renderer.queue.submit(std::iter::once(encoder.finish()));
     }
@@ -77,24 +89,21 @@ impl EguiPass {
             &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: ctx.output.view,
-                    resolve_target: ctx.output.resolve_target,
+                    view: ctx.view,
+                    resolve_target: ctx.resolve_target,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: ctx.output.depth_stencil,
+                    view: ctx.depth_stencil,
                     depth_ops: None,
                     stencil_ops: None,
                 }),
             }),
             &self.paint_jobs,
-            &egui_wgpu::renderer::ScreenDescriptor {
-                size_in_pixels: [ctx.surface_config.width, ctx.surface_config.height],
-                pixels_per_point: 1.0,
-            },
+            &self.screen_descriptor,
         );
     }
 

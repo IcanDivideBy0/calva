@@ -257,7 +257,7 @@ impl PointLightsPass {
             label: Some("PointLights[stencil]"),
             color_attachments: &[],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.output.depth_stencil,
+                view: ctx.depth_stencil,
                 depth_ops: None,
                 stencil_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(0),
@@ -280,15 +280,15 @@ impl PointLightsPass {
         let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PointLights[lighting]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.output.view,
-                resolve_target: ctx.output.resolve_target,
+                view: ctx.view,
+                resolve_target: ctx.resolve_target,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.output.depth_stencil,
+                view: ctx.depth_stencil,
                 depth_ops: None,
                 stencil_ops: None,
             }),

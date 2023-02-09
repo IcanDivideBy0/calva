@@ -149,18 +149,15 @@ impl Renderer {
         profiler.begin_scope("RenderFrame", &mut encoder, &self.device);
 
         let mut context = RenderContext {
-            surface_config: &self.surface_config,
-            device: &self.device,
-            output: RenderOutput {
-                view: &self.msaa,
-                resolve_target: Some(&frame_view),
-                depth_stencil: &self.depth_stencil,
-            },
             encoder: ProfilerCommandEncoder {
                 device: &self.device,
                 encoder: &mut encoder,
                 profiler,
             },
+
+            view: &self.msaa,
+            resolve_target: Some(&frame_view),
+            depth_stencil: &self.depth_stencil,
         };
 
         cb(&mut context);
@@ -236,13 +233,8 @@ struct RendererProfiler {
 }
 
 pub struct RenderContext<'a> {
-    pub surface_config: &'a wgpu::SurfaceConfiguration,
-    pub device: &'a wgpu::Device,
-    pub output: RenderOutput<'a>,
     pub encoder: ProfilerCommandEncoder<'a>,
-}
 
-pub struct RenderOutput<'a> {
     pub view: &'a wgpu::TextureView,
     pub resolve_target: Option<&'a wgpu::TextureView>,
     pub depth_stencil: &'a wgpu::TextureView,

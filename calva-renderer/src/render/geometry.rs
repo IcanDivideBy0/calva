@@ -268,7 +268,7 @@ impl GeometryPass {
                 Some(self.normal_roughness.attachment()),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.output.depth_stencil,
+                view: ctx.depth_stencil,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,

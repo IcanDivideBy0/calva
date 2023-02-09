@@ -86,8 +86,8 @@ impl AmbientLightPass {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.output.view,
-                resolve_target: ctx.output.resolve_target,
+                view: ctx.view,
+                resolve_target: ctx.resolve_target,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,

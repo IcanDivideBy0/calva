@@ -105,15 +105,14 @@ fn plane_distance_to_point(plane: vec4<f32>, p: vec3<f32>) -> f32 {
 fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
     let center_world = transform * vec4<f32>(sphere.center, 1.0);
 
-    let p = directional_light.view_proj * center_world;
-    let pos = p.xyz / p.w;
+    let c = directional_light.view_proj * center_world;
+    let center_light_view = c.xyz;
 
-    // This is orthographic projection, so we can project radius into clip space
-    // to measure its length
+    // This is orthographic projection, so we can project radius into clip space to measure its length
     let r = directional_light.view_proj * transform * vec4<f32>(sphere.radius, 0.0, 0.0, 1.0);
-    let radius_view = length(r.xyz / r.w - pos);
+    let radius_light_view = length(r.xyz - center_light_view);
 
-    if length(pos.xy) - radius_view > 1.0 {
+    if length(center_light_view.xy) - radius_light_view > 1.0 {
         return false;
     }
 
