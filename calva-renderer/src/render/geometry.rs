@@ -91,6 +91,7 @@ impl GeometryOutput {
 
 pub struct GeometryPass {
     cull: GeometryCull,
+    hiz: GeometryHiZ,
 
     albedo_metallic: GeometryOutput,
     normal_roughness: GeometryOutput,
@@ -121,6 +122,7 @@ impl GeometryPass {
         instances: &InstancesManager,
     ) -> Self {
         let cull = GeometryCull::new(renderer, camera, meshes, instances);
+        let hiz = GeometryHiZ::new(renderer);
 
         let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
 
@@ -215,6 +217,7 @@ impl GeometryPass {
 
         GeometryPass {
             cull,
+            hiz,
 
             albedo_metallic,
             normal_roughness,
@@ -302,6 +305,8 @@ impl GeometryPass {
         );
 
         drop(rpass);
+
+        self.hiz.hiz(ctx);
 
         ctx.encoder.profile_end();
     }
@@ -583,6 +588,167 @@ mod cull {
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &self.bind_group, &[]);
             cpass.dispatch_workgroups(meshes_count, 1, 1);
+        }
+    }
+}
+
+use hiz::*;
+mod hiz {
+    use crate::{RenderContext, Renderer};
+
+    pub struct GeometryHiZ {
+        bind_group: wgpu::BindGroup,
+        pipeline: wgpu::ComputePipeline,
+    }
+
+    impl GeometryHiZ {
+        pub fn new(renderer: &Renderer) -> Self {
+            let depth = renderer
+                .device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Geometry[hi-z] depth"),
+                    size: wgpu::Extent3d {
+                        width: 256,
+                        height: 256,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Depth32Float,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[wgpu::TextureFormat::Depth32Float],
+                })
+                .create_view(&Default::default());
+
+            let output = renderer
+                .device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Geometry[hi-z] output"),
+                    size: wgpu::Extent3d {
+                        width: 256,
+                        height: 256,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::R32Float,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::STORAGE_BINDING,
+                    view_formats: &[wgpu::TextureFormat::R32Float],
+                })
+                .create_view(&Default::default());
+
+            let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("Geometry[hi-z] sampler"),
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+
+            let bind_group_layout =
+                renderer
+                    .device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("Geometry[hi-z] bind group layout"),
+                        entries: &[
+                            // Depth input
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Texture {
+                                    sample_type: wgpu::TextureSampleType::Depth,
+                                    view_dimension: wgpu::TextureViewDimension::D2,
+                                    multisampled: false,
+                                },
+                                count: None,
+                            },
+                            // Sampler
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                                count: None,
+                            },
+                            // Output
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 2,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::StorageTexture {
+                                    access: wgpu::StorageTextureAccess::WriteOnly,
+                                    format: wgpu::TextureFormat::R32Float,
+                                    view_dimension: wgpu::TextureViewDimension::D2,
+                                },
+                                count: None,
+                            },
+                        ],
+                    });
+
+            let bind_group = renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Geometry[hi-z] bind group"),
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&depth),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&output),
+                        },
+                    ],
+                });
+
+            let shader = renderer
+                .device
+                .create_shader_module(wgpu::include_wgsl!("geometry.hi-z.wgsl"));
+
+            let pipeline_layout =
+                renderer
+                    .device
+                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("Geometry[hi-z] pipeline layout"),
+                        bind_group_layouts: &[&bind_group_layout],
+                        push_constant_ranges: &[wgpu::PushConstantRange {
+                            stages: wgpu::ShaderStages::COMPUTE,
+                            range: 0..(std::mem::size_of::<f32>() as _),
+                        }],
+                    });
+
+            let pipeline =
+                renderer
+                    .device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Geometry[hi-z] pipeline"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: "main",
+                    });
+
+            Self {
+                bind_group,
+                pipeline,
+            }
+        }
+
+        pub fn hiz(&self, ctx: &mut RenderContext) {
+            let mut cpass = ctx
+                .encoder
+                .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Geometry[hi-z]"),
+                });
+
+            cpass.set_pipeline(&self.pipeline);
+            cpass.set_bind_group(0, &self.bind_group, &[]);
+            cpass.dispatch_workgroups(256, 256, 1);
         }
     }
 }
