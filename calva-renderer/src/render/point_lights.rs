@@ -1,7 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    util::icosphere::Icosphere, GeometryPass, LightsManager, PointLight, RenderContext, Renderer,
+    util::icosphere::Icosphere, CameraManager, GeometryPass, LightsManager, PointLight,
+    RenderContext, Renderer,
 };
 
 pub struct PointLightsPass {
@@ -17,7 +18,7 @@ pub struct PointLightsPass {
 }
 
 impl PointLightsPass {
-    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+    pub fn new(renderer: &Renderer, camera: &CameraManager, geometry: &GeometryPass) -> Self {
         let icosphere = Icosphere::new(1);
 
         let vertices = renderer
@@ -65,7 +66,7 @@ impl PointLightsPass {
                     .device
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("PointLights[stencil] pipeline layout"),
-                        bind_group_layouts: &[&renderer.camera.bind_group_layout],
+                        bind_group_layouts: &[&camera.bind_group_layout],
                         push_constant_ranges: &[],
                     });
 
@@ -158,10 +159,7 @@ impl PointLightsPass {
                     .device
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("PointLights[lighting] pipeline layout"),
-                        bind_group_layouts: &[
-                            &renderer.camera.bind_group_layout,
-                            &bind_group_layout,
-                        ],
+                        bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
                         push_constant_ranges: &[wgpu::PushConstantRange {
                             stages: wgpu::ShaderStages::FRAGMENT,
                             range: 0..(std::mem::size_of::<f32>() as _),
@@ -246,7 +244,13 @@ impl PointLightsPass {
         self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, gamma: f32, lights: &LightsManager) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        camera: &CameraManager,
+        gamma: f32,
+        lights: &LightsManager,
+    ) {
         ctx.encoder.profile_start("PointLights");
 
         let mut stencil_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -263,7 +267,7 @@ impl PointLightsPass {
         });
 
         stencil_pass.set_pipeline(&self.stencil_pipeline);
-        stencil_pass.set_bind_group(0, &ctx.camera.bind_group, &[]);
+        stencil_pass.set_bind_group(0, &camera.bind_group, &[]);
 
         stencil_pass.set_vertex_buffer(0, lights.point_lights.slice(..));
         stencil_pass.set_vertex_buffer(1, self.vertices.slice(..));
@@ -291,7 +295,7 @@ impl PointLightsPass {
         });
 
         lighting_pass.set_pipeline(&self.lighting_pipeline);
-        lighting_pass.set_bind_group(0, &ctx.camera.bind_group, &[]);
+        lighting_pass.set_bind_group(0, &camera.bind_group, &[]);
         lighting_pass.set_bind_group(1, &self.bind_group, &[]);
         lighting_pass.set_push_constants(
             wgpu::ShaderStages::FRAGMENT,

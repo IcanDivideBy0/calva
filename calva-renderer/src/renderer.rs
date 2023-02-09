@@ -3,8 +3,6 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::cell::{Ref, RefCell};
 use wgpu_profiler::{GpuProfiler, GpuTimerScopeResult};
 
-use crate::CameraManager;
-
 pub struct Renderer {
     pub adapter: wgpu::Adapter,
     pub adapter_info: wgpu::AdapterInfo,
@@ -16,8 +14,6 @@ pub struct Renderer {
     pub msaa: wgpu::TextureView,
     pub depth: wgpu::TextureView,
     pub depth_stencil: wgpu::TextureView,
-
-    pub camera: CameraManager,
 
     profiler: RefCell<RendererProfiler>,
 }
@@ -101,8 +97,6 @@ impl Renderer {
 
         let (msaa, depth, depth_stencil) = Self::make_textures(&device, &surface_config);
 
-        let camera = CameraManager::new(&device);
-
         let mut profiler = GpuProfiler::new(4, queue.get_timestamp_period(), device.features());
         profiler.enable_debug_marker = false;
         let profiler = RefCell::new(RendererProfiler {
@@ -121,8 +115,6 @@ impl Renderer {
             msaa,
             depth,
             depth_stencil,
-
-            camera,
 
             profiler,
         })
@@ -159,8 +151,6 @@ impl Renderer {
         let mut context = RenderContext {
             surface_config: &self.surface_config,
             device: &self.device,
-            queue: &self.queue,
-            camera: &self.camera,
             output: RenderOutput {
                 view: &self.msaa,
                 resolve_target: Some(&frame_view),
@@ -248,8 +238,6 @@ struct RendererProfiler {
 pub struct RenderContext<'a> {
     pub surface_config: &'a wgpu::SurfaceConfiguration,
     pub device: &'a wgpu::Device,
-    pub queue: &'a wgpu::Queue,
-    pub camera: &'a CameraManager,
     pub output: RenderOutput<'a>,
     pub encoder: ProfilerCommandEncoder<'a>,
 }

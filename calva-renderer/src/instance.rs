@@ -1,86 +1,6 @@
 use crate::{
-    AnimationId, AnimationState, MaterialId, MeshId, MeshInfo, MeshesManager,
-    ProfilerCommandEncoder,
+    AnimationId, AnimationState, MaterialId, MeshId, MeshesManager, ProfilerCommandEncoder,
 };
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct DrawIndexedIndirect {
-    vertex_count: u32,
-    instance_count: u32,
-    base_index: u32,
-    vertex_offset: i32,
-    base_instance: u32,
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct CullInfo {
-    view_proj: glam::Mat4,
-    frustum: [glam::Vec4; 6],
-}
-
-impl CullInfo {
-    const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
-}
-
-impl From<glam::Mat4> for CullInfo {
-    fn from(view_proj: glam::Mat4) -> Self {
-        use glam::Vec4Swizzles;
-
-        let l = view_proj.row(3) + view_proj.row(0); // left
-        let r = view_proj.row(3) - view_proj.row(0); // right
-        let b = view_proj.row(3) + view_proj.row(1); // bottom
-        let t = view_proj.row(3) - view_proj.row(1); // top
-        let n = view_proj.row(3) + view_proj.row(2); // near
-        let f = view_proj.row(3) - view_proj.row(2); // far
-
-        let frustum = [
-            l / l.xyz().length(),
-            r / r.xyz().length(),
-            b / b.xyz().length(),
-            t / t.xyz().length(),
-            n / n.xyz().length(),
-            f / f.xyz().length(),
-        ];
-
-        Self { view_proj, frustum }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct GpuMeshInstance {
-    _model_matrix: [f32; 16],
-    _normal_quat: [f32; 4],
-    _material: MaterialId,
-    _skin_offset: i32,
-    _animation: AnimationState,
-}
-impl GpuMeshInstance {
-    pub(crate) const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
-
-    pub(crate) const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        array_stride: Self::SIZE,
-        step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &wgpu::vertex_attr_array![
-            // Model matrix
-            0 => Float32x4,
-            1 => Float32x4,
-            2 => Float32x4,
-            3 => Float32x4,
-            // Normal quat
-            4 => Float32x4,
-            // Material
-            5 => Uint32,
-
-            // Skinning
-            6 => Sint32, // Skin offset
-            7 => Uint32, // Animation ID
-            8 => Float32, // Animation time
-        ],
-    };
-}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -107,27 +27,19 @@ impl Instance {
 
 pub struct InstancesManager {
     base_instances_data: Vec<u32>,
-    base_instances: wgpu::Buffer,
+    pub(crate) base_instances: wgpu::Buffer,
 
     instances_data: Vec<Instance>,
-    instances: wgpu::Buffer,
+    pub(crate) instances: wgpu::Buffer,
 
     anim_bind_group: wgpu::BindGroup,
     anim_pipeline: wgpu::ComputePipeline,
-
-    cull_output_bind_group_layout: wgpu::BindGroupLayout,
-    cull_bind_group: wgpu::BindGroup,
-    cull_pipelines: (
-        wgpu::ComputePipeline, // reset
-        wgpu::ComputePipeline, // cull
-        wgpu::ComputePipeline, // count
-    ),
 }
 
 impl InstancesManager {
     pub const MAX_INSTANCES: usize = 1_000_000;
 
-    pub fn new(device: &wgpu::Device, meshes: &MeshesManager) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
         let base_instances_data = vec![0; MeshesManager::MAX_MESHES];
         let base_instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("InstancesManager base instances"),
@@ -199,153 +111,6 @@ impl InstancesManager {
             (bind_group, pipeline)
         };
 
-        let (cull_output_bind_group_layout, cull_bind_group, cull_pipelines) = {
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("InstancesManager[cull] bind group layout"),
-                    entries: &[
-                        // Mesh data
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(MeshInfo::SIZE),
-                            },
-                            count: None,
-                        },
-                        // Base instances
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(
-                                    std::mem::size_of::<u32>() as _
-                                ),
-                            },
-                            count: None,
-                        },
-                        // Cull instances
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(
-                                    std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                        + Instance::SIZE,
-                                ),
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("InstancesManager[cull] bind group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: meshes.meshes_info.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: base_instances.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: instances.as_entire_binding(),
-                    },
-                ],
-            });
-
-            let output_bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("InstancesManager[cull] output bind group layout"),
-                    entries: &[
-                        // Cull info
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(CullInfo::SIZE),
-                            },
-                            count: None,
-                        },
-                        // Meshes instances
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(GpuMeshInstance::SIZE),
-                            },
-                            count: None,
-                        },
-                        // Indirect draws
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(
-                                    std::mem::size_of::<u32>() as u64
-                                        + std::mem::size_of::<DrawIndexedIndirect>() as u64,
-                                ),
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-            let shader = device.create_shader_module(wgpu::include_wgsl!("instance.cull.wgsl"));
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("InstancesManager[cull] pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout, &output_bind_group_layout],
-                push_constant_ranges: &[wgpu::PushConstantRange {
-                    stages: wgpu::ShaderStages::COMPUTE,
-                    range: 0..(std::mem::size_of::<u32>() as _),
-                }],
-            });
-
-            let reset_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("InstancesManager[cull] reset pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "reset",
-            });
-
-            let cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("InstancesManager[cull] cull pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "cull",
-            });
-
-            let count_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("InstancesManager[cull] count pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "count",
-            });
-
-            (
-                output_bind_group_layout,
-                bind_group,
-                (reset_pipeline, cull_pipeline, count_pipeline),
-            )
-        };
-
         Self {
             base_instances_data,
             base_instances,
@@ -355,10 +120,6 @@ impl InstancesManager {
 
             anim_bind_group,
             anim_pipeline,
-
-            cull_output_bind_group_layout,
-            cull_bind_group,
-            cull_pipelines,
         }
     }
 
@@ -396,6 +157,10 @@ impl InstancesManager {
         );
     }
 
+    pub fn count(&self) -> u32 {
+        self.instances_data.len() as _
+    }
+
     pub fn anim(&self, encoder: &mut ProfilerCommandEncoder, dt: &std::time::Duration) {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("InstancesManager[anim]"),
@@ -405,103 +170,5 @@ impl InstancesManager {
         cpass.set_bind_group(0, &self.anim_bind_group, &[]);
         cpass.set_push_constants(0, bytemuck::bytes_of(&dt.as_secs_f32()));
         cpass.dispatch_workgroups(self.instances_data.len() as _, 1, 1);
-    }
-
-    pub fn cull(&self, encoder: &mut ProfilerCommandEncoder, cull_output: &CullOutput, mode: u32) {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("InstancesManager[cull]"),
-        });
-
-        let meshes_count: u32 = self.base_instances_data.len() as _;
-        let instances_count: u32 = self.instances_data.len() as _;
-
-        cpass.set_pipeline(&self.cull_pipelines.0);
-        cpass.set_bind_group(0, &self.cull_bind_group, &[]);
-        cpass.set_bind_group(1, &cull_output.bind_group, &[]);
-        cpass.dispatch_workgroups(meshes_count, 1, 1);
-
-        cpass.set_pipeline(&self.cull_pipelines.1);
-        cpass.set_bind_group(0, &self.cull_bind_group, &[]);
-        cpass.set_bind_group(1, &cull_output.bind_group, &[]);
-        cpass.set_push_constants(0, bytemuck::bytes_of(&mode));
-        cpass.dispatch_workgroups(instances_count, 1, 1);
-
-        cpass.set_pipeline(&self.cull_pipelines.2);
-        cpass.set_bind_group(0, &self.cull_bind_group, &[]);
-        cpass.set_bind_group(1, &cull_output.bind_group, &[]);
-        cpass.dispatch_workgroups(meshes_count, 1, 1);
-    }
-
-    pub fn create_cull_output(&self, device: &wgpu::Device) -> CullOutput {
-        let cull_info = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("InstancesManager cull info"),
-            size: CullInfo::SIZE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("InstancesManager[cull] meshes instances"),
-            size: (std::mem::size_of::<[GpuMeshInstance; Self::MAX_INSTANCES]>()) as _,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: false,
-        });
-
-        let indirects = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("InstancesManager[cull] indirect draws"),
-            size: (std::mem::size_of::<u32>()
-                + std::mem::size_of::<[DrawIndexedIndirect; MeshesManager::MAX_MESHES]>())
-                as _,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::INDIRECT,
-            mapped_at_creation: false,
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("InstancesManager[cull] output bind group"),
-            layout: &self.cull_output_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: cull_info.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: instances.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: indirects.as_entire_binding(),
-                },
-            ],
-        });
-
-        CullOutput {
-            cull_info,
-            instances,
-            indirects,
-            bind_group,
-        }
-    }
-}
-
-pub struct CullOutput {
-    pub cull_info: wgpu::Buffer,
-    pub instances: wgpu::Buffer,
-    pub indirects: wgpu::Buffer,
-
-    bind_group: wgpu::BindGroup,
-}
-
-impl CullOutput {
-    pub fn update(&self, queue: &wgpu::Queue, view_proj: glam::Mat4) {
-        queue.write_buffer(
-            &self.cull_info,
-            0,
-            bytemuck::bytes_of(&CullInfo::from(view_proj)),
-        );
     }
 }

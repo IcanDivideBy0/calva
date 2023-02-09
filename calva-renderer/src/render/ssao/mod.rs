@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{GeometryPass, RenderContext, Renderer};
+use crate::{CameraManager, GeometryPass, RenderContext, Renderer};
 
 mod blit;
 mod blur;
@@ -96,7 +96,7 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 
-    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+    pub fn new(renderer: &Renderer, camera: &CameraManager, geometry: &GeometryPass) -> Self {
         let config_buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Ssao config buffer"),
             size: SsaoConfig::SIZE,
@@ -193,7 +193,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Ssao pipeline layout"),
-                    bind_group_layouts: &[&renderer.camera.bind_group_layout, &bind_group_layout],
+                    bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
                     push_constant_ranges: &[],
                 });
 
@@ -258,15 +258,14 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         );
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, config: &SsaoConfig) {
-        if config.radius == 0.0 || config.power == 0.0 {
-            return;
-        }
-
-        ctx.encoder.profile_start("Ssao");
-
-        ctx.queue
+    pub fn update(&self, renderer: &Renderer, config: &SsaoConfig) {
+        renderer
+            .queue
             .write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(config));
+    }
+
+    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+        ctx.encoder.profile_start("Ssao");
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ssao[render]"),
@@ -282,7 +281,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         });
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
+        rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);

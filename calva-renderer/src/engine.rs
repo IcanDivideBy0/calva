@@ -1,8 +1,8 @@
 use crate::{
-    AmbientLightPass, AnimationsManager, DirectionalLight, DirectionalLightPass, GeometryPass,
-    InstancesManager, LightsManager, MaterialsManager, MeshesManager, PointLightsPass,
-    RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SsaoConfig, SsaoPass,
-    TexturesManager,
+    AmbientLightPass, AnimationsManager, CameraManager, DirectionalLight, DirectionalLightPass,
+    GeometryPass, InstancesManager, LightsManager, MaterialsManager, MeshesManager,
+    PointLightsPass, RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SsaoConfig,
+    SsaoPass, TexturesManager,
 };
 
 pub struct EngineConfig {
@@ -24,6 +24,7 @@ impl Default for EngineConfig {
 }
 
 pub struct Engine {
+    pub camera: CameraManager,
     pub textures: TexturesManager,
     pub materials: MaterialsManager,
     pub meshes: MeshesManager,
@@ -44,30 +45,41 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(renderer: &Renderer) -> Self {
+        let camera = CameraManager::new(&renderer.device);
         let textures = TexturesManager::new(&renderer.device);
         let materials = MaterialsManager::new(&renderer.device);
         let meshes = MeshesManager::new(&renderer.device);
         let skins = SkinsManager::new(&renderer.device);
         let animations = AnimationsManager::new(&renderer.device);
-        let instances = InstancesManager::new(&renderer.device, &meshes);
+        let instances = InstancesManager::new(&renderer.device);
         let lights = LightsManager::new(&renderer.device);
 
         let geometry = GeometryPass::new(
             renderer,
+            &camera,
             &textures,
             &materials,
+            &meshes,
             &skins,
             &animations,
             &instances,
         );
         let ambient_light = AmbientLightPass::new(renderer, &geometry);
-        let directional_light =
-            DirectionalLightPass::new(renderer, &geometry, &skins, &animations, &instances);
-        let point_lights = PointLightsPass::new(renderer, &geometry);
-        let ssao = SsaoPass::new(renderer, &geometry);
-        let skybox = SkyboxPass::new(renderer);
+        let directional_light = DirectionalLightPass::new(
+            renderer,
+            &camera,
+            &meshes,
+            &skins,
+            &animations,
+            &instances,
+            &geometry,
+        );
+        let point_lights = PointLightsPass::new(renderer, &camera, &geometry);
+        let ssao = SsaoPass::new(renderer, &camera, &geometry);
+        let skybox = SkyboxPass::new(renderer, &camera);
 
         Self {
+            camera,
             textures,
             materials,
             meshes,
@@ -99,16 +111,26 @@ impl Engine {
         self.ssao.rebind(renderer, &self.geometry);
     }
 
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        dt: std::time::Duration,
+    pub fn update(
+        &mut self,
+        renderer: &Renderer,
+        view: glam::Mat4,
+        proj: glam::Mat4,
         directional_light: &DirectionalLight,
     ) {
+        self.camera.update(&renderer.queue, view, proj);
+
+        self.directional_light
+            .update(renderer, &self.camera, directional_light);
+        self.ssao.update(renderer, &self.config.ssao);
+    }
+
+    pub fn render(&self, ctx: &mut RenderContext, dt: std::time::Duration) {
         self.instances.anim(&mut ctx.encoder, &dt);
 
         self.geometry.render(
             ctx,
+            &self.camera,
             &self.textures,
             &self.materials,
             &self.meshes,
@@ -120,19 +142,20 @@ impl Engine {
             .render(ctx, self.config.gamma, self.config.ambient);
         self.directional_light.render(
             ctx,
+            &self.camera,
             &self.meshes,
             &self.skins,
             &self.animations,
             &self.instances,
             self.config.gamma,
-            directional_light,
         );
         self.point_lights
-            .render(ctx, self.config.gamma, &self.lights);
-        self.ssao.render(ctx, &self.config.ssao);
+            .render(ctx, &self.camera, self.config.gamma, &self.lights);
+        self.ssao.render(ctx, &self.camera);
 
         if let Some(skybox) = &self.config.skybox {
-            self.skybox.render(ctx, self.config.gamma, skybox);
+            self.skybox
+                .render(ctx, &self.camera, self.config.gamma, skybox);
         }
     }
 

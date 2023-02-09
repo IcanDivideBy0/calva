@@ -4,16 +4,17 @@ struct Camera {
     view_proj: mat4x4<f32>,
     inv_view: mat4x4<f32>,
     inv_proj: mat4x4<f32>,
+    frustum: array<vec4<f32>, 6>,
 }
+@group(0) @binding(0) var<uniform> camera: Camera;
 
-struct ShadowLight {
+struct DirectionalLight {
     color: vec4<f32>,
-    direction: vec4<f32>, // camera view space
+    direction_world: vec4<f32>,
+    direction_view: vec4<f32>,
     view_proj: mat4x4<f32>,
 }
-
-@group(0) @binding(0) var<uniform> camera: Camera;
-@group(1) @binding(0) var<uniform> shadow_light: ShadowLight;
+@group(1) @binding(0) var<uniform> directional_light: DirectionalLight;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -97,7 +98,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let frag_pos_world = camera.inv_view * frag_pos_view;
 
-    let frag_proj4 = shadow_light.view_proj * frag_pos_world;
+    let frag_proj4 = directional_light.view_proj * frag_pos_world;
     let frag_proj = frag_proj4.xyz / frag_proj4.w;
     let frag_proj_uv = frag_proj.xy * vec2<f32>(0.5, -0.5) + 0.5;
 
@@ -109,11 +110,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let N = normal;
     let V = normalize(-frag_pos_view.xyz);
-    let L = normalize(-shadow_light.direction.xyz);
+    let L = normalize(-directional_light.direction_view.xyz);
     let H = normalize(L + V);
     let NdotL = max(dot(normal, L), 0.0);
 
-    let radiance = shadow_light.color.rgb * shadow_light.color.a * visibility;
+    let radiance = directional_light.color.rgb * directional_light.color.a * visibility;
 
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
     let F = fresnel_schlick(max(dot(H, V), 0.0), F0);

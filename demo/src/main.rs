@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 
     let mut directional_light = DirectionalLight {
         color: glam::vec4(1.0, 1.0, 1.0, 1.0),
-        direction: glam::vec3(0.0, -1.0, 0.0001),
+        direction: glam::vec3(-1.0, -1.0, -1.0),
     };
 
     let mut render_time = Instant::now();
@@ -105,11 +105,6 @@ async fn main() -> Result<()> {
                 render_time = Instant::now();
 
                 camera.controller.update(dt);
-                renderer.camera.update(
-                    &renderer.queue,
-                    camera.controller.transform.inverse(),
-                    camera.projection.into(),
-                );
 
                 let egui_output = egui.run(&window, |ctx| {
                     egui::SidePanel::right("engine_panel")
@@ -146,10 +141,18 @@ async fn main() -> Result<()> {
                             EguiPass::renderer_ui(&renderer)(ui);
                         });
                 });
+                egui.update(&renderer, &window, egui_output);
+
+                engine.update(
+                    &renderer,
+                    camera.controller.transform.inverse(),
+                    camera.projection.into(),
+                    &directional_light,
+                );
 
                 let result = renderer.render(|ctx| {
-                    engine.render(ctx, dt, &directional_light);
-                    egui.render(ctx, &window, egui_output);
+                    engine.render(ctx, dt);
+                    egui.render(ctx);
                 });
 
                 match result {

@@ -1,5 +1,3 @@
-use calva::renderer::Renderer;
-use std::time::Duration;
 use winit::{event::WindowEvent, window::Window};
 
 mod flying_camera;
@@ -29,15 +27,5 @@ impl MyCamera {
 
     pub fn resize(&mut self, size: (u32, u32)) {
         self.projection.resize(size)
-    }
-
-    pub fn _update(&mut self, renderer: &mut Renderer, dt: Duration) {
-        self.controller.update(dt);
-
-        renderer.camera.update(
-            &renderer.queue,
-            self.controller.transform.inverse(),
-            self.projection.into(),
-        );
     }
 }

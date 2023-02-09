@@ -1,6 +1,7 @@
 struct DirectionalLight {
     color: vec4<f32>,
-    direction: vec4<f32>, // camera view space
+    direction_world: vec4<f32>,
+    direction_view: vec4<f32>,
     view_proj: mat4x4<f32>,
 }
 @group(0) @binding(0) var<uniform> light: DirectionalLight;
@@ -17,12 +18,12 @@ struct MeshInstance {
     @location(1) model_matrix_1: vec4<f32>,
     @location(2) model_matrix_2: vec4<f32>,
     @location(3) model_matrix_3: vec4<f32>,
-    @location(4) normal_quat: vec4<f32>,
-    @location(5) material: u32,
 
-    @location(6) skin_offset: i32,
-    @location(7) animation_id: u32,
-    @location(8) animation_time: f32,
+    @location(4) material: u32,
+
+    @location(5) skin_offset: i32,
+    @location(6) animation_id: u32,
+    @location(7) animation_time: f32,
 }
 
 struct VertexInput {

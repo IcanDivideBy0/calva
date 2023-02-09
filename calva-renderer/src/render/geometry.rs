@@ -1,7 +1,42 @@
 use crate::{
-    AnimationsManager, CullOutput, GpuMeshInstance, InstancesManager, MaterialsManager,
-    MeshesManager, RenderContext, Renderer, SkinsManager, TexturesManager,
+    AnimationState, AnimationsManager, CameraManager, InstancesManager, MaterialId,
+    MaterialsManager, MeshesManager, RenderContext, Renderer, SkinsManager, TexturesManager,
 };
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+struct DrawInstance {
+    _model_matrix: [f32; 16],
+    _normal_quat: [f32; 4],
+    _material: MaterialId,
+    _skin_offset: i32,
+    _animation: AnimationState,
+}
+
+impl DrawInstance {
+    pub(crate) const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as _;
+
+    pub(crate) const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: Self::SIZE,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array![
+            // Model matrix
+            0 => Float32x4,
+            1 => Float32x4,
+            2 => Float32x4,
+            3 => Float32x4,
+            // Normal quat
+            4 => Float32x4,
+            // Material
+            5 => Uint32,
+
+            // Skinning
+            6 => Sint32, // Skin offset
+            7 => Uint32, // Animation ID
+            8 => Float32, // Animation time
+        ],
+    };
+}
 
 struct GeometryOutput {
     texture: wgpu::Texture,
@@ -55,9 +90,10 @@ impl GeometryOutput {
 }
 
 pub struct GeometryPass {
+    cull: GeometryCull,
+
     albedo_metallic: GeometryOutput,
     normal_roughness: GeometryOutput,
-    cull_output: CullOutput,
 
     pipeline: wgpu::RenderPipeline,
 }
@@ -73,17 +109,20 @@ impl GeometryPass {
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         renderer: &Renderer,
+        camera: &CameraManager,
         textures: &TexturesManager,
         materials: &MaterialsManager,
+        meshes: &MeshesManager,
         skins: &SkinsManager,
         animations: &AnimationsManager,
         instances: &InstancesManager,
     ) -> Self {
-        let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
+        let cull = GeometryCull::new(renderer, camera, meshes, instances);
 
-        let cull_output = instances.create_cull_output(&renderer.device);
+        let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
 
         let shader = renderer
             .device
@@ -98,7 +137,7 @@ impl GeometryPass {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Geometry[render] render pipeline layout"),
                     bind_group_layouts: &[
-                        &renderer.camera.bind_group_layout,
+                        &camera.bind_group_layout,
                         &textures.bind_group_layout,
                         &materials.bind_group_layout,
                         &skins.bind_group_layout,
@@ -117,7 +156,7 @@ impl GeometryPass {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        GpuMeshInstance::LAYOUT,
+                        DrawInstance::LAYOUT,
                         // Positions
                         wgpu::VertexBufferLayout {
                             array_stride: MeshesManager::VERTEX_SIZE as _,
@@ -175,9 +214,10 @@ impl GeometryPass {
             });
 
         GeometryPass {
+            cull,
+
             albedo_metallic,
             normal_roughness,
-            cull_output,
 
             pipeline,
         }
@@ -206,9 +246,10 @@ impl GeometryPass {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render<'e, 'data: 'e>(
+    pub fn render(
         &self,
         ctx: &mut RenderContext,
+        camera: &CameraManager,
         textures: &TexturesManager,
         materials: &MaterialsManager,
         meshes: &MeshesManager,
@@ -218,9 +259,7 @@ impl GeometryPass {
     ) {
         ctx.encoder.profile_start("Geometry");
 
-        self.cull_output
-            .update(ctx.queue, ctx.camera.proj * ctx.camera.view);
-        instances.cull(&mut ctx.encoder, &self.cull_output, 0);
+        self.cull.cull(ctx, camera, meshes, instances);
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),
@@ -240,13 +279,13 @@ impl GeometryPass {
 
         rpass.set_pipeline(&self.pipeline);
 
-        rpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
+        rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &textures.bind_group, &[]);
         rpass.set_bind_group(2, &materials.bind_group, &[]);
         rpass.set_bind_group(3, &skins.bind_group, &[]);
         rpass.set_bind_group(4, &animations.bind_group, &[]);
 
-        rpass.set_vertex_buffer(0, self.cull_output.instances.slice(..));
+        rpass.set_vertex_buffer(0, self.cull.draw_instances.slice(..));
         rpass.set_vertex_buffer(1, meshes.vertices.slice(..));
         rpass.set_vertex_buffer(2, meshes.normals.slice(..));
         rpass.set_vertex_buffer(3, meshes.tangents.slice(..));
@@ -255,9 +294,9 @@ impl GeometryPass {
         rpass.set_index_buffer(meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 
         rpass.multi_draw_indexed_indirect_count(
-            &self.cull_output.indirects,
+            &self.cull.draw_indirects,
             std::mem::size_of::<u32>() as _,
-            &self.cull_output.indirects,
+            &self.cull.draw_indirects,
             0,
             MeshesManager::MAX_MESHES as _,
         );
@@ -305,5 +344,245 @@ impl GeometryPass {
         );
 
         (albedo_metallic, normal_roughness)
+    }
+}
+
+use cull::*;
+mod cull {
+    use crate::{
+        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, RenderContext, Renderer,
+    };
+
+    use super::DrawInstance;
+
+    pub struct GeometryCull {
+        pub(crate) draw_instances: wgpu::Buffer,
+        pub(crate) draw_indirects: wgpu::Buffer,
+
+        bind_group: wgpu::BindGroup,
+        pipelines: (
+            wgpu::ComputePipeline, // reset
+            wgpu::ComputePipeline, // cull
+            wgpu::ComputePipeline, // count
+        ),
+    }
+
+    impl GeometryCull {
+        pub fn new(
+            renderer: &Renderer,
+            camera: &CameraManager,
+            meshes: &MeshesManager,
+            instances: &InstancesManager,
+        ) -> Self {
+            let draw_instances = renderer.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Geometry[cull] draw instances"),
+                size: (std::mem::size_of::<[DrawInstance; InstancesManager::MAX_INSTANCES]>()) as _,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::VERTEX,
+                mapped_at_creation: false,
+            });
+
+            let draw_indirects = renderer.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Geometry[cull] draw indirects"),
+                size: {
+                    let count_size = std::mem::size_of::<u32>();
+                    let indirects_size = std::mem::size_of::<
+                        [wgpu::util::DrawIndexedIndirect; MeshesManager::MAX_MESHES],
+                    >();
+
+                    count_size + indirects_size
+                } as _,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::INDIRECT,
+                mapped_at_creation: false,
+            });
+
+            let bind_group_layout =
+                renderer
+                    .device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("Geometry[cull] bind group layout"),
+                        entries: &[
+                            // Mesh data
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                    has_dynamic_offset: false,
+                                    min_binding_size: wgpu::BufferSize::new(MeshInfo::SIZE),
+                                },
+                                count: None,
+                            },
+                            // Base instances
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                    has_dynamic_offset: false,
+                                    min_binding_size: wgpu::BufferSize::new(
+                                        std::mem::size_of::<u32>() as _,
+                                    ),
+                                },
+                                count: None,
+                            },
+                            // Cull instances
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 2,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                    has_dynamic_offset: false,
+                                    min_binding_size: wgpu::BufferSize::new(
+                                        std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
+                                            + Instance::SIZE,
+                                    ),
+                                },
+                                count: None,
+                            },
+                            // Draw instances
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 3,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                    has_dynamic_offset: false,
+                                    min_binding_size: wgpu::BufferSize::new(DrawInstance::SIZE),
+                                },
+                                count: None,
+                            },
+                            // Draw indirects
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 4,
+                                visibility: wgpu::ShaderStages::COMPUTE,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                    has_dynamic_offset: false,
+                                    min_binding_size: wgpu::BufferSize::new(
+                                        std::mem::size_of::<u32>() as u64
+                                            + std::mem::size_of::<wgpu::util::DrawIndexedIndirect>()
+                                                as u64,
+                                    ),
+                                },
+                                count: None,
+                            },
+                        ],
+                    });
+
+            let bind_group = renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Geometry[cull] bind group"),
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: meshes.meshes_info.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: instances.base_instances.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: instances.instances.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: draw_instances.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: draw_indirects.as_entire_binding(),
+                        },
+                    ],
+                });
+
+            let shader = renderer
+                .device
+                .create_shader_module(wgpu::include_wgsl!("geometry.cull.wgsl"));
+
+            let pipeline_layout =
+                renderer
+                    .device
+                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("Geometry[cull] pipeline layout"),
+                        bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
+                        push_constant_ranges: &[wgpu::PushConstantRange {
+                            stages: wgpu::ShaderStages::COMPUTE,
+                            range: 0..(std::mem::size_of::<u32>() as _),
+                        }],
+                    });
+
+            let pipelines = (
+                renderer
+                    .device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Geometry[cull] reset pipeline"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: "reset",
+                    }),
+                renderer
+                    .device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Geometry[cull] cull pipeline"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: "cull",
+                    }),
+                renderer
+                    .device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Geometry[cull] count pipeline"),
+                        layout: Some(&pipeline_layout),
+                        module: &shader,
+                        entry_point: "count",
+                    }),
+            );
+
+            Self {
+                draw_instances,
+                draw_indirects,
+
+                bind_group,
+                pipelines,
+            }
+        }
+
+        pub fn cull(
+            &self,
+            ctx: &mut RenderContext,
+            camera: &CameraManager,
+            meshes: &MeshesManager,
+            instances: &InstancesManager,
+        ) {
+            let mut cpass = ctx
+                .encoder
+                .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Geometry[cull]"),
+                });
+
+            let meshes_count: u32 = meshes.count();
+            let instances_count: u32 = instances.count();
+
+            cpass.set_pipeline(&self.pipelines.0);
+            cpass.set_bind_group(0, &camera.bind_group, &[]);
+            cpass.set_bind_group(1, &self.bind_group, &[]);
+            cpass.dispatch_workgroups(meshes_count, 1, 1);
+
+            cpass.set_pipeline(&self.pipelines.1);
+            cpass.set_bind_group(0, &camera.bind_group, &[]);
+            cpass.set_bind_group(1, &self.bind_group, &[]);
+            cpass.dispatch_workgroups(instances_count, 1, 1);
+
+            cpass.set_pipeline(&self.pipelines.2);
+            cpass.set_bind_group(0, &camera.bind_group, &[]);
+            cpass.set_bind_group(1, &self.bind_group, &[]);
+            cpass.dispatch_workgroups(meshes_count, 1, 1);
+        }
     }
 }

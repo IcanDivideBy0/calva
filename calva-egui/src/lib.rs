@@ -1,5 +1,6 @@
 #![warn(clippy::all)]
 
+use egui::ClippedPrimitive;
 use renderer::{wgpu, Engine, ProfilerResult, RenderContext, Renderer, SsaoConfig};
 use thousands::Separable;
 
@@ -10,6 +11,7 @@ pub use egui;
 
 pub struct EguiPass {
     pub context: egui::Context,
+    paint_jobs: Vec<ClippedPrimitive>,
     egui_renderer: egui_wgpu::Renderer,
 }
 
@@ -24,6 +26,7 @@ impl EguiPass {
 
         Self {
             context: Default::default(),
+            paint_jobs: vec![],
             egui_renderer,
         }
     }
@@ -32,35 +35,44 @@ impl EguiPass {
         self.context.run(input, ui)
     }
 
-    pub fn render(
+    pub fn update(
         &mut self,
-        ctx: &mut RenderContext,
+        renderer: &Renderer,
         shapes: Vec<egui::epaint::ClippedShape>,
         textures_delta: egui::TexturesDelta,
     ) {
-        let paint_jobs = &self.context.tessellate(shapes);
+        self.paint_jobs = self.context.tessellate(shapes);
 
         for (texture_id, image_delta) in &textures_delta.set {
-            self.egui_renderer
-                .update_texture(ctx.device, ctx.queue, *texture_id, image_delta);
+            self.egui_renderer.update_texture(
+                &renderer.device,
+                &renderer.queue,
+                *texture_id,
+                image_delta,
+            );
         }
         for texture_id in &textures_delta.free {
             self.egui_renderer.free_texture(texture_id);
         }
 
-        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: [ctx.surface_config.width, ctx.surface_config.height],
-            pixels_per_point: 1.0,
-        };
-
+        let mut encoder = renderer.device.create_command_encoder(&Default::default());
         self.egui_renderer.update_buffers(
-            ctx.device,
-            ctx.queue,
-            &mut ctx.encoder,
-            paint_jobs,
-            &screen_descriptor,
+            &renderer.device,
+            &renderer.queue,
+            &mut encoder,
+            &self.paint_jobs,
+            &egui_wgpu::renderer::ScreenDescriptor {
+                size_in_pixels: [
+                    renderer.surface_config.width,
+                    renderer.surface_config.height,
+                ],
+                pixels_per_point: 1.0,
+            },
         );
+        renderer.queue.submit(std::iter::once(encoder.finish()));
+    }
 
+    pub fn render(&self, ctx: &mut RenderContext) {
         self.egui_renderer.render(
             &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Egui"),
@@ -78,8 +90,11 @@ impl EguiPass {
                     stencil_ops: None,
                 }),
             }),
-            paint_jobs,
-            &screen_descriptor,
+            &self.paint_jobs,
+            &egui_wgpu::renderer::ScreenDescriptor {
+                size_in_pixels: [ctx.surface_config.width, ctx.surface_config.height],
+                pixels_per_point: 1.0,
+            },
         );
     }
 
@@ -208,6 +223,10 @@ impl EguiWinitPass {
         }
     }
 
+    pub fn on_event(&mut self, event: &winit::event::WindowEvent) -> egui_winit::EventResponse {
+        self.state.on_event(&self.pass.context, event)
+    }
+
     pub fn run(
         &mut self,
         window: &winit::window::Window,
@@ -216,20 +235,16 @@ impl EguiWinitPass {
         self.pass.run(self.state.take_egui_input(window), ui)
     }
 
-    pub fn on_event(&mut self, event: &winit::event::WindowEvent) -> egui_winit::EventResponse {
-        self.state.on_event(&self.pass.context, event)
-    }
-
-    pub fn render(
+    pub fn update(
         &mut self,
-        ctx: &mut RenderContext,
+        renderer: &Renderer,
         window: &winit::window::Window,
         output: egui::FullOutput,
     ) {
         self.state
             .handle_platform_output(window, &self.pass.context, output.platform_output);
-
-        self.pass.render(ctx, output.shapes, output.textures_delta);
+        self.pass
+            .update(renderer, output.shapes, output.textures_delta);
     }
 }
 

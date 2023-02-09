@@ -8,16 +8,40 @@ struct Camera {
     view_proj: glam::Mat4,
     inv_view: glam::Mat4,
     inv_proj: glam::Mat4,
+    frustum: [glam::Vec4; 6],
 }
 
 impl Camera {
     fn new(view: glam::Mat4, proj: glam::Mat4) -> Self {
+        let view_proj = proj * view;
+
+        let frustum = {
+            use glam::Vec4Swizzles;
+
+            let l = view_proj.row(3) + view_proj.row(0); // left
+            let r = view_proj.row(3) - view_proj.row(0); // right
+            let b = view_proj.row(3) + view_proj.row(1); // bottom
+            let t = view_proj.row(3) - view_proj.row(1); // top
+            let n = view_proj.row(3) + view_proj.row(2); // near
+            let f = view_proj.row(3) - view_proj.row(2); // far
+
+            [
+                l / l.xyz().length(),
+                r / r.xyz().length(),
+                b / b.xyz().length(),
+                t / t.xyz().length(),
+                n / n.xyz().length(),
+                f / f.xyz().length(),
+            ]
+        };
+
         Self {
             view,
             proj,
-            view_proj: proj * view,
+            view_proj,
             inv_view: view.inverse(),
             inv_proj: proj.inverse(),
+            frustum,
         }
     }
 }
