@@ -1,4 +1,4 @@
-use crate::{GeometryPass, RenderContext, Renderer};
+use crate::{GeometryPass, MaterialsManager, RenderContext, Renderer, TexturesManager};
 
 pub struct AmbientLightPass {
     bind_group_layout: wgpu::BindGroupLayout,
@@ -7,7 +7,12 @@ pub struct AmbientLightPass {
 }
 
 impl AmbientLightPass {
-    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+    pub fn new(
+        renderer: &Renderer,
+        textures: &TexturesManager,
+        materials: &MaterialsManager,
+        geometry: &GeometryPass,
+    ) -> Self {
         let bind_group_layout =
             renderer
                 .device
@@ -39,7 +44,11 @@ impl AmbientLightPass {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("AmbientLight pipeline layout"),
-                    bind_group_layouts: &[&bind_group_layout],
+                    bind_group_layouts: &[
+                        &textures.bind_group_layout,
+                        &materials.bind_group_layout,
+                        &bind_group_layout,
+                    ],
                     push_constant_ranges: &[wgpu::PushConstantRange {
                         stages: wgpu::ShaderStages::FRAGMENT,
                         range: 0..(std::mem::size_of::<[f32; 2]>() as _),
@@ -82,7 +91,14 @@ impl AmbientLightPass {
         self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, gamma: f32, factor: f32) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        textures: &TexturesManager,
+        materials: &MaterialsManager,
+        gamma: f32,
+        factor: f32,
+    ) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -97,7 +113,9 @@ impl AmbientLightPass {
         });
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_bind_group(0, &textures.bind_group, &[]);
+        rpass.set_bind_group(1, &materials.bind_group, &[]);
+        rpass.set_bind_group(2, &self.bind_group, &[]);
         rpass.set_push_constants(
             wgpu::ShaderStages::FRAGMENT,
             0,

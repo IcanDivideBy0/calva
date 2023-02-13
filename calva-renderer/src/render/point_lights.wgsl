@@ -71,8 +71,8 @@ fn vs_main_lighting(
 // Fragment shader
 //
 
-@group(1) @binding(0) var t_albedo_metallic: texture_2d<f32>;
-@group(1) @binding(1) var t_normal_roughness: texture_2d<f32>;
+@group(1) @binding(0) var t_albedo_metallic: texture_multisampled_2d<f32>;
+@group(1) @binding(1) var t_normal_roughness: texture_multisampled_2d<f32>;
 @group(1) @binding(2) var t_depth: texture_depth_multisampled_2d;
 
 var<push_constant> GAMMA: f32;
@@ -118,8 +118,8 @@ fn fs_main_lighting(
 ) -> @location(0) vec4<f32> {
     let c = vec2<i32>(floor(in.position.xy));
 
-    let albedo_metallic = textureLoad(t_albedo_metallic, c, 0);
-    let normal_roughness = textureLoad(t_normal_roughness, c, 0);
+    let albedo_metallic = textureLoad(t_albedo_metallic, c, i32(msaa_sample));
+    let normal_roughness = textureLoad(t_normal_roughness, c, i32(msaa_sample));
 
     let albedo = albedo_metallic.rgb;
     let normal = normal_roughness.xyz;

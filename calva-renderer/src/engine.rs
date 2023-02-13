@@ -64,7 +64,7 @@ impl Engine {
             &animations,
             &instances,
         );
-        let ambient_light = AmbientLightPass::new(renderer, &geometry);
+        let ambient_light = AmbientLightPass::new(renderer, &textures, &materials, &geometry);
         let directional_light = DirectionalLightPass::new(
             renderer,
             &camera,
@@ -138,8 +138,13 @@ impl Engine {
             &self.animations,
             &self.instances,
         );
-        self.ambient_light
-            .render(ctx, self.config.gamma, self.config.ambient);
+        self.ambient_light.render(
+            ctx,
+            &self.textures,
+            &self.materials,
+            self.config.gamma,
+            self.config.ambient,
+        );
         self.directional_light.render(
             ctx,
             &self.camera,

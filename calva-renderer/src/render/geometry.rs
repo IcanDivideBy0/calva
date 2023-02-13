@@ -46,20 +46,20 @@ struct GeometryOutput {
 
 impl GeometryOutput {
     fn new(renderer: &Renderer, desc: wgpu::TextureDescriptor) -> Self {
-        let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
-            sample_count: 1,
-            ..desc
-        });
+        let texture = renderer.device.create_texture(&desc);
+        let view = texture.create_view(&Default::default());
 
-        let mut view = texture.create_view(&Default::default());
         let mut resolve_target = None;
-
         if desc.sample_count > 1 {
-            resolve_target = Some(view);
-            view = renderer
-                .device
-                .create_texture(&desc)
-                .create_view(&Default::default())
+            resolve_target = Some(
+                renderer
+                    .device
+                    .create_texture(&wgpu::TextureDescriptor {
+                        sample_count: 1,
+                        ..desc
+                    })
+                    .create_view(&Default::default()),
+            );
         }
 
         Self {
@@ -95,6 +95,7 @@ pub struct GeometryPass {
 
     albedo_metallic: GeometryOutput,
     normal_roughness: GeometryOutput,
+    material_data: GeometryOutput,
 
     pipeline: wgpu::RenderPipeline,
 }
@@ -110,6 +111,8 @@ impl GeometryPass {
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+    const MATERIAL_DATA_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Uint;
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         renderer: &Renderer,
@@ -124,7 +127,7 @@ impl GeometryPass {
         let cull = GeometryCull::new(renderer, camera, meshes, instances);
         let hiz = GeometryHiZ::new(renderer);
 
-        let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
+        let (albedo_metallic, normal_roughness, material_data) = Self::make_textures(renderer);
 
         let shader = renderer
             .device
@@ -199,6 +202,11 @@ impl GeometryPass {
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
                         }),
+                        Some(wgpu::ColorTargetState {
+                            format: Self::MATERIAL_DATA_FORMAT,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
                     ],
                 }),
                 primitive: wgpu::PrimitiveState {
@@ -221,6 +229,7 @@ impl GeometryPass {
 
             albedo_metallic,
             normal_roughness,
+            material_data,
 
             pipeline,
         }
@@ -240,12 +249,20 @@ impl GeometryPass {
         self.normal_roughness.resolve_view()
     }
 
+    pub fn material_data(&self) -> &wgpu::Texture {
+        &self.material_data.texture
+    }
+
     pub fn size(&self) -> (u32, u32) {
         self.albedo_metallic.size()
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {
-        (self.albedo_metallic, self.normal_roughness) = Self::make_textures(renderer);
+        (
+            self.albedo_metallic,
+            self.normal_roughness,
+            self.material_data,
+        ) = Self::make_textures(renderer);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -269,6 +286,7 @@ impl GeometryPass {
             color_attachments: &[
                 Some(self.albedo_metallic.attachment()),
                 Some(self.normal_roughness.attachment()),
+                Some(self.material_data.attachment()),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: ctx.depth_stencil,
@@ -311,7 +329,7 @@ impl GeometryPass {
         ctx.encoder.profile_end();
     }
 
-    fn make_textures(renderer: &Renderer) -> (GeometryOutput, GeometryOutput) {
+    fn make_textures(renderer: &Renderer) -> (GeometryOutput, GeometryOutput, GeometryOutput) {
         let size = wgpu::Extent3d {
             width: renderer.surface_config.width,
             height: renderer.surface_config.height,
@@ -348,7 +366,22 @@ impl GeometryPass {
             },
         );
 
-        (albedo_metallic, normal_roughness)
+        let material_data = GeometryOutput::new(
+            renderer,
+            wgpu::TextureDescriptor {
+                label: Some("Geometry material data texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: Renderer::MULTISAMPLE_STATE.count,
+                dimension: wgpu::TextureDimension::D2,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                format: Self::MATERIAL_DATA_FORMAT,
+                view_formats: &[Self::MATERIAL_DATA_FORMAT],
+            },
+        );
+
+        (albedo_metallic, normal_roughness, material_data)
     }
 }
 
@@ -571,23 +604,30 @@ mod cull {
                     label: Some("Geometry[cull]"),
                 });
 
+            const WORKGROUP_SIZE: u32 = 32;
+
             let meshes_count: u32 = meshes.count();
+            let meshes_workgroups_count =
+                (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+
             let instances_count: u32 = instances.count();
+            let instances_workgroups_count =
+                (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
             cpass.set_pipeline(&self.pipelines.0);
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(meshes_count, 1, 1);
+            cpass.dispatch_workgroups(meshes_workgroups_count, 1, 1);
 
             cpass.set_pipeline(&self.pipelines.1);
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(instances_count, 1, 1);
+            cpass.dispatch_workgroups(instances_workgroups_count, 1, 1);
 
             cpass.set_pipeline(&self.pipelines.2);
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(meshes_count, 1, 1);
+            cpass.dispatch_workgroups(meshes_workgroups_count, 1, 1);
         }
     }
 }
@@ -603,42 +643,30 @@ mod hiz {
 
     impl GeometryHiZ {
         pub fn new(renderer: &Renderer) -> Self {
-            let depth = renderer
-                .device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some("Geometry[hi-z] depth"),
-                    size: wgpu::Extent3d {
-                        width: 256,
-                        height: 256,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Depth32Float,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[wgpu::TextureFormat::Depth32Float],
-                })
-                .create_view(&Default::default());
+            let output = renderer.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Geometry[hi-z] output"),
+                size: wgpu::Extent3d {
+                    width: renderer.surface_config.width,
+                    height: renderer.surface_config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 4,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R32Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+                view_formats: &[wgpu::TextureFormat::R32Float],
+            });
 
-            let output = renderer
-                .device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some("Geometry[hi-z] output"),
-                    size: wgpu::Extent3d {
-                        width: 256,
-                        height: 256,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::R32Float,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::STORAGE_BINDING,
-                    view_formats: &[wgpu::TextureFormat::R32Float],
+            let outputs = (0..output.mip_level_count())
+                .map(|mip_level| {
+                    output.create_view(&wgpu::TextureViewDescriptor {
+                        base_mip_level: mip_level,
+                        mip_level_count: core::num::NonZeroU32::new(1),
+                        ..Default::default()
+                    })
                 })
-                .create_view(&Default::default());
+                .collect::<Vec<_>>();
 
             let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("Geometry[hi-z] sampler"),
@@ -661,7 +689,7 @@ mod hiz {
                                 ty: wgpu::BindingType::Texture {
                                     sample_type: wgpu::TextureSampleType::Depth,
                                     view_dimension: wgpu::TextureViewDimension::D2,
-                                    multisampled: false,
+                                    multisampled: true,
                                 },
                                 count: None,
                             },
@@ -672,16 +700,16 @@ mod hiz {
                                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                                 count: None,
                             },
-                            // Output
+                            // Outputs
                             wgpu::BindGroupLayoutEntry {
                                 binding: 2,
                                 visibility: wgpu::ShaderStages::COMPUTE,
                                 ty: wgpu::BindingType::StorageTexture {
-                                    access: wgpu::StorageTextureAccess::WriteOnly,
+                                    access: wgpu::StorageTextureAccess::ReadWrite,
                                     format: wgpu::TextureFormat::R32Float,
                                     view_dimension: wgpu::TextureViewDimension::D2,
                                 },
-                                count: None,
+                                count: core::num::NonZeroU32::new(output.mip_level_count()),
                             },
                         ],
                     });
@@ -694,7 +722,7 @@ mod hiz {
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&depth),
+                            resource: wgpu::BindingResource::TextureView(&renderer.depth),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -702,14 +730,19 @@ mod hiz {
                         },
                         wgpu::BindGroupEntry {
                             binding: 2,
-                            resource: wgpu::BindingResource::TextureView(&output),
+                            resource: wgpu::BindingResource::TextureViewArray(
+                                &outputs.iter().collect::<Vec<_>>(),
+                            ),
                         },
                     ],
                 });
 
             let shader = renderer
                 .device
-                .create_shader_module(wgpu::include_wgsl!("geometry.hi-z.wgsl"));
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("Geometry[hi-z] shader module"),
+                    ..wgpu::include_wgsl!("geometry.hi-z.wgsl")
+                });
 
             let pipeline_layout =
                 renderer
@@ -748,7 +781,22 @@ mod hiz {
 
             cpass.set_pipeline(&self.pipeline);
             cpass.set_bind_group(0, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(256, 256, 1);
+
+            let size = wgpu::Extent3d {
+                width: 800,
+                height: 600,
+                depth_or_array_layers: 1,
+            };
+            for mip_level in 0..4_u32 {
+                let size = size.mip_level_size(mip_level, wgpu::TextureDimension::D2);
+
+                cpass.set_push_constants(0, bytemuck::bytes_of(&mip_level));
+                cpass.dispatch_workgroups(
+                    (size.width as f32 / 4.0).ceil() as u32,
+                    (size.height as f32 / 4.0).ceil() as u32,
+                    1,
+                );
+            }
         }
     }
 }

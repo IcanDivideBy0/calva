@@ -68,13 +68,13 @@ async fn main() -> Result<()> {
     zombie.instanciate(
         &renderer,
         &mut engine,
-        &(0..6_000)
+        &(0..600)
             .map(|i| {
                 (
                     glam::Mat4::from_translation(glam::vec3(
-                        4.0 * (i % 100) as f32,
+                        4.0 * (i % 50) as f32,
                         0.0,
-                        4.0 * (i / 100) as f32,
+                        4.0 * (i / 50) as f32,
                     )),
                     Some(zombie_anims[i % zombie_anims.len()].as_str()),
                 )

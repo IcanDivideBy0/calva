@@ -120,7 +120,7 @@ impl PointLightsPass {
                             binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: false,
+                                multisampled: true,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 sample_type: wgpu::TextureSampleType::Float { filterable: false },
                             },
@@ -131,7 +131,7 @@ impl PointLightsPass {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: false,
+                                multisampled: true,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 sample_type: wgpu::TextureSampleType::Float { filterable: false },
                             },
@@ -328,13 +328,13 @@ impl PointLightsPass {
                     wgpu::BindGroupEntry {
                         binding: 0,
                         resource: wgpu::BindingResource::TextureView(
-                            geometry.albedo_metallic_view(),
+                            &geometry.albedo_metallic().create_view(&Default::default()),
                         ),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::TextureView(
-                            geometry.normal_roughness_view(),
+                            &geometry.normal_roughness().create_view(&Default::default()),
                         ),
                     },
                     wgpu::BindGroupEntry {
