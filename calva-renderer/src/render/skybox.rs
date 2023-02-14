@@ -89,7 +89,7 @@ impl SkyboxPass {
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
-                multisample: Renderer::MULTISAMPLE_STATE,
+                multisample: Default::default(),
             });
 
         Self {
@@ -110,7 +110,7 @@ impl SkyboxPass {
             label: Some("Skybox"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.view,
-                resolve_target: ctx.resolve_target,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,

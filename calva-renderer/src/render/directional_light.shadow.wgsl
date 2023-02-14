@@ -39,7 +39,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @group(2) @binding(0) var t_albedo_metallic: texture_2d<f32>;
 @group(2) @binding(1) var t_normal_roughness: texture_2d<f32>;
-@group(2) @binding(2) var t_depth: texture_depth_multisampled_2d;
+@group(2) @binding(2) var t_depth: texture_depth_2d;
 
 @group(2) @binding(3) var t_shadows: texture_depth_2d;
 @group(2) @binding(4) var t_sampler: sampler;
@@ -82,8 +82,6 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let c = vec2<i32>(floor(in.position.xy));
-
     let albedo_metallic = textureSample(t_albedo_metallic, t_sampler, in.uv);
     let normal_roughness = textureSample(t_normal_roughness, t_sampler, in.uv);
 
@@ -92,7 +90,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let metallic = albedo_metallic.a;
     let roughness = normal_roughness.a;
 
-    let z = textureLoad(t_depth, c, 0);
+    let z = textureSample(t_depth, t_sampler, in.uv);
     var frag_pos_view = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
     frag_pos_view = frag_pos_view / frag_pos_view.w;
 

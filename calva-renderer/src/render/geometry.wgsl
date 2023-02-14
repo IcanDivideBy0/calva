@@ -167,7 +167,6 @@ fn vs_main(
 struct FragmentOutput {
     @location(0) albedo_metallic: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,
-    @location(2) material_data: vec4<u32>,
 }
 
 fn get_vert_normal(in: VertexOutput) -> vec3<f32> {
@@ -230,24 +229,17 @@ fn fs_main(
     let albedo = textureSample(textures[material.albedo], textures_sampler, in.uv);
     let metallic_roughness = textureSample(textures[material.metallic_roughness], textures_sampler, in.uv).bg;
 
-    let material_data = vec4<u32>(
-        pack2x16float(in.uv),
-        pack4x8snorm(vec4<f32>(dpdx(in.uv), dpdy(in.uv))),
-        sample_mask,
-        in.material_id,
-    );
+    // let material_data = vec4<u32>(
+    //     pack2x16float(in.uv),
+    //     pack4x8snorm(vec4<f32>(dpdx(in.uv), dpdy(in.uv))),
+    //     sample_mask,
+    //     in.material_id,
+    // );
 
     if albedo.a < 0.5 { discard; }
 
     return FragmentOutput(
         vec4<f32>(albedo.rgb, metallic_roughness.x),
         vec4<f32>(get_normal(in, material), metallic_roughness.y),
-        material_data,
     );
-
-    // return FragmentOutput(
-    //     vec4<f32>(albedo.rgb, metallic_roughness.x),
-    //     vec4<f32>(get_normal(in, material), metallic_roughness.y),
-    //     material_data,
-    // );
 }

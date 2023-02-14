@@ -22,7 +22,7 @@ impl EguiPass {
             &renderer.device,
             renderer.surface_config.format,
             Some(Renderer::DEPTH_FORMAT),
-            Renderer::MULTISAMPLE_STATE.count,
+            1,
         );
 
         let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
@@ -90,7 +90,7 @@ impl EguiPass {
                 label: Some("Egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: ctx.view,
-                    resolve_target: ctx.resolve_target,
+                    resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: true,

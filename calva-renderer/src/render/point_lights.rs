@@ -10,6 +10,7 @@ pub struct PointLightsPass {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
 
+    sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 
@@ -105,9 +106,16 @@ impl PointLightsPass {
                         },
                         bias: wgpu::DepthBiasState::default(),
                     }),
-                    multisample: Renderer::MULTISAMPLE_STATE,
+                    multisample: Default::default(),
                 })
         };
+
+        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("PointLights sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
         let bind_group_layout =
             renderer
@@ -115,34 +123,41 @@ impl PointLightsPass {
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("PointLights[lighting] bind group layout"),
                     entries: &[
-                        // albedo + metallic
+                        // sampler
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        // albedo + metallic
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: true,
+                                multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
                         // normal + roughness
                         wgpu::BindGroupLayoutEntry {
-                            binding: 1,
+                            binding: 2,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: true,
+                                multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
                         // depth
                         wgpu::BindGroupLayoutEntry {
-                            binding: 2,
+                            binding: 3,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 sample_type: wgpu::TextureSampleType::Depth,
                             },
@@ -151,7 +166,7 @@ impl PointLightsPass {
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(renderer, geometry, &bind_group_layout);
+        let bind_group = Self::make_bind_group(renderer, geometry, &bind_group_layout, &sampler);
 
         let lighting_pipeline = {
             let pipeline_layout =
@@ -222,7 +237,7 @@ impl PointLightsPass {
                         },
                         bias: wgpu::DepthBiasState::default(),
                     }),
-                    multisample: Renderer::MULTISAMPLE_STATE,
+                    multisample: Default::default(),
                     multiview: None,
                 })
         };
@@ -232,6 +247,7 @@ impl PointLightsPass {
             vertices,
             indices,
 
+            sampler,
             bind_group_layout,
             bind_group,
 
@@ -241,7 +257,8 @@ impl PointLightsPass {
     }
 
     pub fn rebind(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
-        self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
+        self.bind_group =
+            Self::make_bind_group(renderer, geometry, &self.bind_group_layout, &self.sampler);
     }
 
     pub fn render(
@@ -281,7 +298,7 @@ impl PointLightsPass {
             label: Some("PointLights[lighting]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.view,
-                resolve_target: ctx.resolve_target,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
@@ -318,6 +335,7 @@ impl PointLightsPass {
         renderer: &Renderer,
         geometry: &GeometryPass,
         layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
         renderer
             .device
@@ -327,18 +345,18 @@ impl PointLightsPass {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &geometry.albedo_metallic().create_view(&Default::default()),
-                        ),
+                        resource: wgpu::BindingResource::Sampler(sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(
-                            &geometry.normal_roughness().create_view(&Default::default()),
-                        ),
+                        resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&geometry.normal_roughness),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
                         resource: wgpu::BindingResource::TextureView(&renderer.depth),
                     },
                 ],

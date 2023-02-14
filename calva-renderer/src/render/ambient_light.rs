@@ -76,7 +76,7 @@ impl AmbientLightPass {
                 }),
                 primitive: Default::default(),
                 depth_stencil: None,
-                multisample: Renderer::MULTISAMPLE_STATE,
+                multisample: Default::default(),
                 multiview: None,
             });
 
@@ -103,7 +103,7 @@ impl AmbientLightPass {
             label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.view,
-                resolve_target: ctx.resolve_target,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
@@ -139,7 +139,7 @@ impl AmbientLightPass {
                 layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(geometry.albedo_metallic_view()),
+                    resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
                 }],
             })
     }

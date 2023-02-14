@@ -33,6 +33,7 @@ pub struct Engine {
     pub instances: InstancesManager,
     pub lights: LightsManager,
 
+    size: (u32, u32),
     geometry: GeometryPass,
     ambient_light: AmbientLightPass,
     directional_light: DirectionalLightPass,
@@ -53,6 +54,8 @@ impl Engine {
         let animations = AnimationsManager::new(&renderer.device);
         let instances = InstancesManager::new(&renderer.device);
         let lights = LightsManager::new(&renderer.device);
+
+        let size = renderer.size();
 
         let geometry = GeometryPass::new(
             renderer,
@@ -88,6 +91,7 @@ impl Engine {
             animations,
             lights,
 
+            size,
             geometry,
             ambient_light,
             directional_light,
@@ -100,7 +104,7 @@ impl Engine {
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {
-        if self.geometry.size() == renderer.size() {
+        if self.size == renderer.size() {
             return;
         }
 
@@ -109,6 +113,8 @@ impl Engine {
         self.directional_light.rebind(renderer, &self.geometry);
         self.point_lights.rebind(renderer, &self.geometry);
         self.ssao.rebind(renderer, &self.geometry);
+
+        self.size = renderer.size();
     }
 
     pub fn update(
