@@ -195,7 +195,7 @@ impl PointLightsPass {
                         module: &shader,
                         entry_point: "fs_main_lighting",
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: renderer.surface_config.format,
+                            format: Renderer::OUTPUT_FORMAT,
                             blend: Some(wgpu::BlendState {
                                 color: wgpu::BlendComponent {
                                     src_factor: wgpu::BlendFactor::One,

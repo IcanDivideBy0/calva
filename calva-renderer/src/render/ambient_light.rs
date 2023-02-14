@@ -69,7 +69,7 @@ impl AmbientLightPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
+                        format: Renderer::OUTPUT_FORMAT,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -123,8 +123,6 @@ impl AmbientLightPass {
         );
 
         rpass.draw(0..3, 0..1);
-
-        drop(rpass);
     }
 
     fn make_bind_group(

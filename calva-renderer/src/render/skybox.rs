@@ -76,7 +76,7 @@ impl SkyboxPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
+                        format: Renderer::OUTPUT_FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],

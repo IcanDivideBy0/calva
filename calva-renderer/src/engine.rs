@@ -1,6 +1,6 @@
 use crate::{
     AmbientLightPass, AnimationsManager, CameraManager, DirectionalLight, DirectionalLightPass,
-    GeometryPass, InstancesManager, LightsManager, MaterialsManager, MeshesManager,
+    FxaaPass, GeometryPass, InstancesManager, LightsManager, MaterialsManager, MeshesManager,
     PointLightsPass, RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SsaoConfig,
     SsaoPass, TexturesManager,
 };
@@ -40,6 +40,7 @@ pub struct Engine {
     point_lights: PointLightsPass,
     ssao: SsaoPass<640, 480>,
     skybox: SkyboxPass,
+    fxaa: FxaaPass,
 
     pub config: EngineConfig,
 }
@@ -80,6 +81,7 @@ impl Engine {
         let point_lights = PointLightsPass::new(renderer, &camera, &geometry);
         let ssao = SsaoPass::new(renderer, &camera, &geometry);
         let skybox = SkyboxPass::new(renderer, &camera);
+        let fxaa = FxaaPass::new(renderer);
 
         Self {
             camera,
@@ -98,6 +100,7 @@ impl Engine {
             point_lights,
             ssao,
             skybox,
+            fxaa,
 
             config: Default::default(),
         }
@@ -113,6 +116,7 @@ impl Engine {
         self.directional_light.rebind(renderer, &self.geometry);
         self.point_lights.rebind(renderer, &self.geometry);
         self.ssao.rebind(renderer, &self.geometry);
+        self.fxaa.rebind(renderer);
 
         self.size = renderer.size();
     }
@@ -168,6 +172,8 @@ impl Engine {
             self.skybox
                 .render(ctx, &self.camera, self.config.gamma, skybox);
         }
+
+        self.fxaa.render(ctx, 1.0);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

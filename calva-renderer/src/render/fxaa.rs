@@ -1,78 +1,57 @@
 use crate::{RenderContext, Renderer};
 
-pub struct SsaoBlit {
+pub struct FxaaPass {
+    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl SsaoBlit {
-    pub fn new(renderer: &Renderer, ssao_output: &wgpu::TextureView) -> Self {
+impl FxaaPass {
+    pub fn new(renderer: &Renderer) -> Self {
         let bind_group_layout =
             renderer
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("SsaoBlit bind group layout"),
+                    label: Some("FXAA bind group layout"),
                     entries: &[
+                        // input
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
                             },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
                     ],
                 });
 
-        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        let bind_group = renderer
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("SsaoBlit bind group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(ssao_output),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            });
-
-        let shader = renderer
-            .device
-            .create_shader_module(wgpu::include_wgsl!("blit.wgsl"));
+        let bind_group = Self::make_bind_group(renderer, &bind_group_layout);
 
         let pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("SsaoBlit pipeline layout"),
+                    label: Some("FXAA pipeline layout"),
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        stages: wgpu::ShaderStages::FRAGMENT,
+                        range: 0..(std::mem::size_of::<f32>() as _),
+                    }],
                 });
+
+        let shader = renderer
+            .device
+            .create_shader_module(wgpu::include_wgsl!("fxaa.wgsl"));
 
         let pipeline = renderer
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("SsaoBlit pipeline"),
+                label: Some("FXAA pipeline"),
                 layout: Some(&pipeline_layout),
+                multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
@@ -82,31 +61,32 @@ impl SsaoBlit {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent::OVER,
-                            alpha: wgpu::BlendComponent::OVER,
-                        }),
+                        format: renderer.surface_config.format,
+                        blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
             });
 
         Self {
+            bind_group_layout,
             bind_group,
             pipeline,
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn rebind(&mut self, renderer: &Renderer) {
+        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout);
+    }
+
+    pub fn render(&self, ctx: &mut RenderContext, gamma: f32) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Ssao[blit]"),
+            label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: ctx.frame,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -118,7 +98,21 @@ impl SsaoBlit {
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&gamma));
 
         rpass.draw(0..3, 0..1);
+    }
+
+    fn make_bind_group(renderer: &Renderer, layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
+        renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("FXAA bind group"),
+                layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&renderer.output),
+                }],
+            })
     }
 }

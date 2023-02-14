@@ -20,7 +20,7 @@ impl EguiPass {
     pub fn new(renderer: &Renderer) -> Self {
         let egui_renderer = egui_wgpu::Renderer::new(
             &renderer.device,
-            renderer.surface_config.format,
+            Renderer::OUTPUT_FORMAT,
             Some(Renderer::DEPTH_FORMAT),
             1,
         );
