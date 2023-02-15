@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = window::WindowBuilder::new()
-        .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
+        // .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
         .build(&event_loop)?;
 
     let mut camera = camera::MyCamera::new(&window);
@@ -63,24 +63,33 @@ async fn main() -> Result<()> {
             .collect::<Vec<_>>(),
     );
 
-    let zombie = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/zombie.glb")?;
-    let zombie_anims = zombie.animations.keys().collect::<Vec<_>>();
-    zombie.instanciate(
+    let ennemies = vec![GltfModel::from_path(
         &renderer,
         &mut engine,
-        &(0..600)
-            .map(|i| {
-                (
-                    glam::Mat4::from_translation(glam::vec3(
-                        4.0 * (i % 50) as f32,
-                        0.0,
-                        4.0 * (i / 50) as f32,
-                    )),
-                    Some(zombie_anims[i % zombie_anims.len()].as_str()),
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
+        "./demo/assets/zombie.glb",
+    )?];
+
+    for (i, ennemy) in ennemies.iter().enumerate() {
+        ennemy.instanciate(
+            &renderer,
+            &mut engine,
+            &ennemy
+                .animations
+                .keys()
+                .enumerate()
+                .map(|(j, anim)| {
+                    (
+                        glam::Mat4::from_translation(glam::vec3(
+                            4.0 * j as f32,
+                            0.0,
+                            4.0 * i as f32,
+                        )),
+                        Some(anim.as_str()),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
 
     let mut directional_light = DirectionalLight {
         color: glam::vec4(1.0, 1.0, 1.0, 1.0),

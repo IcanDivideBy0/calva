@@ -1,6 +1,7 @@
 use crate::{RenderContext, Renderer};
 
 pub struct FxaaPass {
+    sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
@@ -8,27 +9,42 @@ pub struct FxaaPass {
 
 impl FxaaPass {
     pub fn new(renderer: &Renderer) -> Self {
+        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("FXAA sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
         let bind_group_layout =
             renderer
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("FXAA bind group layout"),
                     entries: &[
-                        // input
+                        // Sampler
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        // Input
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(renderer, &bind_group_layout);
+        let bind_group = Self::make_bind_group(renderer, &bind_group_layout, &sampler);
 
         let pipeline_layout =
             renderer
@@ -72,6 +88,7 @@ impl FxaaPass {
             });
 
         Self {
+            sampler,
             bind_group_layout,
             bind_group,
             pipeline,
@@ -79,12 +96,12 @@ impl FxaaPass {
     }
 
     pub fn rebind(&mut self, renderer: &Renderer) {
-        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout);
+        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout, &self.sampler);
     }
 
     pub fn render(&self, ctx: &mut RenderContext, gamma: f32) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("AmbientLight"),
+            label: Some("FXAA"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.frame,
                 resolve_target: None,
@@ -103,16 +120,26 @@ impl FxaaPass {
         rpass.draw(0..3, 0..1);
     }
 
-    fn make_bind_group(renderer: &Renderer, layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
+    fn make_bind_group(
+        renderer: &Renderer,
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+    ) -> wgpu::BindGroup {
         renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("FXAA bind group"),
                 layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&renderer.output),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&renderer.output),
+                    },
+                ],
             })
     }
 }

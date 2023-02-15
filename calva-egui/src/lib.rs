@@ -20,7 +20,7 @@ impl EguiPass {
     pub fn new(renderer: &Renderer) -> Self {
         let egui_renderer = egui_wgpu::Renderer::new(
             &renderer.device,
-            Renderer::OUTPUT_FORMAT,
+            renderer.surface_config.format,
             Some(Renderer::DEPTH_FORMAT),
             1,
         );
@@ -89,7 +89,7 @@ impl EguiPass {
             &mut ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: ctx.view,
+                    view: ctx.frame,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
