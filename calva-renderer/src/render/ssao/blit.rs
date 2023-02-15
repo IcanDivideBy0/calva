@@ -82,7 +82,7 @@ impl SsaoBlit {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
+                        format: Renderer::OUTPUT_FORMAT,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::OVER,
                             alpha: wgpu::BlendComponent::OVER,
@@ -92,7 +92,7 @@ impl SsaoBlit {
                 }),
                 primitive: Default::default(),
                 depth_stencil: None,
-                multisample: Renderer::MULTISAMPLE_STATE,
+                multisample: Default::default(),
                 multiview: None,
             });
 
@@ -107,7 +107,7 @@ impl SsaoBlit {
             label: Some("Ssao[blit]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.view,
-                resolve_target: ctx.resolve_target,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,

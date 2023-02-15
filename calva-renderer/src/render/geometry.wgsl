@@ -25,14 +25,13 @@ struct Material {
 @group(4) @binding(0) var animations: binding_array<texture_2d_array<f32>>;
 @group(4) @binding(1) var animations_sampler: sampler;
 
-
 struct MeshInstance {
     @location(0) model_matrix_0: vec4<f32>,
     @location(1) model_matrix_1: vec4<f32>,
     @location(2) model_matrix_2: vec4<f32>,
     @location(3) model_matrix_3: vec4<f32>,
     @location(4) normal_quat: vec4<f32>,
-    @location(5) material: u32,
+    @location(5) material_id: u32,
 
     @location(6) skin_offset: i32,
     @location(7) animation_id: u32,
@@ -53,7 +52,7 @@ struct VertexOutput {
     @location(2) tangent: vec3<f32>,
     @location(3) bitangent: vec3<f32>,
     @location(4) uv: vec2<f32>,
-    @location(5) @interpolate(flat) material: u32,
+    @location(5) @interpolate(flat) material_id: u32,
 }
 
 fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
@@ -154,7 +153,7 @@ fn vs_main(
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;
-    out.material = instance.material;
+    out.material_id = instance.material_id;
 
     return out;
 }
@@ -221,11 +220,21 @@ fn get_normal(in: VertexOutput, material: Material) -> vec3<f32> {
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> FragmentOutput {
-    let material = materials[in.material];
+fn fs_main(
+    @builtin(sample_mask) sample_mask: u32,
+    in: VertexOutput
+) -> FragmentOutput {
+    let material = materials[in.material_id];
 
     let albedo = textureSample(textures[material.albedo], textures_sampler, in.uv);
     let metallic_roughness = textureSample(textures[material.metallic_roughness], textures_sampler, in.uv).bg;
+
+    // let material_data = vec4<u32>(
+    //     pack2x16float(in.uv),
+    //     pack4x8snorm(vec4<f32>(dpdx(in.uv), dpdy(in.uv))),
+    //     sample_mask,
+    //     in.material_id,
+    // );
 
     if albedo.a < 0.5 { discard; }
 

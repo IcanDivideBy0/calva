@@ -103,10 +103,7 @@ impl DirectionalLightPass {
                             &skins.bind_group_layout,
                             &animations.bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::VERTEX,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             renderer
@@ -193,7 +190,7 @@ impl DirectionalLightPass {
                                 binding: 2,
                                 visibility: wgpu::ShaderStages::FRAGMENT,
                                 ty: wgpu::BindingType::Texture {
-                                    multisampled: Renderer::MULTISAMPLE_STATE.count > 1,
+                                    multisampled: false,
                                     view_dimension: wgpu::TextureViewDimension::D2,
                                     sample_type: wgpu::TextureSampleType::Depth,
                                 },
@@ -238,10 +235,7 @@ impl DirectionalLightPass {
                             &uniform.bind_group_layout,
                             &bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::FRAGMENT,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             let pipeline =
@@ -260,7 +254,7 @@ impl DirectionalLightPass {
                             module: &shader,
                             entry_point: "fs_main",
                             targets: &[Some(wgpu::ColorTargetState {
-                                format: renderer.surface_config.format,
+                                format: Renderer::OUTPUT_FORMAT,
                                 blend: Some(wgpu::BlendState {
                                     color: wgpu::BlendComponent {
                                         src_factor: wgpu::BlendFactor::One,
@@ -278,7 +272,7 @@ impl DirectionalLightPass {
                         }),
                         primitive: Default::default(),
                         depth_stencil: None,
-                        multisample: Renderer::MULTISAMPLE_STATE,
+                        multisample: Default::default(),
                     });
 
             (bind_group_layout, bind_group, pipeline)
@@ -328,7 +322,6 @@ impl DirectionalLightPass {
         skins: &SkinsManager,
         animations: &AnimationsManager,
         instances: &InstancesManager,
-        gamma: f32,
     ) {
         ctx.encoder.profile_start("DirectionalLight");
 
@@ -375,7 +368,7 @@ impl DirectionalLightPass {
             label: Some("DirectionalLight[shadow]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.view,
-                resolve_target: ctx.resolve_target,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
@@ -389,8 +382,6 @@ impl DirectionalLightPass {
         rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &self.uniform.bind_group, &[]);
         rpass.set_bind_group(2, &self.shadow_bind_group, &[]);
-
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&gamma));
 
         rpass.draw(0..3, 0..1);
 
@@ -414,15 +405,11 @@ impl DirectionalLightPass {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            geometry.albedo_metallic_view(),
-                        ),
+                        resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(
-                            geometry.normal_roughness_view(),
-                        ),
+                        resource: wgpu::BindingResource::TextureView(&geometry.normal_roughness),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -761,10 +748,7 @@ mod cull {
                             &uniform.bind_group_layout,
                             &bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::COMPUTE,
-                            range: 0..(std::mem::size_of::<u32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             let pipelines = (

@@ -1,44 +1,56 @@
-use crate::{GeometryPass, RenderContext, Renderer};
+use crate::{RenderContext, Renderer};
 
-pub struct AmbientLightPass {
+pub struct FxaaPass {
+    sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl AmbientLightPass {
-    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+impl FxaaPass {
+    pub fn new(renderer: &Renderer) -> Self {
+        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("FXAA sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
         let bind_group_layout =
             renderer
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("AmbientLight bind group layout"),
+                    label: Some("FXAA bind group layout"),
                     entries: &[
-                        // albedo
+                        // Sampler
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        // Input
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(renderer, geometry, &bind_group_layout);
-
-        let shader = renderer
-            .device
-            .create_shader_module(wgpu::include_wgsl!("ambient_light.wgsl"));
+        let bind_group = Self::make_bind_group(renderer, &bind_group_layout, &sampler);
 
         let pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("AmbientLight pipeline layout"),
+                    label: Some("FXAA pipeline layout"),
                     bind_group_layouts: &[&bind_group_layout],
                     push_constant_ranges: &[wgpu::PushConstantRange {
                         stages: wgpu::ShaderStages::FRAGMENT,
@@ -46,11 +58,16 @@ impl AmbientLightPass {
                     }],
                 });
 
+        let shader = renderer
+            .device
+            .create_shader_module(wgpu::include_wgsl!("fxaa.wgsl"));
+
         let pipeline = renderer
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("AmbientLight pipeline"),
+                label: Some("FXAA pipeline"),
                 layout: Some(&pipeline_layout),
+                multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
@@ -60,33 +77,33 @@ impl AmbientLightPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
-                        blend: Some(wgpu::BlendState::REPLACE),
+                        format: renderer.surface_config.format,
+                        blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
             });
 
         Self {
+            sampler,
             bind_group_layout,
             bind_group,
             pipeline,
         }
     }
 
-    pub fn rebind(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
-        self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
+    pub fn rebind(&mut self, renderer: &Renderer) {
+        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout, &self.sampler);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, factor: f32) {
+    pub fn render(&self, ctx: &mut RenderContext, gamma: f32) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("AmbientLight"),
+            label: Some("FXAA"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: ctx.frame,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -98,25 +115,31 @@ impl AmbientLightPass {
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&factor));
+        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&gamma));
 
         rpass.draw(0..3, 0..1);
     }
 
     fn make_bind_group(
         renderer: &Renderer,
-        geometry: &GeometryPass,
         layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
         renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("AmbientLight bind group"),
+                label: Some("FXAA bind group"),
                 layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&renderer.output),
+                    },
+                ],
             })
     }
 }

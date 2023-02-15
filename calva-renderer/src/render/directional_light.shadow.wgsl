@@ -39,12 +39,10 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @group(2) @binding(0) var t_albedo_metallic: texture_2d<f32>;
 @group(2) @binding(1) var t_normal_roughness: texture_2d<f32>;
-@group(2) @binding(2) var t_depth: texture_depth_multisampled_2d;
+@group(2) @binding(2) var t_depth: texture_depth_2d;
 
 @group(2) @binding(3) var t_shadows: texture_depth_2d;
 @group(2) @binding(4) var t_sampler: sampler;
-
-var<push_constant> GAMMA: f32;
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -82,8 +80,6 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let c = vec2<i32>(floor(in.position.xy));
-
     let albedo_metallic = textureSample(t_albedo_metallic, t_sampler, in.uv);
     let normal_roughness = textureSample(t_normal_roughness, t_sampler, in.uv);
 
@@ -92,7 +88,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let metallic = albedo_metallic.a;
     let roughness = normal_roughness.a;
 
-    let z = textureLoad(t_depth, c, 0);
+    let z = textureSample(t_depth, t_sampler, in.uv);
     var frag_pos_view = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
     frag_pos_view = frag_pos_view / frag_pos_view.w;
 
@@ -129,9 +125,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let kS = F;
     let kD = (1.0 - kS) * (1.0 - metallic);
 
-    var color = (kD * albedo / PI + specular) * radiance * NdotL;
-
-    color = pow(color, vec3<f32>(1.0 / GAMMA));
+    let color = (kD * albedo / PI + specular) * radiance * NdotL;
 
     return vec4<f32>(color, 1.0);
 }

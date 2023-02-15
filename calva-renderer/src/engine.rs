@@ -1,6 +1,6 @@
 use crate::{
     AmbientLightPass, AnimationsManager, CameraManager, DirectionalLight, DirectionalLightPass,
-    GeometryPass, InstancesManager, LightsManager, MaterialsManager, MeshesManager,
+    FxaaPass, GeometryPass, InstancesManager, LightsManager, MaterialsManager, MeshesManager,
     PointLightsPass, RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SsaoConfig,
     SsaoPass, TexturesManager,
 };
@@ -33,12 +33,14 @@ pub struct Engine {
     pub instances: InstancesManager,
     pub lights: LightsManager,
 
+    size: (u32, u32),
     geometry: GeometryPass,
     ambient_light: AmbientLightPass,
     directional_light: DirectionalLightPass,
     point_lights: PointLightsPass,
     ssao: SsaoPass<640, 480>,
     skybox: SkyboxPass,
+    fxaa: FxaaPass,
 
     pub config: EngineConfig,
 }
@@ -53,6 +55,8 @@ impl Engine {
         let animations = AnimationsManager::new(&renderer.device);
         let instances = InstancesManager::new(&renderer.device);
         let lights = LightsManager::new(&renderer.device);
+
+        let size = renderer.size();
 
         let geometry = GeometryPass::new(
             renderer,
@@ -77,6 +81,7 @@ impl Engine {
         let point_lights = PointLightsPass::new(renderer, &camera, &geometry);
         let ssao = SsaoPass::new(renderer, &camera, &geometry);
         let skybox = SkyboxPass::new(renderer, &camera);
+        let fxaa = FxaaPass::new(renderer);
 
         Self {
             camera,
@@ -88,19 +93,21 @@ impl Engine {
             animations,
             lights,
 
+            size,
             geometry,
             ambient_light,
             directional_light,
             point_lights,
             ssao,
             skybox,
+            fxaa,
 
             config: Default::default(),
         }
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {
-        if self.geometry.size() == renderer.size() {
+        if self.size == renderer.size() {
             return;
         }
 
@@ -109,6 +116,9 @@ impl Engine {
         self.directional_light.rebind(renderer, &self.geometry);
         self.point_lights.rebind(renderer, &self.geometry);
         self.ssao.rebind(renderer, &self.geometry);
+        self.fxaa.rebind(renderer);
+
+        self.size = renderer.size();
     }
 
     pub fn update(
@@ -138,8 +148,7 @@ impl Engine {
             &self.animations,
             &self.instances,
         );
-        self.ambient_light
-            .render(ctx, self.config.gamma, self.config.ambient);
+        self.ambient_light.render(ctx, self.config.ambient);
         self.directional_light.render(
             ctx,
             &self.camera,
@@ -147,16 +156,15 @@ impl Engine {
             &self.skins,
             &self.animations,
             &self.instances,
-            self.config.gamma,
         );
-        self.point_lights
-            .render(ctx, &self.camera, self.config.gamma, &self.lights);
+        self.point_lights.render(ctx, &self.camera, &self.lights);
         self.ssao.render(ctx, &self.camera);
 
         if let Some(skybox) = &self.config.skybox {
-            self.skybox
-                .render(ctx, &self.camera, self.config.gamma, skybox);
+            self.skybox.render(ctx, &self.camera, skybox);
         }
+
+        self.fxaa.render(ctx, self.config.gamma);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {
