@@ -63,11 +63,26 @@ async fn main() -> Result<()> {
             .collect::<Vec<_>>(),
     );
 
-    let ennemies = vec![GltfModel::from_path(
-        &renderer,
-        &mut engine,
-        "./demo/assets/zombie.glb",
-    )?];
+    let ennemies = [
+        "./demo/assets/zombies/zombie-boss.glb",
+        "./demo/assets/zombies/zombie-common.glb",
+        "./demo/assets/zombies/zombie-fat.glb",
+        "./demo/assets/zombies/zombie-murderer.glb",
+        "./demo/assets/zombies/zombie-snapper.glb",
+        "./demo/assets/skeletons/skeleton-archer.glb",
+        "./demo/assets/skeletons/skeleton-grunt.glb",
+        "./demo/assets/skeletons/skeleton-mage.glb",
+        "./demo/assets/skeletons/skeleton-king.glb",
+        "./demo/assets/skeletons/skeleton-swordsman.glb",
+        "./demo/assets/demons/demon-bomb.glb",
+        "./demo/assets/demons/demon-boss.glb",
+        "./demo/assets/demons/demon-fatty.glb",
+        "./demo/assets/demons/demon-grunt.glb",
+        "./demo/assets/demons/demon-imp.glb",
+    ]
+    .iter()
+    .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
+    .collect::<Result<Vec<_>>>()?;
 
     for (i, ennemy) in ennemies.iter().enumerate() {
         ennemy.instanciate(

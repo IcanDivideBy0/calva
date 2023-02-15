@@ -115,7 +115,11 @@ impl FxaaPass {
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&gamma));
+        rpass.set_push_constants(
+            wgpu::ShaderStages::FRAGMENT,
+            0,
+            bytemuck::bytes_of(&(1.0 / gamma)),
+        );
 
         rpass.draw(0..3, 0..1);
     }

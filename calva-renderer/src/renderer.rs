@@ -67,7 +67,7 @@ impl Renderer {
                         .copied()
                         .fold(wgpu::Features::empty(), core::ops::BitOr::bitor),
                     limits: wgpu::Limits {
-                        max_sampled_textures_per_shader_stage: 256,
+                        max_sampled_textures_per_shader_stage: 512,
                         max_push_constant_size: 128,
                         max_bind_groups: 6,
                         ..Default::default()

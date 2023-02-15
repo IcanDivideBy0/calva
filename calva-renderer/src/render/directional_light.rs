@@ -58,7 +58,7 @@ impl DirectionalLightPass {
         depth_or_array_layers: 1,
     };
 
-    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth16Unorm;
 
     pub fn new(
         renderer: &Renderer,

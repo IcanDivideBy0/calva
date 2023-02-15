@@ -32,7 +32,7 @@ impl AnimationsManager {
     // pub const SAMPLE_RATE: Duration = Duration::from_secs_f32(1.0 / 15.0);
     pub const SAMPLES_PER_SEC: f32 = 15.0;
 
-    const MAX_ANIMATIONS: usize = 64;
+    const MAX_ANIMATIONS: usize = 512;
 
     pub fn new(device: &wgpu::Device) -> Self {
         let mut views = Vec::with_capacity(Self::MAX_ANIMATIONS);
