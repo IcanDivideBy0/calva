@@ -68,7 +68,7 @@ impl Engine {
             &animations,
             &instances,
         );
-        let ambient_light = AmbientLightPass::new(renderer, &textures, &materials, &geometry);
+        let ambient_light = AmbientLightPass::new(renderer, &geometry);
         let directional_light = DirectionalLightPass::new(
             renderer,
             &camera,
@@ -148,13 +148,7 @@ impl Engine {
             &self.animations,
             &self.instances,
         );
-        self.ambient_light.render(
-            ctx,
-            &self.textures,
-            &self.materials,
-            self.config.gamma,
-            self.config.ambient,
-        );
+        self.ambient_light.render(ctx, self.config.ambient);
         self.directional_light.render(
             ctx,
             &self.camera,
@@ -162,18 +156,15 @@ impl Engine {
             &self.skins,
             &self.animations,
             &self.instances,
-            self.config.gamma,
         );
-        self.point_lights
-            .render(ctx, &self.camera, self.config.gamma, &self.lights);
+        self.point_lights.render(ctx, &self.camera, &self.lights);
         self.ssao.render(ctx, &self.camera);
 
         if let Some(skybox) = &self.config.skybox {
-            self.skybox
-                .render(ctx, &self.camera, self.config.gamma, skybox);
+            self.skybox.render(ctx, &self.camera, skybox);
         }
 
-        self.fxaa.render(ctx, 1.0);
+        self.fxaa.render(ctx, self.config.gamma);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

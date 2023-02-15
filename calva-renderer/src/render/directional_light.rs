@@ -103,10 +103,7 @@ impl DirectionalLightPass {
                             &skins.bind_group_layout,
                             &animations.bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::VERTEX,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             renderer
@@ -238,10 +235,7 @@ impl DirectionalLightPass {
                             &uniform.bind_group_layout,
                             &bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::FRAGMENT,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             let pipeline =
@@ -328,7 +322,6 @@ impl DirectionalLightPass {
         skins: &SkinsManager,
         animations: &AnimationsManager,
         instances: &InstancesManager,
-        gamma: f32,
     ) {
         ctx.encoder.profile_start("DirectionalLight");
 
@@ -389,8 +382,6 @@ impl DirectionalLightPass {
         rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &self.uniform.bind_group, &[]);
         rpass.set_bind_group(2, &self.shadow_bind_group, &[]);
-
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&gamma));
 
         rpass.draw(0..3, 0..1);
 
@@ -757,10 +748,7 @@ mod cull {
                             &uniform.bind_group_layout,
                             &bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::COMPUTE,
-                            range: 0..(std::mem::size_of::<u32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             let pipelines = (

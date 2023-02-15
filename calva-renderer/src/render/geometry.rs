@@ -462,10 +462,7 @@ mod cull {
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("Geometry[cull] pipeline layout"),
                         bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::COMPUTE,
-                            range: 0..(std::mem::size_of::<u32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             let pipelines = (

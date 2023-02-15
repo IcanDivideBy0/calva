@@ -51,10 +51,7 @@ impl SkyboxPass {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Skybox render pipeline layout"),
                     bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStages::FRAGMENT,
-                        range: 0..(std::mem::size_of::<f32>() as _),
-                    }],
+                    push_constant_ranges: &[],
                 });
 
         let shader = renderer
@@ -99,13 +96,7 @@ impl SkyboxPass {
         }
     }
 
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        camera: &CameraManager,
-        gamma: f32,
-        skybox: &Skybox,
-    ) {
+    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager, skybox: &Skybox) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skybox"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -126,7 +117,6 @@ impl SkyboxPass {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &skybox.bind_group, &[]);
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&gamma));
 
         rpass.draw(0..3, 0..1);
     }
