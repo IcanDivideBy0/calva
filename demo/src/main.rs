@@ -92,15 +92,17 @@ async fn main() -> Result<()> {
                 .animations
                 .keys()
                 .enumerate()
-                .map(|(j, anim)| {
-                    (
-                        glam::Mat4::from_translation(glam::vec3(
-                            4.0 * j as f32,
-                            0.0,
-                            4.0 * i as f32,
-                        )),
-                        Some(anim.as_str()),
-                    )
+                .flat_map(|(j, anim)| {
+                    (0..1).map(move |k| {
+                        (
+                            glam::Mat4::from_translation(glam::vec3(
+                                4.0 * j as f32,
+                                4.0 * k as f32,
+                                4.0 * i as f32,
+                            )),
+                            Some(anim.as_str()),
+                        )
+                    })
                 })
                 .collect::<Vec<_>>(),
         );

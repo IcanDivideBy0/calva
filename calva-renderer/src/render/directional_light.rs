@@ -855,6 +855,14 @@ mod blur {
 
     impl DirectionalLightBlur {
         pub fn new(renderer: &Renderer, output: &wgpu::TextureView) -> Self {
+            let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("DirectionalLightBlur sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+
             let temp = DirectionalLightPass::make_depth_texture(
                 renderer,
                 Some("DirectionalLightBlur temp texture"),
@@ -866,16 +874,24 @@ mod blur {
                     .device
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                         label: Some("DirectionalLightBlur bind group layout"),
-                        entries: &[wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Depth,
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                                count: None,
                             },
-                            count: None,
-                        }],
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    multisampled: false,
+                                    view_dimension: wgpu::TextureViewDimension::D2,
+                                    sample_type: wgpu::TextureSampleType::Depth,
+                                },
+                                count: None,
+                            },
+                        ],
                     });
 
             let pipeline_layout =
@@ -899,13 +915,19 @@ mod blur {
                             format!("DirectionalLightBlur[{direction}] bind group").as_str(),
                         ),
                         layout: &bind_group_layout,
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(match direction {
-                                Direction::Horizontal => output,
-                                Direction::Vertical => &temp,
-                            }),
-                        }],
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::Sampler(&sampler),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(match direction {
+                                    Direction::Horizontal => output,
+                                    Direction::Vertical => &temp,
+                                }),
+                            },
+                        ],
                     });
 
                 let pipeline =

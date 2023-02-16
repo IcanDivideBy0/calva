@@ -445,17 +445,16 @@ impl GltfModel {
             &instances
                 .iter()
                 .flat_map(|&(transform, animation)| {
-                    let mut instances = self.instances.clone();
-                    for mut i in instances.iter_mut() {
-                        i.transform = transform * i.transform;
-                        i.animation = animation
+                    self.instances.iter().cloned().map(move |mut instance| {
+                        instance.transform = transform * instance.transform;
+                        instance.animation = animation
                             .and_then(|name| self.animations.get(name))
                             .copied()
                             .unwrap_or_default()
                             .into();
-                    }
 
-                    instances
+                        instance
+                    })
                 })
                 .collect::<Vec<_>>(),
         );
@@ -465,14 +464,15 @@ impl GltfModel {
             &instances
                 .iter()
                 .flat_map(|&(transform, _)| {
-                    let mut point_lights = self.point_lights.clone();
+                    self.point_lights
+                        .iter()
+                        .cloned()
+                        .map(move |mut point_light| {
+                            point_light.position =
+                                (transform * point_light.position.extend(1.0)).truncate();
 
-                    for mut point_light in point_lights.iter_mut() {
-                        point_light.position =
-                            (transform * point_light.position.extend(1.0)).truncate();
-                    }
-
-                    point_lights
+                            point_light
+                        })
                 })
                 .collect::<Vec<_>>(),
         );
