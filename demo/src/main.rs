@@ -14,9 +14,13 @@ use winit::{
 };
 
 mod camera;
+mod dungen;
+pub use dungen::*;
 
 #[async_std::main]
 async fn main() -> Result<()> {
+    Dungen::gen();
+
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;

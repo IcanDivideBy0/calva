@@ -9,7 +9,7 @@ anyhow = "1.0"
 async-std = { version = "1.12", features = ["attributes"] }
 bytemuck = "1.12"
 env_logger = "0.10"
-glam = { version = "0.22", features = ["bytemuck"] }
+glam = { version = "0.22", features = ["bytemuck", "rand"] }
 winit = "0.28"
 rand = "0.8"
 image = "0.24"
