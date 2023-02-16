@@ -10,7 +10,7 @@ use std::time::Instant;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window,
+    window::{Fullscreen, WindowBuilder},
 };
 
 mod camera;
@@ -19,9 +19,7 @@ mod camera;
 async fn main() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = window::WindowBuilder::new()
-        // .with_fullscreen(Some(window::Fullscreen::Borderless(None)))
-        .build(&event_loop)?;
+    let window = WindowBuilder::new().build(&event_loop)?;
 
     let mut camera = camera::MyCamera::new(&window);
     camera.controller.transform = glam::Mat4::look_at_rh(
@@ -113,6 +111,7 @@ async fn main() -> Result<()> {
         direction: glam::vec3(-1.0, -1.0, -1.0),
     };
 
+    let mut kb_modifiers = ModifiersState::empty();
     let mut render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -212,6 +211,21 @@ async fn main() -> Result<()> {
                             },
                         ..
                     } => *control_flow = ControlFlow::Exit,
+
+                    WindowEvent::ModifiersChanged(modifiers) => kb_modifiers = *modifiers,
+                    WindowEvent::KeyboardInput { input, .. } => match input {
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(VirtualKeyCode::Return),
+                            ..
+                        } if kb_modifiers.alt() => {
+                            window.set_fullscreen(match window.fullscreen() {
+                                None => Some(Fullscreen::Borderless(None)),
+                                _ => None,
+                            });
+                        }
+                        _ => {}
+                    },
                     _ => {}
                 }
             }

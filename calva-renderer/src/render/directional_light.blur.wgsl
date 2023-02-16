@@ -31,7 +31,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @group(0) @binding(1) var t_input: texture_depth_2d;
 
 fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
-    let c = vec2<i32>(floor(position.xy));
+    let c = vec2<i32>(position.xy);
 
     var result: f32 = 0.0;
 
@@ -47,13 +47,13 @@ fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
 }
 
 @fragment
-fn fs_main_horizontal(@builtin(position) position: vec4<f32>) -> @builtin(frag_depth) f32 {
-    return blur(position, vec2<i32>(1, 0));
+fn fs_main_horizontal(in: VertexOutput) -> @builtin(frag_depth) f32 {
+    return blur(in.position, vec2<i32>(1, 0));
 }
 
 @fragment
-fn fs_main_vertical(@builtin(position) position: vec4<f32>) -> @builtin(frag_depth) f32 {
-    return blur(position, vec2<i32>(0, 1));
+fn fs_main_vertical(in: VertexOutput) -> @builtin(frag_depth) f32 {
+    return blur(in.position, vec2<i32>(0, 1));
 }
 
 // @fragment
