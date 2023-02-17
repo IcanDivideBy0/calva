@@ -21,6 +21,8 @@ pub use dungen::*;
 async fn main() -> Result<()> {
     Dungen::gen();
 
+    return Ok(());
+
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
