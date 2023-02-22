@@ -169,6 +169,6 @@ impl InstancesManager {
         cpass.set_pipeline(&self.anim_pipeline);
         cpass.set_bind_group(0, &self.anim_bind_group, &[]);
         cpass.set_push_constants(0, bytemuck::bytes_of(&dt.as_secs_f32()));
-        cpass.dispatch_workgroups(self.instances_data.len() as _, 1, 1);
+        cpass.dispatch_workgroups(self.count(), 1, 1);
     }
 }

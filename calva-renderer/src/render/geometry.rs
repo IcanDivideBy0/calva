@@ -217,7 +217,7 @@ impl GeometryPass {
                 }),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &ctx.depth_stencil,
+                view: ctx.depth_stencil,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -570,7 +570,7 @@ mod hiz {
                 ..Default::default()
             });
 
-            let output = Self::make_texture(&renderer, size);
+            let output = Self::make_texture(renderer, size);
 
             let bind_group_layout =
                 renderer
@@ -728,7 +728,7 @@ mod hiz {
                         },
                         wgpu::BindGroupEntry {
                             binding: 2,
-                            resource: wgpu::BindingResource::TextureView(&output_view),
+                            resource: wgpu::BindingResource::TextureView(output_view),
                         },
                     ],
                 })

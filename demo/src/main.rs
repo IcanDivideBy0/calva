@@ -14,15 +14,12 @@ use winit::{
 };
 
 mod camera;
-mod dungen;
-pub use dungen::*;
+// mod dungen;
+mod dungen2;
+mod dungen3;
 
 #[async_std::main]
 async fn main() -> Result<()> {
-    Dungen::gen();
-
-    return Ok(());
-
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
@@ -57,15 +54,20 @@ async fn main() -> Result<()> {
 
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
-    let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
-    dungeon.instanciate(
-        &renderer,
-        &mut engine,
-        &vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
-            .iter()
-            .map(|translation| (glam::Mat4::from_translation(*translation), None))
-            .collect::<Vec<_>>(),
-    );
+    dungen2::Chunk::new(&renderer, &mut engine)?.solve(&renderer, &mut engine);
+
+    // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
+    // return Ok(());
+
+    // let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
+    // dungeon.instanciate(
+    //     &renderer,
+    //     &mut engine,
+    //     &vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
+    //         .iter()
+    //         .map(|translation| (glam::Mat4::from_translation(*translation), None))
+    //         .collect::<Vec<_>>(),
+    // );
 
     let ennemies = [
         "./demo/assets/zombies/zombie-boss.glb",
@@ -85,32 +87,36 @@ async fn main() -> Result<()> {
         "./demo/assets/demons/demon-imp.glb",
     ]
     .iter()
+    .take(0)
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
+    let mut c = 0;
     for (i, ennemy) in ennemies.iter().enumerate() {
-        ennemy.instanciate(
-            &renderer,
-            &mut engine,
-            &ennemy
-                .animations
-                .keys()
-                .enumerate()
-                .flat_map(|(j, anim)| {
-                    (0..1).map(move |k| {
-                        (
-                            glam::Mat4::from_translation(glam::vec3(
-                                4.0 * j as f32,
-                                4.0 * k as f32,
-                                4.0 * i as f32,
-                            )),
-                            Some(anim.as_str()),
-                        )
-                    })
+        let instances = ennemy
+            .animations
+            .keys()
+            .enumerate()
+            .flat_map(|(j, anim)| {
+                (0..1).map(move |k| {
+                    (
+                        glam::Mat4::from_translation(glam::vec3(
+                            4.0 * j as f32,
+                            4.0 * k as f32,
+                            4.0 * i as f32,
+                        )),
+                        Some(anim.as_str()),
+                    )
                 })
-                .collect::<Vec<_>>(),
-        );
+            })
+            .collect::<Vec<_>>();
+
+        c += instances.len();
+
+        ennemy.instanciate(&renderer, &mut engine, &instances);
     }
+
+    dbg!(c);
 
     let mut directional_light = DirectionalLight {
         color: glam::vec4(1.0, 1.0, 1.0, 1.0),

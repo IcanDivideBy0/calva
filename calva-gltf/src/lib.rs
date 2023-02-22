@@ -13,9 +13,11 @@ mod animation;
 use animation::*;
 
 pub struct GltfModel {
-    pub instances: Vec<Instance>,
+    default_scene: String,
+    scenes: BTreeMap<String, (Vec<Instance>, Vec<PointLight>)>,
+    meshes: BTreeMap<String, Vec<Instance>>,
+
     pub animations: HashMap<String, AnimationId>,
-    pub point_lights: Vec<PointLight>,
 }
 
 impl GltfModel {
@@ -45,24 +47,29 @@ impl GltfModel {
     ) -> Result<Self> {
         let textures = Self::build_textures(renderer, engine, doc, images)?;
 
-        let materials: Vec<MaterialId> = Self::build_materials(renderer, engine, doc, &textures)?;
+        let materials = Self::build_materials(renderer, engine, doc, &textures)?;
 
         let meshes = Self::build_meshes(renderer, engine, doc, buffers)?;
 
-        let nodes_transforms = Self::build_nodes_transforms(doc);
+        let scenes_nodes_transforms = Self::build_scenes_nodes_transforms(doc);
+        let default_scene = doc
+            .default_scene()
+            .map(|scene| scene.index())
+            .unwrap_or_default();
 
-        let skins_animations =
-            Self::build_skin_animations(renderer, engine, doc, &nodes_transforms, buffers);
+        let skins_animations = Self::build_skin_animations(
+            renderer,
+            engine,
+            doc,
+            &scenes_nodes_transforms[default_scene],
+            buffers,
+        );
 
-        let instances: Vec<Instance> = doc
-            .nodes()
-            .filter_map(|node| {
-                let mesh = node.mesh()?;
-                let primitives = meshes.get(mesh.index())?;
-                let transform = nodes_transforms.get(&node.index()).copied()?;
-
-                let mesh_instances = mesh
-                    .primitives()
+        let meshes_instances = doc
+            .meshes()
+            .zip(&meshes)
+            .map(|(mesh, primitives)| {
+                mesh.primitives()
                     .zip(primitives)
                     .map(|(primitive, &mesh_id)| {
                         let material_id = primitive
@@ -72,53 +79,78 @@ impl GltfModel {
                             .unwrap_or_default();
 
                         Instance {
-                            transform,
                             mesh: mesh_id,
                             material: material_id,
                             ..Default::default()
                         }
                     })
-                    .collect::<Vec<_>>();
-
-                Some(mesh_instances)
+                    .collect::<Vec<_>>()
             })
-            .flatten()
-            .collect();
+            .collect::<Vec<_>>();
 
-        let point_lights: Vec<PointLight> = doc
-            .nodes()
-            .filter_map(|node| {
-                use gltf::khr_lights_punctual::Kind;
-                let light = node.light()?;
+        let scenes = scenes_nodes_transforms
+            .iter()
+            .map(|nodes_transforms| {
+                let instances = doc
+                    .nodes()
+                    .filter_map(|node| {
+                        let mesh = node.mesh()?;
+                        let transform = *nodes_transforms.get(&node.index())?;
+                        let instances = meshes_instances.get(mesh.index())?;
 
-                match light.kind() {
-                    Kind::Directional => {
-                        unimplemented!();
-                    }
-                    Kind::Point => {
-                        let color = light.color().into();
-                        let position = nodes_transforms
-                            .get(&node.index())?
-                            .transform_point3(glam::Vec3::ZERO);
-                        let radius = light.range().unwrap_or_else(|| light.intensity().sqrt());
+                        Some(
+                            instances
+                                .iter()
+                                .map(|&instance| Instance {
+                                    transform,
+                                    ..instance
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                    })
+                    .flatten()
+                    .collect();
 
-                        Some(PointLight {
-                            color,
-                            position,
-                            radius,
-                        })
-                    }
-                    Kind::Spot { .. } => {
-                        unimplemented!();
-                    }
-                }
+                let point_lights: Vec<PointLight> = doc
+                    .nodes()
+                    .filter_map(|node| {
+                        use gltf::khr_lights_punctual::Kind;
+                        let light = node.light()?;
+
+                        match light.kind() {
+                            Kind::Directional => {
+                                unimplemented!();
+                            }
+                            Kind::Point => {
+                                let color = light.color().into();
+                                let position = nodes_transforms
+                                    .get(&node.index())?
+                                    .transform_point3(glam::Vec3::ZERO);
+                                let radius =
+                                    light.range().unwrap_or_else(|| light.intensity().sqrt());
+
+                                Some(PointLight {
+                                    color,
+                                    position,
+                                    radius,
+                                })
+                            }
+                            Kind::Spot { .. } => {
+                                unimplemented!();
+                            }
+                        }
+                    })
+                    .collect();
+
+                (instances, point_lights)
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(Self {
-            instances,
+            default_scene: doc.default_scene().map(scene_name).unwrap(),
+            scenes: doc.scenes().map(scene_name).zip(scenes).collect(),
+            meshes: doc.meshes().map(mesh_name).zip(meshes_instances).collect(),
             animations: skins_animations.get(0).cloned().unwrap_or_default(),
-            point_lights,
         })
     }
 
@@ -294,10 +326,7 @@ impl GltfModel {
                             )?;
 
                             let center = (min + max) / 2.0;
-                            let radius = f32::max(
-                                (min - center).abs().max_element(),
-                                (max - center).abs().max_element(),
-                            );
+                            let radius = (max - center).length();
 
                             (center, radius)
                         };
@@ -328,36 +357,38 @@ impl GltfModel {
             .collect()
     }
 
-    fn build_nodes_transforms(doc: &gltf::Document) -> BTreeMap<usize, glam::Mat4> {
-        let mut nodes_transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
-
-        if let Some(scene) = doc.default_scene() {
-            fn traverse_nodes_tree<'a, T>(
-                nodes: impl Iterator<Item = gltf::Node<'a>>,
-                cb: &mut dyn FnMut(&T, &gltf::Node) -> T,
-                acc: T,
-            ) {
-                for node in nodes {
-                    let res = cb(&acc, &node);
-                    traverse_nodes_tree(node.children(), cb, res);
+    fn build_scenes_nodes_transforms(doc: &gltf::Document) -> Vec<BTreeMap<usize, glam::Mat4>> {
+        doc.scenes()
+            .map(|scene| {
+                fn traverse_nodes_tree<'a, T>(
+                    nodes: impl Iterator<Item = gltf::Node<'a>>,
+                    cb: &mut dyn FnMut(&T, &gltf::Node) -> T,
+                    acc: T,
+                ) {
+                    for node in nodes {
+                        let res = cb(&acc, &node);
+                        traverse_nodes_tree(node.children(), cb, res);
+                    }
                 }
-            }
 
-            traverse_nodes_tree(
-                scene.nodes(),
-                &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
-                    let local_transform =
-                        glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-                    let global_transform = *parent_transform * local_transform;
+                let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
 
-                    nodes_transforms.insert(node.index(), global_transform);
-                    global_transform
-                },
-                glam::Mat4::IDENTITY,
-            );
-        }
+                traverse_nodes_tree(
+                    scene.nodes(),
+                    &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
+                        let local_transform =
+                            glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+                        let global_transform = *parent_transform * local_transform;
 
-        nodes_transforms
+                        transforms.insert(node.index(), global_transform);
+                        global_transform
+                    },
+                    glam::Mat4::IDENTITY,
+                );
+
+                transforms
+            })
+            .collect()
     }
 
     fn build_skin_animations(
@@ -403,8 +434,6 @@ impl GltfModel {
                         let animated_nodes_transforms = sampler
                             .get_nodes_transforms(&time, doc.default_scene().unwrap().nodes());
 
-                        // let inv_mesh_transform =
-                        //     animated_nodes_transforms[&mesh_node.index()].inverse();
                         let frame: Vec<glam::Mat4> = skin
                             .joints()
                             .zip(&inverse_bind_matrices)
@@ -438,14 +467,26 @@ impl GltfModel {
         &self,
         renderer: &Renderer,
         engine: &mut Engine,
-        instances: &[(glam::Mat4, Option<&str>)],
+        model_instances: &[(glam::Mat4, Option<&str>)],
     ) {
+        self.instanciate_scene(renderer, engine, &self.default_scene, model_instances);
+    }
+
+    pub fn instanciate_scene(
+        &self,
+        renderer: &Renderer,
+        engine: &mut Engine,
+        scene_name: &str,
+        model_instances: &[(glam::Mat4, Option<&str>)],
+    ) {
+        let (scene_instances, scene_point_lights) = &self.scenes[scene_name];
+
         engine.instances.add(
             &renderer.queue,
-            &instances
+            &model_instances
                 .iter()
                 .flat_map(|&(transform, animation)| {
-                    self.instances.iter().cloned().map(move |mut instance| {
+                    scene_instances.iter().cloned().map(move |mut instance| {
                         instance.transform = transform * instance.transform;
                         instance.animation = animation
                             .and_then(|name| self.animations.get(name))
@@ -461,10 +502,10 @@ impl GltfModel {
 
         engine.lights.add_point_lights(
             &renderer.queue,
-            &instances
+            &model_instances
                 .iter()
                 .flat_map(|&(transform, _)| {
-                    self.point_lights
+                    scene_point_lights
                         .iter()
                         .cloned()
                         .map(move |mut point_light| {
@@ -477,4 +518,60 @@ impl GltfModel {
                 .collect::<Vec<_>>(),
         );
     }
+
+    pub fn mesh_instances(
+        &self,
+        name: &str,
+        transform: glam::Mat4,
+    ) -> impl Iterator<Item = Instance> + '_ {
+        self.meshes[name]
+            .iter()
+            .copied()
+            .map(move |instance| Instance {
+                transform,
+                ..instance
+            })
+    }
+
+    pub fn instanciate_mesh(
+        &self,
+        renderer: &Renderer,
+        engine: &mut Engine,
+        mesh_name: &str,
+        model_instances: &[(glam::Mat4, Option<&str>)],
+    ) {
+        let mesh_instances = &self.meshes[mesh_name];
+
+        engine.instances.add(
+            &renderer.queue,
+            &model_instances
+                .iter()
+                .flat_map(|&(transform, animation)| {
+                    mesh_instances.iter().cloned().map(move |mut instance| {
+                        instance.transform = transform * instance.transform;
+                        instance.animation = animation
+                            .and_then(|name| self.animations.get(name))
+                            .copied()
+                            .unwrap_or_default()
+                            .into();
+
+                        instance
+                    })
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+}
+
+fn scene_name(scene: gltf::Scene) -> String {
+    scene
+        .name()
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| format!("Scene.{:03}", scene.index()))
+}
+
+fn mesh_name(mesh: gltf::Mesh) -> String {
+    mesh.name()
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| format!("Mesh.{:03}", mesh.index()))
 }
