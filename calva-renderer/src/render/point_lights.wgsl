@@ -45,7 +45,7 @@ fn vs_main_stencil(
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) ndc: vec2<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(1) @interpolate(linear) uv: vec2<f32>,
 
     @location(2) l_position: vec3<f32>,
     @location(3) l_radius: f32,
@@ -136,11 +136,11 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let NdotL = max(dot(N, L), 0.0);
 
     let dist = distance(in.l_position, frag_pos_view);
-    let attenuation = 1.0 - smoothstep(0.0, in.l_radius, dist);
+    let attenuation = smoothstep(0.0, in.l_radius, dist);
     // let attenuation = 1.0 / smoothstep(0.0, 1.0, dist / in.l_radius);
     // let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 
-    let radiance = in.l_color * attenuation;
+    let radiance = in.l_color * (1.0 - attenuation);
 
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
     let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
