@@ -123,11 +123,12 @@ impl InstancesManager {
         }
     }
 
-    pub fn add(&mut self, queue: &wgpu::Queue, instances: &[Instance]) {
-        self.instances_data.extend(instances);
+    pub fn add(&mut self, queue: &wgpu::Queue, instances: impl IntoIterator<Item = Instance>) {
+        let first_instance_index = self.instances_data.len();
 
         let mut min_mesh_index: wgpu::BufferAddress = self.base_instances_data.len() as _;
-        for instance in instances {
+        for instance in instances.into_iter() {
+            self.instances_data.push(instance);
             let mesh_index: usize = instance.mesh.into();
 
             for base_instance in self.base_instances_data[(mesh_index + 1)..].iter_mut() {
@@ -136,8 +137,6 @@ impl InstancesManager {
 
             min_mesh_index = min_mesh_index.min(mesh_index as _);
         }
-
-        let first_instance_index = self.instances_data.len() - instances.len();
 
         queue.write_buffer(
             &self.instances,

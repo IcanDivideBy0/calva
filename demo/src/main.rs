@@ -15,7 +15,7 @@ use winit::{
 
 mod camera;
 // mod dungen;
-mod dungen2;
+// mod dungen2;
 mod dungen3;
 
 #[async_std::main]
@@ -54,19 +54,26 @@ async fn main() -> Result<()> {
 
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
-    dungen2::Chunk::new(&renderer, &mut engine)?.solve(&renderer, &mut engine);
+    let mut dungen = dungen3::Chunk::new(&renderer, &mut engine, Some(1841186548))?;
+
+    while !dungen.collapsed() {
+        dungen.solve();
+    }
+    dungen.instanciate(&renderer, &mut engine);
 
     // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
     // return Ok(());
 
     // let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
-    // dungeon.instanciate(
-    //     &renderer,
-    //     &mut engine,
-    //     &vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
+    // engine.instances.add(
+    //     &renderer.queue,
+    //     vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
     //         .iter()
-    //         .map(|translation| (glam::Mat4::from_translation(*translation), None))
-    //         .collect::<Vec<_>>(),
+    //         .flat_map(|&t| {
+    //             dungeon
+    //                 .scene_data(Some("default"), glam::Mat4::from_translation(t), None)
+    //                 .0
+    //         }),
     // );
 
     let ennemies = [
@@ -91,32 +98,26 @@ async fn main() -> Result<()> {
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
-    let mut c = 0;
-    for (i, ennemy) in ennemies.iter().enumerate() {
-        let instances = ennemy
-            .animations
-            .keys()
-            .enumerate()
-            .flat_map(|(j, anim)| {
-                (0..1).map(move |k| {
-                    (
-                        glam::Mat4::from_translation(glam::vec3(
-                            4.0 * j as f32,
-                            4.0 * k as f32,
-                            4.0 * i as f32,
-                        )),
-                        Some(anim.as_str()),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
+    let mut instances = vec![];
+    for (z, ennemy) in ennemies.iter().enumerate() {
+        for (x, animation) in ennemy.animations.keys().enumerate() {
+            for y in 0..1 {
+                let transform = glam::Mat4::from_translation(glam::vec3(
+                    4.0 * x as f32,
+                    4.0 * y as f32,
+                    4.0 * z as f32,
+                ));
 
-        c += instances.len();
-
-        ennemy.instanciate(&renderer, &mut engine, &instances);
+                instances.extend(
+                    ennemy
+                        .scene_instances(None, Some(animation), Some(transform))
+                        .unwrap()
+                        .0,
+                );
+            }
+        }
     }
-
-    dbg!(c);
+    engine.instances.add(&renderer.queue, instances);
 
     let mut directional_light = DirectionalLight {
         color: glam::vec4(1.0, 1.0, 1.0, 1.0),
@@ -153,6 +154,10 @@ async fn main() -> Result<()> {
                         })
                         .show(ctx, |ui| {
                             EguiPass::engine_config_ui(&mut engine)(ui);
+
+                            if ui.button("solve").clicked() {
+                                engine.instances.add(&renderer.queue, dungen.solve())
+                            }
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)

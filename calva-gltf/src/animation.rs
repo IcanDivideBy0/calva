@@ -185,7 +185,7 @@ impl AnimationSampler {
         time: &Duration,
         nodes: impl Iterator<Item = gltf::Node<'a>>,
         parent_world_transform: glam::Mat4,
-        store: &mut HashMap<usize, glam::Mat4>,
+        store: &mut BTreeMap<usize, glam::Mat4>,
     ) {
         for node in nodes {
             let local_transform = self.get_node_transform(&node, time);
@@ -201,8 +201,8 @@ impl AnimationSampler {
         &self,
         time: &Duration,
         nodes: impl Iterator<Item = gltf::Node<'a>>,
-    ) -> HashMap<usize, glam::Mat4> {
-        let mut frame_nodes_transforms = HashMap::new();
+    ) -> BTreeMap<usize, glam::Mat4> {
+        let mut frame_nodes_transforms = BTreeMap::new();
 
         self.apply_samplers_transforms(
             time,
