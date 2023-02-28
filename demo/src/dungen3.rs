@@ -288,10 +288,11 @@ impl Module {
         let translation = pos.as_vec3() * MODULE_SIZE;
 
         match self {
-            Self::Empty => vec![(
-                "Railing_Pillar_Low_01",
-                glam::Mat4::from_scale_rotation_translation(SCALE, rot.into(), translation),
-            )],
+            Self::Empty => vec![],
+            // Self::Empty => vec![(
+            //     "Railing_Pillar_Low_01",
+            //     glam::Mat4::from_scale_rotation_translation(SCALE, rot.into(), translation),
+            // )],
             Self::Floor => vec![(
                 "Base_Thin_01",
                 glam::Mat4::from_scale_rotation_translation(SCALE, rot.into(), translation),

@@ -176,11 +176,11 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mesh_id = (*instance).mesh_id;
     let mesh_info = &meshes_info[mesh_id];
 
-    let det = determinant(*transform);
+    // /!\ negative scaling not supported
     let scale = vec3<f32>(
-        length((*transform)[0].xyz) * sign(det),
-        length((*transform)[1].xyz),
-        length((*transform)[2].xyz),
+        length(transpose(*transform)[0].xyz),
+        length(transpose(*transform)[1].xyz),
+        length(transpose(*transform)[2].xyz),
     );
 
     if !sphere_visible((*mesh_info).bounding_sphere, (*transform), scale) {

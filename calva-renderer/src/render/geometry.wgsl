@@ -126,7 +126,9 @@ fn vs_main(
         instance.model_matrix_2,
         instance.model_matrix_3,
     );
-    var normal_matrix = mat4_to_mat3(camera.view);
+
+    var normal = in.normal;
+    var tangent = in.tangent.xyz;
 
     let skin_index = u32(i32(vertex_index) + instance.skin_offset);
     if skin_index > 0u {
@@ -137,7 +139,10 @@ fn vs_main(
         );
 
         model_matrix *= skinning_matrix;
-        normal_matrix *= mat4_to_mat3(skinning_matrix);
+
+        let skinnig_normal = mat4_to_mat3(skinning_matrix);
+        normal = skinnig_normal * normal;
+        tangent = skinnig_normal * tangent;
     }
 
     let world_pos = model_matrix * vec4<f32>(in.position, 1.0);
@@ -148,8 +153,9 @@ fn vs_main(
     out.clip_position = camera.proj * view_pos;
     out.position = view_pos.xyz / view_pos.w;
 
-    out.normal = normal_matrix * rotate(instance.normal_quat, in.normal);
-    out.tangent = normal_matrix * rotate(instance.normal_quat, in.tangent.xyz);
+    let normal_matrix = mat4_to_mat3(camera.view);
+    out.normal = normal_matrix * rotate(instance.normal_quat, normal);
+    out.tangent = normal_matrix * rotate(instance.normal_quat, tangent.xyz);
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;

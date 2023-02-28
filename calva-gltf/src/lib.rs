@@ -491,17 +491,19 @@ impl GltfModel {
         animation_name: Option<&str>,
         transform: Option<glam::Mat4>,
     ) -> Option<(Vec<Instance>, Vec<PointLight>)> {
-        let scene = scene_name
-            .map(|scene_name| {
-                self.doc
-                    .scenes()
-                    .find(|scene| scene.name() == Some(scene_name))
-            })
-            .unwrap_or_else(|| self.doc.default_scene())?;
+        let scene = if let Some(scene_name) = scene_name {
+            self.doc
+                .scenes()
+                .find(|scene| scene.name() == Some(scene_name))?
+        } else {
+            self.doc.default_scene()?
+        };
 
-        let animation = animation_name
-            .map(|animation_name| self.animations.get(animation_name).copied())
-            .unwrap_or_default()?;
+        let animation = if let Some(animation_name) = animation_name {
+            self.animations.get(animation_name).copied()?
+        } else {
+            AnimationId::default()
+        };
 
         Some(self.scene_data(scene, animation, transform.unwrap_or_default()))
     }

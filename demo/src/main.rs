@@ -1,6 +1,6 @@
 #![warn(clippy::all)]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use calva::{
     egui::{egui, EguiPass, EguiWinitPass},
     gltf::GltfModel,
@@ -16,7 +16,8 @@ use winit::{
 mod camera;
 // mod dungen;
 // mod dungen2;
-mod dungen3;
+// mod dungen3;
+// mod dungen4;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -54,17 +55,31 @@ async fn main() -> Result<()> {
 
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
-    let mut dungen = dungen3::Chunk::new(&renderer, &mut engine, Some(1841186548))?;
-
-    while !dungen.collapsed() {
-        dungen.solve();
-    }
-    dungen.instanciate(&renderer, &mut engine);
+    let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
+    engine.instances.add(
+        &renderer.queue,
+        dungeon
+            .scene_instances(Some("modules"), None, None)
+            .ok_or_else(|| anyhow!("Unable to load dungeon scene"))?
+            .0,
+    );
 
     // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
-    // return Ok(());
 
-    // let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
+    // let mut dungen = dungen3::Chunk::new(&renderer, &mut engine, Some(1841186548))?;
+    // while !dungen.collapsed() {
+    //     dungen.solve();
+    // }
+    // dungen.instanciate(&renderer, &mut engine);
+
+    // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
+
+    // let dungen = dungen4::Dungen::new(rand::random::<u32>());
+    // engine.instances.add(
+    //     &renderer.queue,
+    //     dungen.chunk((0, 0).into()).instanciate(&dungeon),
+    // );
+
     // engine.instances.add(
     //     &renderer.queue,
     //     vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
@@ -94,7 +109,7 @@ async fn main() -> Result<()> {
         "./demo/assets/demons/demon-imp.glb",
     ]
     .iter()
-    .take(0)
+    .take(1)
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
@@ -155,9 +170,9 @@ async fn main() -> Result<()> {
                         .show(ctx, |ui| {
                             EguiPass::engine_config_ui(&mut engine)(ui);
 
-                            if ui.button("solve").clicked() {
-                                engine.instances.add(&renderer.queue, dungen.solve())
-                            }
+                            // if ui.button("solve").clicked() {
+                            //     engine.instances.add(&renderer.queue, dungen.solve())
+                            // }
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)

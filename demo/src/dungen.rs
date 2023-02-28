@@ -17,7 +17,7 @@ pub struct Dungen {
 // https://vazgriz.com/119/procedurally-generated-dungeons/
 
 impl Dungen {
-    const WORLD_SIZE: i32 = 32;
+    const WORLD_SIZE: i32 = 16;
 
     pub fn new(renderer: &Renderer, engine: &mut Engine, seed: Option<u32>) -> Result<Self> {
         let dungeon = GltfModel::from_path(renderer, engine, "./demo/assets/dungeon.glb")?;
@@ -37,7 +37,7 @@ impl Dungen {
             .flat_map(|z| (0..Self::WORLD_SIZE).flat_map(move |x| self.get_tile_instances(x, z)))
             .collect::<Vec<_>>();
 
-        engine.instances.add(&renderer.queue, &instances);
+        engine.instances.add(&renderer.queue, instances);
     }
 
     fn get_tile_instances(&self, x: i32, y: i32) -> Vec<Instance> {
@@ -46,7 +46,7 @@ impl Dungen {
         let tile = Tile::new(x, y, &self.noise);
 
         if let Some(floor_level) = tile.floor_level() {
-            instances = self.place_floor(&tile, floor_level).collect();
+            instances = self.place_floor(&tile, floor_level);
 
             for dir in Direction::values() {
                 match tile.neighbour(dir).floor_level() {
@@ -66,22 +66,21 @@ impl Dungen {
         instances
     }
 
-    fn place_floor(&self, tile: &Tile, floor_level: u32) -> impl Iterator<Item = Instance> + '_ {
+    fn place_floor(&self, tile: &Tile, floor_level: u32) -> Vec<Instance> {
         let transform = glam::Mat4::from_scale_rotation_translation(
             Tile::MODEL_SCALE,
             Direction::random().rotation(),
             tile.world_coordinates(floor_level),
         );
 
-        self.dungeon.mesh_instances("Floor_Plane_01_32", transform)
+        self.dungeon
+            .node_instances("Floor_Plane_01_32", Some(transform), None)
+            .iter()
+            .flat_map(|(instances, _)| instances.clone())
+            .collect()
     }
 
-    fn place_wall(
-        &self,
-        tile: &Tile,
-        floor_level: u32,
-        direction: Direction,
-    ) -> impl Iterator<Item = Instance> + '_ {
+    fn place_wall(&self, tile: &Tile, floor_level: u32, direction: Direction) -> Vec<Instance> {
         let transform = glam::Mat4::from_scale_rotation_translation(
             Tile::MODEL_SCALE,
             direction.rotation(),
@@ -89,15 +88,14 @@ impl Dungen {
                 + direction.shift() * Tile::TILE_SCALE / 2.0,
         );
 
-        self.dungeon.mesh_instances("Wall_Plane_01_64", transform)
+        self.dungeon
+            .node_instances("Wall_Plane_01_64", Some(transform), None)
+            .iter()
+            .flat_map(|(instances, _)| instances.clone())
+            .collect()
     }
 
-    fn place_railling(
-        &self,
-        tile: &Tile,
-        floor_level: u32,
-        direction: Direction,
-    ) -> impl Iterator<Item = Instance> + '_ {
+    fn place_railling(&self, tile: &Tile, floor_level: u32, direction: Direction) -> Vec<Instance> {
         let railling_transform = glam::Mat4::from_scale_rotation_translation(
             Tile::MODEL_SCALE,
             direction.rotation(),
@@ -112,10 +110,15 @@ impl Dungen {
 
         std::iter::Iterator::chain(
             self.dungeon
-                .mesh_instances(tile.railling(direction), railling_transform),
+                .node_instances(tile.railling(direction), Some(railling_transform), None)
+                .iter()
+                .flat_map(|(instances, _)| instances.clone()),
             self.dungeon
-                .mesh_instances("Railing_Pillar_01", pillar_transform),
+                .node_instances("Railing_Pillar_01", Some(pillar_transform), None)
+                .iter()
+                .flat_map(|(instances, _)| instances.clone()),
         )
+        .collect()
     }
 }
 
