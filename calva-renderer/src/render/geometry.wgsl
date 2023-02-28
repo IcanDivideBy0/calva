@@ -140,6 +140,8 @@ fn vs_main(
 
         model_matrix *= skinning_matrix;
 
+        // non-uniform scaling bones will cause normal mapping issues,
+        // it does not worth computing the inverse scale tho.
         let skinnig_normal = mat4_to_mat3(skinning_matrix);
         normal = skinnig_normal * normal;
         tangent = skinnig_normal * tangent;
