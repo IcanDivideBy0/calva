@@ -139,9 +139,6 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let dist = distance(in.l_position, frag_pos_view);
     let attenuation = 1.0 / (dist * dist);
-    // let attenuation = 1.0 - smoothstep(0.0, in.l_radius, dist);
-    // let attenuation = 1.0 / smoothstep(0.0, 1.0, dist / in.l_radius);
-    // let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 
     let radiance = in.l_color * attenuation;
 
@@ -160,9 +157,6 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
     let alpha = 1.0 - smoothstep(in.l_radius * 0.8, in.l_radius, dist);
-
-    // color = vec3<f32>(alpha);
-    // return vec4<f32>(color, 1.0);
 
     color = color / (color + vec3(1.0));
     return vec4<f32>(
