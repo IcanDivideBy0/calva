@@ -21,7 +21,6 @@ pub struct Renderer {
 impl Renderer {
     const FEATURES: &'static [wgpu::Features] = &[
         wgpu::Features::DEPTH_CLIP_CONTROL,    // all platforms
-        wgpu::Features::MULTIVIEW,             // Vulkan
         wgpu::Features::TIMESTAMP_QUERY,       // Vulkan, DX12, web
         wgpu::Features::TEXTURE_BINDING_ARRAY, // Vulkan, DX12, metal
         wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY,
@@ -29,7 +28,6 @@ impl Renderer {
         wgpu::Features::MULTI_DRAW_INDIRECT_COUNT, // Vulkan, DX12
         wgpu::Features::INDIRECT_FIRST_INSTANCE, // Vulkan, DX12, metal
         wgpu::Features::PUSH_CONSTANTS,
-        // wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
         wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
         wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
         GpuProfiler::ALL_WGPU_TIMER_FEATURES,
