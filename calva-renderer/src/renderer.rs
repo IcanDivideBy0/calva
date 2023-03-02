@@ -29,7 +29,7 @@ impl Renderer {
         wgpu::Features::MULTI_DRAW_INDIRECT_COUNT, // Vulkan, DX12
         wgpu::Features::INDIRECT_FIRST_INSTANCE, // Vulkan, DX12, metal
         wgpu::Features::PUSH_CONSTANTS,
-        wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
+        // wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
         wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
         wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
         GpuProfiler::ALL_WGPU_TIMER_FEATURES,

@@ -52,10 +52,7 @@ impl FxaaPass {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("FXAA pipeline layout"),
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStages::FRAGMENT,
-                        range: 0..(std::mem::size_of::<f32>() as _),
-                    }],
+                    push_constant_ranges: &[],
                 });
 
         let shader = renderer
@@ -99,7 +96,7 @@ impl FxaaPass {
         self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout, &self.sampler);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, gamma: f32) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("FXAA"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -115,11 +112,6 @@ impl FxaaPass {
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_push_constants(
-            wgpu::ShaderStages::FRAGMENT,
-            0,
-            bytemuck::bytes_of(&(1.0 / gamma)),
-        );
 
         rpass.draw(0..3, 0..1);
     }

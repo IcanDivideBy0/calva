@@ -209,6 +209,8 @@ impl GltfModel {
     ) -> Result<Vec<Vec<MeshId>>> {
         doc.meshes()
             .map(|mesh| {
+                let mesh_name = mesh.name().unwrap_or("?");
+
                 mesh.primitives()
                     .map(|primitive| {
                         let get_accessor_data = |accessor: gltf::Accessor| -> Option<&[u8]> {
@@ -229,32 +231,34 @@ impl GltfModel {
                         };
 
                         let get_data_res = |semantic: &gltf::Semantic| -> Result<&[u8]> {
-                            get_data(semantic).ok_or_else(|| anyhow!("Missing {semantic:?}"))
+                            get_data(semantic)
+                                .ok_or_else(|| anyhow!("Mesh [{mesh_name}] missing [{semantic:?}]"))
                         };
 
                         let indices_data = primitive
                             .indices()
                             .and_then(get_accessor_data)
-                            .ok_or_else(|| anyhow!("Missing indices"))?;
+                            .ok_or_else(|| anyhow!("Mesh [{mesh_name}] missing indices"))?;
                         let indices = bytemuck::cast_slice::<_, u16>(indices_data)
                             .iter()
                             .map(|&i| i as u32)
                             .collect::<Vec<_>>();
 
                         let bounding_sphere = {
-                            let positions_accessor = primitive
-                                .get(&gltf::Semantic::Positions)
-                                .ok_or_else(|| anyhow!("Missing positions accessor",))?;
+                            let positions_accessor =
+                                primitive.get(&gltf::Semantic::Positions).ok_or_else(|| {
+                                    anyhow!("Mesh [{mesh_name}] Missing positions accessor",)
+                                })?;
 
                             let min = serde_json::from_value::<glam::Vec3>(
-                                positions_accessor
-                                    .min()
-                                    .ok_or_else(|| anyhow!("Missing positions accessor min"))?,
+                                positions_accessor.min().ok_or_else(|| {
+                                    anyhow!("Mesh [{mesh_name}] Missing positions accessor min")
+                                })?,
                             )?;
                             let max = serde_json::from_value::<glam::Vec3>(
-                                positions_accessor
-                                    .max()
-                                    .ok_or_else(|| anyhow!("Missing positions accessor max"))?,
+                                positions_accessor.max().ok_or_else(|| {
+                                    anyhow!("Mesh [{mesh_name}] Missing positions accessor max")
+                                })?,
                             )?;
 
                             let center = (min + max) / 2.0;
@@ -421,9 +425,24 @@ impl GltfModel {
                             unimplemented!();
                         }
                         Kind::Point => {
-                            let color = light.color().into();
-                            let position = transform.transform_point3(glam::Vec3::ZERO);
-                            let radius = light.range().unwrap_or_else(|| light.intensity().sqrt());
+                            let color: glam::Vec3 = light.color().into();
+                            let position = global_transform.transform_point3(glam::Vec3::ZERO);
+                            let radius = light.range().unwrap_or_else(|| {
+                                // Calculating a light's volume or radius:
+                                // https://learnopengl.com/Advanced-Lighting/Deferred-Shading
+                                const CONSTANT: f32 = 1.0;
+                                const LINEAR: f32 = 0.7;
+                                const QUADRATIC: f32 = 1.8;
+
+                                // what does light.intensity() represents ?
+                                ((LINEAR * LINEAR
+                                    - 4.0
+                                        * QUADRATIC
+                                        * (CONSTANT - (256.0 / 5.0) * color.max_element()))
+                                .sqrt()
+                                    - LINEAR)
+                                    / (2.0 * QUADRATIC)
+                            });
 
                             point_lights.push(PointLight {
                                 color,

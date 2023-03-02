@@ -16,7 +16,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             gamma: 2.2,
-            ambient: 0.051,
+            ambient: 0.25,
             ssao: SsaoConfig::default(),
             skybox: None,
         }
@@ -148,23 +148,26 @@ impl Engine {
             &self.animations,
             &self.instances,
         );
-        self.ambient_light.render(ctx, self.config.ambient);
-        self.directional_light.render(
-            ctx,
-            &self.camera,
-            &self.meshes,
-            &self.skins,
-            &self.animations,
-            &self.instances,
-        );
-        self.point_lights.render(ctx, &self.camera, &self.lights);
+        self.ambient_light
+            .render(ctx, self.config.ambient, self.config.gamma);
+        // self.directional_light.render(
+        //     ctx,
+        //     &self.camera,
+        //     &self.meshes,
+        //     &self.skins,
+        //     &self.animations,
+        //     &self.instances,
+        //     self.config.gamma,
+        // );
+        self.point_lights
+            .render(ctx, &self.camera, &self.lights, self.config.gamma);
         self.ssao.render(ctx, &self.camera);
 
         if let Some(skybox) = &self.config.skybox {
             self.skybox.render(ctx, &self.camera, skybox);
         }
 
-        self.fxaa.render(ctx, self.config.gamma);
+        self.fxaa.render(ctx);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

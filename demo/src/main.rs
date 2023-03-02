@@ -56,13 +56,12 @@ async fn main() -> Result<()> {
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
     let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
-    engine.instances.add(
-        &renderer.queue,
-        dungeon
-            .scene_instances(Some("modules"), None, None)
-            .ok_or_else(|| anyhow!("Unable to load dungeon scene"))?
-            .0,
-    );
+    let modules = dungeon
+        .scene_instances(Some("modules"), None, None)
+        .ok_or_else(|| anyhow!("Unable to load dungeon scene"))?;
+
+    engine.instances.add(&renderer.queue, modules.0);
+    engine.lights.add_point_lights(&renderer.queue, &modules.1);
 
     // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
 

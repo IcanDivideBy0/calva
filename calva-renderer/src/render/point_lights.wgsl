@@ -79,6 +79,8 @@ fn vs_main_lighting(
 @group(1) @binding(2) var t_normal_roughness: texture_2d<f32>;
 @group(1) @binding(3) var t_depth: texture_depth_2d;
 
+var<push_constant> GAMMA_INV: f32;
+
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
@@ -136,11 +138,12 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let NdotL = max(dot(N, L), 0.0);
 
     let dist = distance(in.l_position, frag_pos_view);
-    let attenuation = smoothstep(0.0, in.l_radius, dist);
+    let attenuation = 1.0 / (dist * dist);
+    // let attenuation = 1.0 - smoothstep(0.0, in.l_radius, dist);
     // let attenuation = 1.0 / smoothstep(0.0, 1.0, dist / in.l_radius);
     // let attenuation = pow(1.0 - min(dist / in.l_radius, 1.0), 2.0);
 
-    let radiance = in.l_color * (1.0 - attenuation);
+    let radiance = in.l_color * attenuation;
 
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
     let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
@@ -155,7 +158,15 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let kS = F;
     let kD = (1.0 - kS) * (1.0 - metallic);
 
-    let color = (kD * albedo / PI + specular) * radiance * NdotL;
+    var color = (kD * albedo / PI + specular) * radiance * NdotL;
+    let alpha = 1.0 - smoothstep(in.l_radius * 0.8, in.l_radius, dist);
 
-    return vec4<f32>(color, 1.0);
+    // color = vec3<f32>(alpha);
+    // return vec4<f32>(color, 1.0);
+
+    color = color / (color + vec3(1.0));
+    return vec4<f32>(
+      pow(color, vec3<f32>(GAMMA_INV)),
+      alpha
+    );
 }

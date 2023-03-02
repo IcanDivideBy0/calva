@@ -18,7 +18,6 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 
 @group(0) @binding(0) var t_sampler: sampler;
 @group(0) @binding(1) var t_input: texture_2d<f32>;
-var<push_constant> GAMMA_INV: f32;
 
 const LUMA: vec3<f32> = vec3<f32>(0.299, 0.587, 0.114);
 const SPAN_MIN: vec2<f32> = vec2<f32>(-8.0, -8.0);
@@ -75,8 +74,5 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
         color = r1;
     }
 
-    return vec4<f32>(
-      pow(color, vec3<f32>(GAMMA_INV)),
-      1.0
-    );
+    return vec4<f32>(color, 1.0);
 }

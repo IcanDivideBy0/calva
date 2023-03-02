@@ -109,6 +109,11 @@ impl TexturesManager {
         views: &[wgpu::TextureView],
         sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
+        let max_textures = device.limits().max_sampled_textures_per_shader_stage;
+        let views = (0..max_textures as _)
+            .map(|i| views.get(i).unwrap_or(&views[0]))
+            .collect::<Vec<_>>();
+
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("TexturesManager bind group"),
             layout,
@@ -116,7 +121,8 @@ impl TexturesManager {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureViewArray(
-                        &views.iter().collect::<Vec<_>>(),
+                        &views,
+                        // &views.iter().collect::<Vec<_>>(),
                     ),
                 },
                 wgpu::BindGroupEntry {

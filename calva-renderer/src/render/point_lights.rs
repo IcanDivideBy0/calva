@@ -175,7 +175,10 @@ impl PointLightsPass {
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("PointLights[lighting] pipeline layout"),
                         bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
-                        push_constant_ranges: &[],
+                        push_constant_ranges: &[wgpu::PushConstantRange {
+                            stages: wgpu::ShaderStages::FRAGMENT,
+                            range: 0..(std::mem::size_of::<f32>() as _),
+                        }],
                     });
 
             renderer
@@ -195,7 +198,7 @@ impl PointLightsPass {
                             format: Renderer::OUTPUT_FORMAT,
                             blend: Some(wgpu::BlendState {
                                 color: wgpu::BlendComponent {
-                                    src_factor: wgpu::BlendFactor::One,
+                                    src_factor: wgpu::BlendFactor::SrcAlpha,
                                     dst_factor: wgpu::BlendFactor::One,
                                     operation: wgpu::BlendOperation::Add,
                                 },
@@ -258,7 +261,13 @@ impl PointLightsPass {
             Self::make_bind_group(renderer, geometry, &self.bind_group_layout, &self.sampler);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager, lights: &LightsManager) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        camera: &CameraManager,
+        lights: &LightsManager,
+        gamma: f32,
+    ) {
         ctx.encoder.profile_start("PointLights");
 
         let mut stencil_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -309,6 +318,12 @@ impl PointLightsPass {
         lighting_pass.set_vertex_buffer(0, lights.point_lights.slice(..));
         lighting_pass.set_vertex_buffer(1, self.vertices.slice(..));
         lighting_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
+
+        lighting_pass.set_push_constants(
+            wgpu::ShaderStages::FRAGMENT,
+            0,
+            bytemuck::bytes_of(&(1.0 / gamma)),
+        );
 
         lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
 

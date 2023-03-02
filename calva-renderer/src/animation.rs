@@ -145,6 +145,10 @@ impl AnimationsManager {
         views: &[wgpu::TextureView],
         sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
+        let views = (0..Self::MAX_ANIMATIONS)
+            .map(|i| views.get(i).unwrap_or(&views[0]))
+            .collect::<Vec<_>>();
+
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("AnimationsManager bind group"),
             layout,
@@ -152,7 +156,8 @@ impl AnimationsManager {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureViewArray(
-                        &views.iter().collect::<Vec<_>>(),
+                        &views,
+                        // &views.iter().collect::<Vec<_>>(),
                     ),
                 },
                 wgpu::BindGroupEntry {

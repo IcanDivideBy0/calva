@@ -44,6 +44,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @group(2) @binding(3) var t_shadows: texture_depth_2d;
 @group(2) @binding(4) var t_sampler: sampler;
 
+var<push_constant> GAMMA_INV: f32;
+
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
@@ -125,7 +127,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let kS = F;
     let kD = (1.0 - kS) * (1.0 - metallic);
 
-    let color = (kD * albedo / PI + specular) * radiance * NdotL;
+    var color = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    return vec4<f32>(color, 1.0);
+    color = color / (color + 1.0);
+    return vec4<f32>(
+      pow(color, vec3<f32>(GAMMA_INV)),
+      1.0
+    );
 }

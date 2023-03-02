@@ -45,9 +45,9 @@ pub struct DirectionalLightPass {
 
     blur_pass: DirectionalLightBlur,
 
-    shadow_bind_group_layout: wgpu::BindGroupLayout,
-    shadow_bind_group: wgpu::BindGroup,
-    shadow_pipeline: wgpu::RenderPipeline,
+    lighting_bind_group_layout: wgpu::BindGroupLayout,
+    lighting_bind_group: wgpu::BindGroup,
+    lighting_pipeline: wgpu::RenderPipeline,
 }
 
 impl DirectionalLightPass {
@@ -143,13 +143,13 @@ impl DirectionalLightPass {
 
         let blur_pass = blur::DirectionalLightBlur::new(renderer, &depth);
 
-        let (shadow_bind_group_layout, shadow_bind_group, shadow_pipeline) = {
+        let (lighting_bind_group_layout, lighting_bind_group, lighting_pipeline) = {
             let shader = renderer
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("DirectionalLight[shadow] shader"),
+                    label: Some("DirectionalLight[lighting] shader"),
                     source: wgpu::ShaderSource::Wgsl(
-                        include_str!("directional_light.shadow.wgsl").into(),
+                        include_str!("directional_light.lighting.wgsl").into(),
                     ),
                 });
 
@@ -157,7 +157,7 @@ impl DirectionalLightPass {
                 renderer
                     .device
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("DirectionalLight[shadow] bind group layout"),
+                        label: Some("DirectionalLight[lighting] bind group layout"),
                         entries: &[
                             // albedo + metallic
                             wgpu::BindGroupLayoutEntry {
@@ -217,7 +217,7 @@ impl DirectionalLightPass {
                         ],
                     });
 
-            let bind_group = Self::make_shadow_bind_group(
+            let bind_group = Self::make_lighting_bind_group(
                 renderer,
                 geometry,
                 &bind_group_layout,
@@ -229,20 +229,23 @@ impl DirectionalLightPass {
                 renderer
                     .device
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("DirectionalLight[shadow] pipeline layout"),
+                        label: Some("DirectionalLight[lighting] pipeline layout"),
                         bind_group_layouts: &[
                             &camera.bind_group_layout,
                             &uniform.bind_group_layout,
                             &bind_group_layout,
                         ],
-                        push_constant_ranges: &[],
+                        push_constant_ranges: &[wgpu::PushConstantRange {
+                            stages: wgpu::ShaderStages::FRAGMENT,
+                            range: 0..(std::mem::size_of::<f32>() as _),
+                        }],
                     });
 
             let pipeline =
                 renderer
                     .device
                     .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("DirectionalLight[shadow] pipeline"),
+                        label: Some("DirectionalLight[lighting] pipeline"),
                         layout: Some(&pipeline_layout),
                         multiview: None,
                         vertex: wgpu::VertexState {
@@ -288,17 +291,17 @@ impl DirectionalLightPass {
 
             blur_pass,
 
-            shadow_bind_group_layout,
-            shadow_bind_group,
-            shadow_pipeline,
+            lighting_bind_group_layout,
+            lighting_bind_group,
+            lighting_pipeline,
         }
     }
 
     pub fn rebind(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
-        self.shadow_bind_group = Self::make_shadow_bind_group(
+        self.lighting_bind_group = Self::make_lighting_bind_group(
             renderer,
             geometry,
-            &self.shadow_bind_group_layout,
+            &self.lighting_bind_group_layout,
             &self.depth,
             &self.sampler,
         );
@@ -322,13 +325,14 @@ impl DirectionalLightPass {
         skins: &SkinsManager,
         animations: &AnimationsManager,
         instances: &InstancesManager,
+        gamma: f32,
     ) {
         ctx.encoder.profile_start("DirectionalLight");
 
         self.cull
             .cull(ctx, camera, meshes, instances, &self.uniform);
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut depth_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("DirectionalLight[depth]"),
             color_attachments: &[],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -341,18 +345,18 @@ impl DirectionalLightPass {
             }),
         });
 
-        rpass.set_pipeline(&self.depth_pipeline);
+        depth_pass.set_pipeline(&self.depth_pipeline);
 
-        rpass.set_bind_group(0, &self.uniform.bind_group, &[]);
-        rpass.set_bind_group(1, &skins.bind_group, &[]);
-        rpass.set_bind_group(2, &animations.bind_group, &[]);
+        depth_pass.set_bind_group(0, &self.uniform.bind_group, &[]);
+        depth_pass.set_bind_group(1, &skins.bind_group, &[]);
+        depth_pass.set_bind_group(2, &animations.bind_group, &[]);
 
-        rpass.set_vertex_buffer(0, self.cull.draw_instances.slice(..));
-        rpass.set_vertex_buffer(1, meshes.vertices.slice(..));
+        depth_pass.set_vertex_buffer(0, self.cull.draw_instances.slice(..));
+        depth_pass.set_vertex_buffer(1, meshes.vertices.slice(..));
 
-        rpass.set_index_buffer(meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
+        depth_pass.set_index_buffer(meshes.indices.slice(..), wgpu::IndexFormat::Uint32);
 
-        rpass.multi_draw_indexed_indirect_count(
+        depth_pass.multi_draw_indexed_indirect_count(
             &self.cull.draw_indirects,
             std::mem::size_of::<u32>() as _,
             &self.cull.draw_indirects,
@@ -360,12 +364,12 @@ impl DirectionalLightPass {
             MeshesManager::MAX_MESHES as _,
         );
 
-        drop(rpass);
+        drop(depth_pass);
 
         self.blur_pass.render(ctx, &self.depth);
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("DirectionalLight[shadow]"),
+        let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("DirectionalLight[lighting]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: ctx.view,
                 resolve_target: None,
@@ -377,20 +381,26 @@ impl DirectionalLightPass {
             depth_stencil_attachment: None,
         });
 
-        rpass.set_pipeline(&self.shadow_pipeline);
+        lighting_pass.set_pipeline(&self.lighting_pipeline);
 
-        rpass.set_bind_group(0, &camera.bind_group, &[]);
-        rpass.set_bind_group(1, &self.uniform.bind_group, &[]);
-        rpass.set_bind_group(2, &self.shadow_bind_group, &[]);
+        lighting_pass.set_bind_group(0, &camera.bind_group, &[]);
+        lighting_pass.set_bind_group(1, &self.uniform.bind_group, &[]);
+        lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
 
-        rpass.draw(0..3, 0..1);
+        lighting_pass.set_push_constants(
+            wgpu::ShaderStages::FRAGMENT,
+            0,
+            bytemuck::bytes_of(&(1.0 / gamma)),
+        );
 
-        drop(rpass);
+        lighting_pass.draw(0..3, 0..1);
+
+        drop(lighting_pass);
 
         ctx.encoder.profile_end();
     }
 
-    fn make_shadow_bind_group(
+    fn make_lighting_bind_group(
         renderer: &Renderer,
         geometry: &GeometryPass,
         layout: &wgpu::BindGroupLayout,
@@ -400,7 +410,7 @@ impl DirectionalLightPass {
         renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("DirectionalLight[shadow] bind group"),
+                label: Some("DirectionalLight[lighting] bind group"),
                 layout,
                 entries: &[
                     wgpu::BindGroupEntry {
