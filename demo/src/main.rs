@@ -14,6 +14,7 @@ use winit::{
 };
 
 mod camera;
+mod fog;
 // mod dungen;
 // mod dungen2;
 // mod dungen3;
@@ -138,7 +139,10 @@ async fn main() -> Result<()> {
         direction: glam::vec3(-1.0, -1.0, -1.0),
     };
 
+    let fog = fog::FogPass::new(&renderer, &engine.camera);
+
     let mut kb_modifiers = ModifiersState::empty();
+    let time = Instant::now();
     let mut render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -208,6 +212,7 @@ async fn main() -> Result<()> {
 
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
+                    fog.render(ctx, &engine.camera, &time);
                     egui.render(ctx);
                 });
 

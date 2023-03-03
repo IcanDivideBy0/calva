@@ -86,12 +86,7 @@ impl DirectionalLightPass {
         let depth_pipeline = {
             let shader = renderer
                 .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("DirectionalLight[depth] shader"),
-                    source: wgpu::ShaderSource::Wgsl(
-                        include_str!("directional_light.depth.wgsl").into(),
-                    ),
-                });
+                .create_shader_module(wgpu::include_wgsl!("directional_light.depth.wgsl",));
 
             let pipeline_layout =
                 renderer
@@ -146,12 +141,7 @@ impl DirectionalLightPass {
         let (lighting_bind_group_layout, lighting_bind_group, lighting_pipeline) = {
             let shader = renderer
                 .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("DirectionalLight[lighting] shader"),
-                    source: wgpu::ShaderSource::Wgsl(
-                        include_str!("directional_light.lighting.wgsl").into(),
-                    ),
-                });
+                .create_shader_module(wgpu::include_wgsl!("directional_light.lighting.wgsl",));
 
             let bind_group_layout =
                 renderer

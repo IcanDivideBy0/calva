@@ -77,10 +77,7 @@ impl GeometryPass {
 
         let shader = renderer
             .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Geometry[render] shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("geometry.wgsl").into()),
-            });
+            .create_shader_module(wgpu::include_wgsl!("geometry.wgsl"));
 
         let pipeline_layout =
             renderer
@@ -620,10 +617,7 @@ mod hiz {
 
             let shader = renderer
                 .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("Geometry[hi-z] shader module"),
-                    ..wgpu::include_wgsl!("geometry.hi-z.wgsl")
-                });
+                .create_shader_module(wgpu::include_wgsl!("geometry.hi-z.wgsl"));
 
             let pipeline_layout =
                 renderer
