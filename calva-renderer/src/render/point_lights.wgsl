@@ -158,7 +158,7 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     var color = (kD * albedo / PI + specular) * radiance * NdotL;
     let alpha = 1.0 - smoothstep(in.l_radius * 0.8, in.l_radius, dist);
 
-    color = color / (color + vec3(1.0));
+    color = color / (color + 1.0);
     return vec4<f32>(
       pow(color, vec3<f32>(GAMMA_INV)),
       alpha

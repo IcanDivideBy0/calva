@@ -26,11 +26,11 @@ var<push_constant> CONFIG: AmbientConfig;
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    var color = textureLoad(t_albedo_metallic, vec2<i32>(position.xy), 0).rgb;
+    var color = CONFIG.factor * textureLoad(t_albedo_metallic, vec2<i32>(position.xy), 0).rgb;
 
-    color = color / (color + vec3(1.0));
+    color = color / (color + 1.0);
     return vec4<f32>(
-      CONFIG.factor * pow(color, vec3<f32>(CONFIG.gamma_inv)),
+      pow(color, vec3<f32>(CONFIG.gamma_inv)),
       1.0
     );
 }
