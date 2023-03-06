@@ -45,12 +45,18 @@ var<push_constant> time: f32;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let t = time / 3.0;
-    let uvw = vec3<f32>(in.uv, 0.0) - vec3<f32>(t, t, t);
+    let t = time / 30.0;
+    // let t = 0.0;
 
-    let noise = textureSample(t_noise, t_sampler, uvw * 3.0).r;
+
+    let uvw = 3.0 * (vec3<f32>(in.uv, 0.0) - vec3<f32>(t, t, t));
+
+    let noise = textureSample(t_noise, t_sampler, uvw).r;
 
     var color = vec3<f32>(noise);
+
+    color += vec3<f32>(1.0, 0.0, 0.0) * (1.0 - smoothstep(0.0, 0.01, fract(uvw.x)));
+    color += vec3<f32>(1.0, 0.0, 0.0) * (1.0 - smoothstep(0.0, 0.01, fract(uvw.y)));
 
     return vec4<f32>(color, 1.0);
 }

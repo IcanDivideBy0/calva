@@ -13,11 +13,10 @@ mod animation;
 use animation::*;
 
 pub struct GltfModel {
-    doc: gltf::Document,
+    pub doc: gltf::Document,
 
     meshes_instances: Vec<Vec<Instance>>,
-
-    pub animations: HashMap<String, AnimationId>,
+    animations: HashMap<String, AnimationId>,
 }
 
 impl GltfModel {
@@ -51,10 +50,7 @@ impl GltfModel {
 
         let meshes = Self::build_meshes(renderer, engine, &doc, buffers)?;
 
-        let nodes_transforms = Self::build_nodes_transforms(&doc);
-
-        let skins_animations =
-            Self::build_skin_animations(renderer, engine, &doc, &nodes_transforms, buffers);
+        let skins_animations = Self::build_skin_animations(renderer, engine, &doc, buffers);
 
         let meshes_instances = doc
             .meshes()
@@ -293,40 +289,40 @@ impl GltfModel {
             .collect()
     }
 
-    fn build_nodes_transforms(doc: &gltf::Document) -> BTreeMap<usize, glam::Mat4> {
-        let children_nodes = doc
-            .nodes()
-            .flat_map(|node| node.children().map(|n| n.index()))
-            .collect::<HashSet<_>>();
-
-        let root_nodes = doc
-            .nodes()
-            .filter(|node| !children_nodes.contains(&node.index()));
-
-        let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
-
-        traverse_nodes_tree(
-            root_nodes,
-            &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
-                let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-                let global_transform = *parent_transform * local_transform;
-
-                transforms.insert(node.index(), global_transform);
-                global_transform
-            },
-            glam::Mat4::IDENTITY,
-        );
-
-        transforms
-    }
-
     fn build_skin_animations(
         renderer: &Renderer,
         engine: &mut Engine,
         doc: &gltf::Document,
-        nodes_transforms: &BTreeMap<usize, glam::Mat4>,
         buffers: &[gltf::buffer::Data],
     ) -> Vec<HashMap<String, AnimationId>> {
+        let nodes_transforms = {
+            let children_nodes = doc
+                .nodes()
+                .flat_map(|node| node.children().map(|n| n.index()))
+                .collect::<HashSet<_>>();
+
+            let root_nodes = doc
+                .nodes()
+                .filter(|node| !children_nodes.contains(&node.index()));
+
+            let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
+
+            traverse_nodes_tree(
+                root_nodes,
+                &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
+                    let local_transform =
+                        glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+                    let global_transform = *parent_transform * local_transform;
+
+                    transforms.insert(node.index(), global_transform);
+                    global_transform
+                },
+                glam::Mat4::IDENTITY,
+            );
+
+            transforms
+        };
+
         let animations_samplers: Vec<AnimationSampler> = doc
             .animations()
             .map(|animation| AnimationSampler::new(animation, buffers))
@@ -525,6 +521,10 @@ impl GltfModel {
         };
 
         Some(self.scene_data(scene, animation, transform.unwrap_or_default()))
+    }
+
+    pub fn animations(&self) -> impl Iterator<Item = &String> {
+        self.animations.keys()
     }
 }
 

@@ -229,7 +229,6 @@ fn get_normal(in: VertexOutput, material: Material) -> vec3<f32> {
 
 @fragment
 fn fs_main(
-    @builtin(sample_mask) sample_mask: u32,
     in: VertexOutput
 ) -> FragmentOutput {
     let material = materials[in.material_id];
@@ -237,10 +236,9 @@ fn fs_main(
     let albedo = textureSample(textures[material.albedo], textures_sampler, in.uv);
     let metallic_roughness = textureSample(textures[material.metallic_roughness], textures_sampler, in.uv).bg;
 
-    // let material_data = vec4<u32>(
+    // let material_data = vec3<u32>(
     //     pack2x16float(in.uv),
     //     pack4x8snorm(vec4<f32>(dpdx(in.uv), dpdy(in.uv))),
-    //     sample_mask,
     //     in.material_id,
     // );
 

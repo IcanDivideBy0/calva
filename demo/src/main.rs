@@ -1,6 +1,6 @@
 #![warn(clippy::all)]
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use calva::{
     egui::{egui, EguiPass, EguiWinitPass},
     gltf::GltfModel,
@@ -14,11 +14,12 @@ use winit::{
 };
 
 mod camera;
-mod fog;
+// mod fog;
 // mod dungen;
 // mod dungen2;
 // mod dungen3;
 // mod dungen4;
+mod worldgen;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -57,39 +58,25 @@ async fn main() -> Result<()> {
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
     let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
-    let modules = dungeon
-        .scene_instances(Some("modules"), None, None)
-        .ok_or_else(|| anyhow!("Unable to load dungeon scene"))?;
+    // let modules = dungeon
+    //     .scene_instances(Some("modules"), None, None)
+    //     .ok_or_else(|| anyhow!("Unable to load dungeon scene"))?;
 
-    engine.instances.add(&renderer.queue, modules.0);
-    engine.lights.add_point_lights(&renderer.queue, &modules.1);
+    // engine.instances.add(&renderer.queue, modules.0);
+    // engine.lights.add_point_lights(&renderer.queue, &modules.1);
 
-    // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
+    let worldgen = worldgen::WorldGenerator::new(&dungeon);
+    let seed = 12; // rand::random::<u32>();
+    let mut chunk = worldgen.chunk(seed, glam::ivec2(0, 0));
 
-    // let mut dungen = dungen3::Chunk::new(&renderer, &mut engine, Some(1841186548))?;
-    // while !dungen.collapsed() {
-    //     dungen.solve();
-    // }
-    // dungen.instanciate(&renderer, &mut engine);
+    while !chunk.collapsed() {
+        let (instances, point_lights) = chunk.solve(&dungeon);
 
-    // dungen::Dungen::new(&renderer, &mut engine, None)?.gen(&renderer, &mut engine);
-
-    // let dungen = dungen4::Dungen::new(rand::random::<u32>());
-    // engine.instances.add(
-    //     &renderer.queue,
-    //     dungen.chunk((0, 0).into()).instanciate(&dungeon),
-    // );
-
-    // engine.instances.add(
-    //     &renderer.queue,
-    //     vec![glam::vec3(-20.0, 0.0, 0.0), glam::vec3(20.0, 0.0, 0.0)]
-    //         .iter()
-    //         .flat_map(|&t| {
-    //             dungeon
-    //                 .scene_data(Some("default"), glam::Mat4::from_translation(t), None)
-    //                 .0
-    //         }),
-    // );
+        engine.instances.add(&renderer.queue, instances);
+        engine
+            .lights
+            .add_point_lights(&renderer.queue, &point_lights);
+    }
 
     let ennemies = [
         "./demo/assets/zombies/zombie-boss.glb",
@@ -115,7 +102,7 @@ async fn main() -> Result<()> {
 
     let mut instances = vec![];
     for (z, ennemy) in ennemies.iter().enumerate() {
-        for (x, animation) in ennemy.animations.keys().enumerate() {
+        for (x, animation) in ennemy.animations().enumerate() {
             for y in 0..1 {
                 let transform = glam::Mat4::from_translation(glam::vec3(
                     4.0 * x as f32,
@@ -139,10 +126,10 @@ async fn main() -> Result<()> {
         direction: glam::vec3(-1.0, -1.0, -1.0),
     };
 
-    let fog = fog::FogPass::new(&renderer, &engine.camera);
+    // let fog = fog::FogPass::new(&renderer, &engine.camera);
 
     let mut kb_modifiers = ModifiersState::empty();
-    let time = Instant::now();
+    let _time = Instant::now();
     let mut render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -173,9 +160,14 @@ async fn main() -> Result<()> {
                         .show(ctx, |ui| {
                             EguiPass::engine_config_ui(&mut engine)(ui);
 
-                            // if ui.button("solve").clicked() {
-                            //     engine.instances.add(&renderer.queue, dungen.solve())
-                            // }
+                            if ui.button("solve").clicked() {
+                                let (instances, point_lights) = chunk.solve(&dungeon);
+
+                                engine.instances.add(&renderer.queue, instances);
+                                engine
+                                    .lights
+                                    .add_point_lights(&renderer.queue, &point_lights);
+                            }
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)
@@ -212,7 +204,7 @@ async fn main() -> Result<()> {
 
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
-                    fog.render(ctx, &engine.camera, &time);
+                    // fog.render(ctx, &engine.camera, &time);
                     egui.render(ctx);
                 });
 
