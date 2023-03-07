@@ -270,37 +270,6 @@ impl ModuleOption {
             .flatten()
     }
 
-    // pub fn permutations(&self) -> impl Iterator<Item = Self> {
-    //     let ModuleOption {
-    //         id,
-    //         rotation,
-    //         mut north,
-    //         mut east,
-    //         mut south,
-    //         mut west,
-    //         ..
-    //     } = *self;
-
-    //     (rotation..rotation + 4)
-    //         .map(move |rotation| {
-    //             let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
-    //                 id,
-    //                 rotation,
-    //                 elevation,
-    //                 north,
-    //                 east,
-    //                 south,
-    //                 west,
-    //             });
-
-    //             // Rotate faces
-    //             (west, north, east, south) = (north, east, south, west);
-
-    //             it
-    //         })
-    //         .flatten()
-    // }
-
     pub fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
         let quat = glam::Quat::from_rotation_y(self.rotation as f32 * std::f32::consts::FRAC_PI_2);
 
