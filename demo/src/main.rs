@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
     // engine.lights.add_point_lights(&renderer.queue, &modules.1);
 
     let worldgen = worldgen::WorldGenerator::new(&dungeon);
-    let seed = 12; // rand::random::<u32>();
+    let seed = 42; // rand::random::<u32>();
     let mut chunk = worldgen.chunk(seed, glam::ivec2(0, 0));
 
     while !chunk.collapsed() {

@@ -1,7 +1,11 @@
 use rand::prelude::*;
 use rand_seeder::{SipHasher, SipRng};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, hash::Hash};
+use std::{
+    cell::RefCell,
+    collections::{BTreeSet, HashSet},
+    hash::Hash,
+};
 
 use calva::{
     gltf::GltfModel,
@@ -9,83 +13,76 @@ use calva::{
 };
 
 pub struct WorldGenerator {
-    modules: Vec<Module>,
+    options: BTreeSet<ModuleOption>,
 }
 
 impl WorldGenerator {
     pub fn new(model: &GltfModel) -> Self {
-        let modules = model
+        let options = model
             .doc
             .nodes()
             .filter_map(|node| {
-                let name = node.name()?.to_string();
+                let id = node.index();
                 let extras = node.extras().as_ref()?;
 
                 #[derive(Debug, Serialize, Deserialize)]
                 struct WfcInfo {
                     #[serde(rename = "wfc_north")]
-                    north: [u8; Module::SIZE],
+                    north: [u8; ModuleOption::TILE_COUNT],
                     #[serde(rename = "wfc_east")]
-                    east: [u8; Module::SIZE],
+                    east: [u8; ModuleOption::TILE_COUNT],
                     #[serde(rename = "wfc_south")]
-                    south: [u8; Module::SIZE],
+                    south: [u8; ModuleOption::TILE_COUNT],
                     #[serde(rename = "wfc_west")]
-                    west: [u8; Module::SIZE],
+                    west: [u8; ModuleOption::TILE_COUNT],
                 }
                 let infos = serde_json::from_str::<WfcInfo>(extras.get()).ok()?;
 
-                Some(Module {
-                    name,
-                    north: infos.north,
-                    east: infos.east,
-                    south: infos.south,
-                    west: infos.west,
-                })
+                Some(ModuleOption::permutations(
+                    id,
+                    infos.north,
+                    infos.east,
+                    infos.south,
+                    infos.west,
+                ))
             })
-            .collect::<Vec<_>>();
+            .flatten()
+            .collect();
 
-        Self { modules }
+        Self { options }
     }
 
     pub fn chunk(&self, seed: impl Hash, coord: glam::IVec2) -> Chunk {
-        Chunk::new(seed, coord, &self.modules)
+        Chunk::new(seed, coord, &self.options)
     }
 }
 
 pub struct Chunk {
     rng: SipRng,
     offset: glam::IVec2,
-    pub grid: [[Cell; Self::SIZE]; Self::SIZE],
+    pub grid: [[RefCell<Slot>; Self::SIZE]; Self::SIZE],
 }
 
 impl Chunk {
-    pub const SIZE: usize = 16;
+    pub const SIZE: usize = 4;
 
-    pub fn new(seed: impl Hash, coord: glam::IVec2, modules: &[Module]) -> Self {
+    pub fn new(seed: impl Hash, coord: glam::IVec2, options: &BTreeSet<ModuleOption>) -> Self {
         let rng = SipHasher::from((seed, coord)).into_rng();
 
         let offset = coord * (Self::SIZE as i32);
 
         let grid = std::array::from_fn(|_y| {
-            std::array::from_fn(|_x| Cell {
-                options: modules
-                    .iter()
-                    .flat_map(|module| {
-                        Orientation::all()
-                            .into_iter()
-                            .map(|orientation| ModuleOption {
-                                module: module.clone(),
-                                orientation,
-                            })
-                    })
-                    .collect(),
+            std::array::from_fn(|_x| {
+                RefCell::new(Slot {
+                    options: options.clone(),
+                })
             })
         });
 
         Self { rng, offset, grid }
     }
 
-    fn propagate(&mut self, x: usize, y: usize, cb: &mut dyn FnMut(&Cell, glam::UVec2)) {
+    fn propagate(&mut self, x: usize, y: usize, cb: &mut dyn FnMut(&Slot, glam::IVec2)) {
         for face in Face::all() {
             let (xx, yy) = match face {
                 Face::North if y > 0 => (x, y - 1),
@@ -95,21 +92,16 @@ impl Chunk {
                 _ => continue,
             };
 
-            let allowed_options = self.grid[y][x].filter_allowed_options(face, &self.grid[yy][xx]);
+            let slot = self.grid[y][x].borrow();
+            let mut neighbour = self.grid[yy][xx].borrow_mut();
 
-            let neighbour = &mut self.grid[yy][xx];
-
-            if neighbour.collapsed() {
-                continue;
-            }
-
-            let prev_entropy = neighbour.entropy();
-            neighbour.options = allowed_options;
-
-            if prev_entropy > neighbour.entropy() {
+            if slot.filter_allowed_options(face, &mut *neighbour) {
                 if neighbour.collapsed() {
-                    cb(neighbour, glam::uvec2(xx as _, yy as _));
+                    cb(&*neighbour, glam::ivec2(xx as _, yy as _));
                 }
+
+                drop(slot);
+                drop(neighbour);
 
                 self.propagate(xx, yy, cb);
             }
@@ -121,18 +113,18 @@ impl Chunk {
 
         for y in 0..Self::SIZE {
             for x in 0..Self::SIZE {
-                let cell = &self.grid[y][x];
+                let slot = self.grid[y][x].borrow();
 
-                if cell.collapsed() {
+                if slot.collapsed() {
                     continue;
                 }
 
                 match min_entropy {
                     None => {
-                        min_entropy = Some((cell.entropy(), (x, y)));
+                        min_entropy = Some((slot.entropy(), (x, y)));
                     }
-                    Some((min, ..)) if min > cell.entropy() => {
-                        min_entropy = Some((cell.entropy(), (x, y)));
+                    Some((min, ..)) if min > slot.entropy() => {
+                        min_entropy = Some((slot.entropy(), (x, y)));
                     }
                     _ => {}
                 }
@@ -140,23 +132,16 @@ impl Chunk {
         }
 
         if let Some((_, (x, y))) = min_entropy {
-            let world_offset = glam::vec3(self.offset.x as _, 0.0, self.offset.y as _);
+            let world_offset = self.offset;
 
             let mut instances = (vec![], vec![]);
-            let mut instanciate = |cell: &Cell, pos: glam::UVec2| {
-                let opt = cell.options.first().unwrap();
+            let mut instanciate = |slot: &Slot, pos: glam::IVec2| {
+                let opt = slot.options.first().unwrap();
 
-                let pos = pos * Module::WORLD_SIZE as u32;
-                let translation = glam::vec3(pos.x as _, 0.0, pos.y as _);
+                let node_name = model.doc.nodes().nth(opt.id).unwrap().name().unwrap();
 
-                let res = model.node_instances(
-                    &opt.module.name,
-                    Some(glam::Mat4::from_rotation_translation(
-                        opt.orientation.into(),
-                        world_offset + translation,
-                    )),
-                    None,
-                );
+                let res =
+                    model.node_instances(node_name, Some(opt.transform(world_offset + pos)), None);
 
                 if let Some(res) = res {
                     instances.0.extend(res.0);
@@ -164,17 +149,12 @@ impl Chunk {
                 }
             };
 
-            let cell = &mut self.grid[y][x];
+            let mut slot = self.grid[y][x].borrow_mut();
+            slot.options = [*slot.options.iter().choose(&mut self.rng).unwrap()].into();
 
-            let rand_index = self.rng.gen::<usize>() % cell.options.len();
-            cell.options = cell
-                .options
-                .iter()
-                .skip(rand_index)
-                .take(1)
-                .cloned()
-                .collect();
-            instanciate(cell, glam::uvec2(x as _, y as _));
+            instanciate(&*slot, glam::ivec2(x as _, y as _));
+
+            drop(slot);
 
             self.propagate(x, y, &mut instanciate);
 
@@ -187,16 +167,19 @@ impl Chunk {
 
     #[allow(dead_code)]
     pub fn collapsed(&self) -> bool {
-        self.grid.iter().flatten().all(Cell::collapsed)
+        self.grid
+            .iter()
+            .flatten()
+            .all(|slot| slot.borrow().collapsed())
     }
 }
 
 #[derive(Debug)]
-pub struct Cell {
+pub struct Slot {
     options: BTreeSet<ModuleOption>,
 }
 
-impl Cell {
+impl Slot {
     pub fn entropy(&self) -> usize {
         self.options.len()
     }
@@ -205,58 +188,131 @@ impl Cell {
         self.entropy() == 1
     }
 
-    pub fn filter_allowed_options(&self, face: Face, neighbour: &Cell) -> BTreeSet<ModuleOption> {
-        self.options
+    pub fn filter_allowed_options(&self, face: Face, neighbour: &mut Self) -> bool {
+        if neighbour.collapsed() {
+            return false;
+        }
+
+        let floor_levels = self
+            .options
             .iter()
-            .flat_map(|opt| {
+            .map(|opt| {
                 let mut floor_levels = opt.floor_levels(face);
                 floor_levels.reverse();
-
-                neighbour
-                    .options
-                    .iter()
-                    .cloned()
-                    .filter(move |neighbour_opt| {
-                        neighbour_opt.floor_levels(face.opposite()) == floor_levels
-                    })
+                floor_levels
             })
-            .collect()
+            .collect::<HashSet<_>>();
+
+        let prev_entropy = neighbour.entropy();
+
+        neighbour.options.retain(|neighbour_opt| {
+            floor_levels.contains(&neighbour_opt.floor_levels(face.opposite()))
+        });
+
+        prev_entropy > neighbour.entropy()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleOption {
-    module: Module,
-    orientation: Orientation,
+    id: usize,
+    rotation: u8,
+    elevation: u8,
+
+    north: [u8; Self::TILE_COUNT],
+    east: [u8; Self::TILE_COUNT],
+    south: [u8; Self::TILE_COUNT],
+    west: [u8; Self::TILE_COUNT],
 }
 
 impl ModuleOption {
-    pub fn floor_levels(&self, face: Face) -> [u8; Module::SIZE] {
-        self.module.floor_levels(face.reorient(self.orientation))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Module {
-    name: String,
-    north: [u8; Self::SIZE],
-    east: [u8; Self::SIZE],
-    south: [u8; Self::SIZE],
-    west: [u8; Self::SIZE],
-}
-
-impl Module {
-    pub const SIZE: usize = 5;
+    pub const TILE_COUNT: usize = 5;
     pub const TILE_SIZE: usize = 6;
-    pub const WORLD_SIZE: usize = Self::SIZE * Self::TILE_SIZE;
+    pub const ELEVATION_MAX: usize = 8;
 
-    pub fn floor_levels(&self, face: Face) -> [u8; Self::SIZE] {
+    pub const WORLD_FLOOR_HEIGHT: usize = 4;
+    pub const WORLD_SIZE: usize = Self::TILE_COUNT * Self::TILE_SIZE;
+
+    pub fn floor_levels(&self, face: Face) -> [u8; Self::TILE_COUNT] {
         match face {
             Face::North => self.north,
             Face::East => self.east,
             Face::South => self.south,
             Face::West => self.west,
         }
+        .map(|level| level + self.elevation)
+    }
+
+    pub fn permutations(
+        id: usize,
+        mut north: [u8; Self::TILE_COUNT],
+        mut east: [u8; Self::TILE_COUNT],
+        mut south: [u8; Self::TILE_COUNT],
+        mut west: [u8; Self::TILE_COUNT],
+    ) -> impl Iterator<Item = Self> {
+        (0..4)
+            .map(move |rotation| {
+                let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
+                    id,
+                    rotation,
+                    elevation,
+                    north,
+                    east,
+                    south,
+                    west,
+                });
+
+                // Rotate faces
+                (west, north, east, south) = (north, east, south, west);
+
+                it
+            })
+            .flatten()
+    }
+
+    // pub fn permutations(&self) -> impl Iterator<Item = Self> {
+    //     let ModuleOption {
+    //         id,
+    //         rotation,
+    //         mut north,
+    //         mut east,
+    //         mut south,
+    //         mut west,
+    //         ..
+    //     } = *self;
+
+    //     (rotation..rotation + 4)
+    //         .map(move |rotation| {
+    //             let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
+    //                 id,
+    //                 rotation,
+    //                 elevation,
+    //                 north,
+    //                 east,
+    //                 south,
+    //                 west,
+    //             });
+
+    //             // Rotate faces
+    //             (west, north, east, south) = (north, east, south, west);
+
+    //             it
+    //         })
+    //         .flatten()
+    // }
+
+    pub fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
+        let quat = glam::Quat::from_rotation_y(self.rotation as f32 * std::f32::consts::FRAC_PI_2);
+
+        dbg!(self.elevation);
+
+        let translation = glam::vec3(
+            pos.x as f32 * Self::WORLD_SIZE as f32,
+            self.elevation as f32 * Self::WORLD_FLOOR_HEIGHT as f32,
+            pos.y as f32 * Self::WORLD_SIZE as f32,
+        );
+
+        glam::Mat4::from_rotation_translation(quat, translation)
     }
 }
 
@@ -274,49 +330,11 @@ impl Face {
     }
 
     const fn opposite(self) -> Self {
-        self.rotate().rotate()
-    }
-
-    const fn rotate(self) -> Self {
         match self {
-            Self::North => Self::East,
-            Self::East => Self::South,
-            Self::South => Self::West,
-            Self::West => Self::North,
+            Self::North => Self::South,
+            Self::East => Self::West,
+            Self::South => Self::North,
+            Self::West => Self::East,
         }
-    }
-
-    const fn reorient(self, orientation: Orientation) -> Face {
-        match orientation {
-            Orientation::Top => self,
-            Orientation::Right => self.rotate(),
-            Orientation::Bottom => self.rotate().rotate(),
-            Orientation::Left => self.rotate().rotate().rotate(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Orientation {
-    Top,
-    Right,
-    Bottom,
-    Left,
-}
-
-impl Orientation {
-    const fn all() -> impl IntoIterator<Item = Self> {
-        [Self::Top, Self::Right, Self::Bottom, Self::Left]
-    }
-}
-
-impl From<Orientation> for glam::Quat {
-    fn from(orientation: Orientation) -> Self {
-        glam::Quat::from_rotation_y(match orientation {
-            Orientation::Top => 0.0,
-            Orientation::Right => std::f32::consts::FRAC_PI_2,
-            Orientation::Bottom => std::f32::consts::PI,
-            Orientation::Left => -std::f32::consts::FRAC_PI_2,
-        })
     }
 }
