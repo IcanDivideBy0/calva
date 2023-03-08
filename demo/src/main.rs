@@ -57,25 +57,17 @@ async fn main() -> Result<()> {
 
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
-    let dungeon = GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?;
-    // let modules = dungeon
-    //     .scene_instances(Some("modules"), None, None)
-    //     .ok_or_else(|| anyhow!("Unable to load dungeon scene"))?;
+    let worldgen = worldgen::WorldGenerator::new(
+        "Calva!533d", // rand::random::<u32>(),
+        GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?,
+    );
 
-    // engine.instances.add(&renderer.queue, modules.0);
-    // engine.lights.add_point_lights(&renderer.queue, &modules.1);
-
-    let worldgen = worldgen::WorldGenerator::new(&dungeon);
-    let seed = 42; // rand::random::<u32>();
-    let mut chunk = worldgen.chunk(seed, glam::ivec2(0, 0));
-
-    while !chunk.collapsed() {
-        let (instances, point_lights) = chunk.solve(&dungeon);
-
-        engine.instances.add(&renderer.queue, instances);
-        engine
-            .lights
-            .add_point_lights(&renderer.queue, &point_lights);
+    for x in -3..3 {
+        for y in -3..3 {
+            let res = worldgen.chunk(glam::ivec2(x, y));
+            engine.instances.add(&renderer.queue, res.0);
+            engine.lights.add_point_lights(&renderer.queue, &res.1);
+        }
     }
 
     let ennemies = [
@@ -159,15 +151,6 @@ async fn main() -> Result<()> {
                         })
                         .show(ctx, |ui| {
                             EguiPass::engine_config_ui(&mut engine)(ui);
-
-                            if ui.button("solve").clicked() {
-                                let (instances, point_lights) = chunk.solve(&dungeon);
-
-                                engine.instances.add(&renderer.queue, instances);
-                                engine
-                                    .lights
-                                    .add_point_lights(&renderer.queue, &point_lights);
-                            }
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)

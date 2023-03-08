@@ -1,11 +1,8 @@
+use noise::NoiseFn;
 use rand::prelude::*;
-use rand_seeder::{SipHasher, SipRng};
+use rand_seeder::SipHasher;
 use serde::{Deserialize, Serialize};
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashSet},
-    hash::Hash,
-};
+use std::{cell::RefCell, collections::BTreeSet, hash::Hash};
 
 use calva::{
     gltf::GltfModel,
@@ -13,11 +10,25 @@ use calva::{
 };
 
 pub struct WorldGenerator {
+    seed: u32,
+    noise: Box<dyn NoiseFn<f64, 2>>,
+    model: GltfModel,
     options: BTreeSet<ModuleOption>,
 }
 
 impl WorldGenerator {
-    pub fn new(model: &GltfModel) -> Self {
+    pub fn new(seed: impl Hash, model: GltfModel) -> Self {
+        let seed = SipHasher::from(seed).into_rng().gen();
+
+        let noise = Box::new(
+            noise::ScalePoint::new(
+                noise::ScaleBias::<f64, _, 2>::new(noise::Perlin::new(seed))
+                    .set_scale(0.5)
+                    .set_bias(0.5),
+            )
+            .set_scale(0.08),
+        );
+
         let options = model
             .doc
             .nodes()
@@ -28,61 +39,181 @@ impl WorldGenerator {
                 #[derive(Debug, Serialize, Deserialize)]
                 struct WfcInfo {
                     #[serde(rename = "wfc_north")]
-                    north: [u8; ModuleOption::TILE_COUNT],
+                    north: ModuleConstraint,
                     #[serde(rename = "wfc_east")]
-                    east: [u8; ModuleOption::TILE_COUNT],
+                    east: ModuleConstraint,
                     #[serde(rename = "wfc_south")]
-                    south: [u8; ModuleOption::TILE_COUNT],
+                    south: ModuleConstraint,
                     #[serde(rename = "wfc_west")]
-                    west: [u8; ModuleOption::TILE_COUNT],
+                    west: ModuleConstraint,
                 }
                 let infos = serde_json::from_str::<WfcInfo>(extras.get()).ok()?;
 
                 Some(ModuleOption::permutations(
                     id,
-                    infos.north,
-                    infos.east,
-                    infos.south,
-                    infos.west,
+                    [infos.north, infos.east, infos.south, infos.west],
                 ))
             })
             .flatten()
             .collect();
 
-        Self { options }
+        Self {
+            seed,
+            noise,
+            model,
+            options,
+        }
     }
 
-    pub fn chunk(&self, seed: impl Hash, coord: glam::IVec2) -> Chunk {
-        Chunk::new(seed, coord, &self.options)
+    pub fn chunk(&self, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
+        let chunk = Chunk::new(&self.seed, coord, self.noise.as_ref(), &self.options);
+
+        let mut instances = vec![];
+        let mut point_lights = vec![];
+
+        let offset = coord * (Chunk::SIZE as i32);
+
+        for y in 0..Chunk::SIZE {
+            for x in 0..Chunk::SIZE {
+                let slot = chunk.grid[y][x].borrow();
+
+                slot.options.first().and_then(|opt| {
+                    let node_name = self.model.doc.nodes().nth(opt.id)?.name()?;
+
+                    let res = self.model.node_instances(
+                        node_name,
+                        Some(opt.transform(offset + glam::ivec2(x as _, y as _))),
+                        None,
+                    )?;
+
+                    instances.extend(res.0);
+                    point_lights.extend(res.1);
+
+                    Some(())
+                });
+            }
+        }
+
+        (instances, point_lights)
     }
 }
 
-pub struct Chunk {
-    rng: SipRng,
-    offset: glam::IVec2,
-    pub grid: [[RefCell<Slot>; Self::SIZE]; Self::SIZE],
+type ChunkGrid = [[RefCell<Slot>; Chunk::SIZE]; Chunk::SIZE];
+struct Chunk {
+    grid: ChunkGrid,
 }
 
 impl Chunk {
-    pub const SIZE: usize = 4;
+    pub const SIZE: usize = 3;
 
-    pub fn new(seed: impl Hash, coord: glam::IVec2, options: &BTreeSet<ModuleOption>) -> Self {
-        let rng = SipHasher::from((seed, coord)).into_rng();
+    pub fn new(
+        seed: impl Hash,
+        coord: glam::IVec2,
+        noise: &dyn NoiseFn<f64, 2>,
+        options: &BTreeSet<ModuleOption>,
+    ) -> Self {
+        let mut rng = SipHasher::from((seed, coord)).into_rng();
 
-        let offset = coord * (Self::SIZE as i32);
-
-        let grid = std::array::from_fn(|_y| {
-            std::array::from_fn(|_x| {
+        let grid = std::array::from_fn(|_| {
+            std::array::from_fn(|_| {
                 RefCell::new(Slot {
                     options: options.clone(),
                 })
             })
         });
 
-        Self { rng, offset, grid }
+        for face in Face::all() {
+            for i in 0..Self::SIZE {
+                let (x, y) = match face {
+                    Face::North => (i, 0),
+                    Face::East => (Self::SIZE - 1, i),
+                    Face::South => (Self::SIZE - 1 - i, Self::SIZE - 1),
+                    Face::West => (0, Self::SIZE - 1 - i),
+                };
+
+                let nx = coord.x as f64 * Self::SIZE as f64
+                    + x as f64
+                    + match face {
+                        Face::East | Face::South => 1.0,
+                        _ => 0.0,
+                    };
+
+                let ny = coord.y as f64 * Self::SIZE as f64
+                    + y as f64
+                    + match face {
+                        Face::South | Face::West => 1.0,
+                        _ => 0.0,
+                    };
+
+                let elevation_start = noise.get([nx, ny]) * ModuleOption::ELEVATION_MAX as f64;
+
+                let nxx = match face {
+                    Face::North => nx + 1.0,
+                    Face::South => nx - 1.0,
+                    _ => nx,
+                };
+                let nyy = match face {
+                    Face::East => ny + 1.0,
+                    Face::West => ny - 1.0,
+                    _ => ny,
+                };
+
+                let elevation_end = noise.get([nxx, nyy]) * ModuleOption::ELEVATION_MAX as f64;
+
+                let elevation_start = (elevation_start / 2.0) as u8 * 2;
+                let elevation_end = (elevation_end / 2.0) as u8 * 2;
+
+                let mut c = [
+                    elevation_start,
+                    elevation_start,
+                    elevation_start.max(elevation_end),
+                    elevation_end,
+                    elevation_end,
+                ];
+
+                // println!("{c:?} #{i} {face:?}");
+
+                let mut slot = grid[y][x].borrow_mut();
+
+                c.reverse();
+
+                slot.apply_constraints(face, &[c]);
+
+                drop(slot);
+
+                Self::propagate(&grid, x, y);
+            }
+        }
+
+        while let Some((x, y)) = Self::min_entropy_slot(&grid) {
+            let mut slot = grid[y][x].borrow_mut();
+            slot.options = [*slot.options.iter().choose(&mut rng).unwrap()].into();
+            drop(slot);
+
+            Self::propagate(&grid, x, y);
+        }
+
+        Self { grid }
     }
 
-    fn propagate(&mut self, x: usize, y: usize, cb: &mut dyn FnMut(&Slot, glam::IVec2)) {
+    fn min_entropy_slot(grid: &ChunkGrid) -> Option<(usize, usize)> {
+        (0..Self::SIZE)
+            .flat_map(|y| {
+                (0..Self::SIZE).filter_map(move |x| {
+                    let slot = grid[y][x].borrow();
+
+                    if slot.collapsed() {
+                        None
+                    } else {
+                        Some((slot.entropy(), (x, y)))
+                    }
+                })
+            })
+            .min_by_key(|(entropy, _)| *entropy)
+            .map(|(_, coord)| coord)
+    }
+
+    fn propagate(grid: &ChunkGrid, x: usize, y: usize) {
         for face in Face::all() {
             let (xx, yy) = match face {
                 Face::North if y > 0 => (x, y - 1),
@@ -92,90 +223,24 @@ impl Chunk {
                 _ => continue,
             };
 
-            let slot = self.grid[y][x].borrow();
-            let mut neighbour = self.grid[yy][xx].borrow_mut();
+            let slot = grid[y][x].borrow();
+            let mut neighbour = grid[yy][xx].borrow_mut();
 
-            if slot.filter_allowed_options(face, &mut *neighbour) {
-                if neighbour.collapsed() {
-                    cb(&*neighbour, glam::ivec2(xx as _, yy as _));
-                }
+            let constraints = slot.constraints(face).collect::<Vec<_>>();
+            let has_changed = neighbour.apply_constraints(face.opposite(), &constraints);
 
+            if has_changed {
                 drop(slot);
                 drop(neighbour);
 
-                self.propagate(xx, yy, cb);
+                Self::propagate(grid, xx, yy);
             }
         }
-    }
-
-    pub fn solve(&mut self, model: &GltfModel) -> (Vec<Instance>, Vec<PointLight>) {
-        let mut min_entropy: Option<(usize, (usize, usize))> = None;
-
-        for y in 0..Self::SIZE {
-            for x in 0..Self::SIZE {
-                let slot = self.grid[y][x].borrow();
-
-                if slot.collapsed() {
-                    continue;
-                }
-
-                match min_entropy {
-                    None => {
-                        min_entropy = Some((slot.entropy(), (x, y)));
-                    }
-                    Some((min, ..)) if min > slot.entropy() => {
-                        min_entropy = Some((slot.entropy(), (x, y)));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if let Some((_, (x, y))) = min_entropy {
-            let world_offset = self.offset;
-
-            let mut instances = (vec![], vec![]);
-            let mut instanciate = |slot: &Slot, pos: glam::IVec2| {
-                let opt = slot.options.first().unwrap();
-
-                let node_name = model.doc.nodes().nth(opt.id).unwrap().name().unwrap();
-
-                let res =
-                    model.node_instances(node_name, Some(opt.transform(world_offset + pos)), None);
-
-                if let Some(res) = res {
-                    instances.0.extend(res.0);
-                    instances.1.extend(res.1);
-                }
-            };
-
-            let mut slot = self.grid[y][x].borrow_mut();
-            slot.options = [*slot.options.iter().choose(&mut self.rng).unwrap()].into();
-
-            instanciate(&*slot, glam::ivec2(x as _, y as _));
-
-            drop(slot);
-
-            self.propagate(x, y, &mut instanciate);
-
-            instances
-        } else {
-            println!("already solved");
-            (vec![], vec![])
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn collapsed(&self) -> bool {
-        self.grid
-            .iter()
-            .flatten()
-            .all(|slot| slot.borrow().collapsed())
     }
 }
 
 #[derive(Debug)]
-pub struct Slot {
+struct Slot {
     options: BTreeSet<ModuleOption>,
 }
 
@@ -188,41 +253,66 @@ impl Slot {
         self.entropy() == 1
     }
 
-    pub fn filter_allowed_options(&self, face: Face, neighbour: &mut Self) -> bool {
-        if neighbour.collapsed() {
+    pub fn constraints(&self, face: Face) -> impl Iterator<Item = ModuleConstraint> + '_ {
+        self.options.iter().map(move |opt| opt.constraint(face))
+    }
+
+    pub fn apply_constraints(&mut self, face: Face, constraints: &[ModuleConstraint]) -> bool {
+        if self.collapsed() {
             return false;
         }
 
-        let floor_levels = self
-            .options
-            .iter()
-            .map(|opt| {
-                let mut floor_levels = opt.floor_levels(face);
-                floor_levels.reverse();
-                floor_levels
-            })
-            .collect::<HashSet<_>>();
+        let prev_entropy = self.entropy();
 
-        let prev_entropy = neighbour.entropy();
+        self.options.retain(|opt| {
+            let mut c = opt.constraint(face);
+            c.reverse();
 
-        neighbour.options.retain(|neighbour_opt| {
-            floor_levels.contains(&neighbour_opt.floor_levels(face.opposite()))
+            constraints.contains(&c)
         });
 
-        prev_entropy > neighbour.entropy()
+        prev_entropy > self.entropy()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+type ModuleConstraint = [u8; ModuleOption::TILE_COUNT];
+
+#[derive(Debug, Clone, Copy)]
 pub struct ModuleOption {
     id: usize,
-    rotation: u8,
     elevation: u8,
+    rotation: u8,
+    faces: [ModuleConstraint; 4], // north east south west
+}
 
-    north: [u8; Self::TILE_COUNT],
-    east: [u8; Self::TILE_COUNT],
-    south: [u8; Self::TILE_COUNT],
-    west: [u8; Self::TILE_COUNT],
+impl Eq for ModuleOption {}
+impl PartialEq for ModuleOption {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.rotation == other.rotation && self.elevation == other.elevation
+    }
+}
+
+impl Hash for ModuleOption {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.elevation.hash(state);
+        self.rotation.hash(state);
+    }
+}
+
+impl std::cmp::PartialOrd for ModuleOption {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::cmp::Ord for ModuleOption {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id
+            .cmp(&other.id)
+            .then(self.elevation.cmp(&other.elevation))
+            .then(self.rotation.cmp(&other.rotation))
+    }
 }
 
 impl ModuleOption {
@@ -233,37 +323,27 @@ impl ModuleOption {
     pub const WORLD_FLOOR_HEIGHT: usize = 4;
     pub const WORLD_SIZE: usize = Self::TILE_COUNT * Self::TILE_SIZE;
 
-    pub fn floor_levels(&self, face: Face) -> [u8; Self::TILE_COUNT] {
+    pub fn constraint(&self, face: Face) -> ModuleConstraint {
         match face {
-            Face::North => self.north,
-            Face::East => self.east,
-            Face::South => self.south,
-            Face::West => self.west,
+            Face::North => self.faces[0],
+            Face::East => self.faces[1],
+            Face::South => self.faces[2],
+            Face::West => self.faces[3],
         }
-        .map(|level| level + self.elevation)
     }
 
-    pub fn permutations(
-        id: usize,
-        mut north: [u8; Self::TILE_COUNT],
-        mut east: [u8; Self::TILE_COUNT],
-        mut south: [u8; Self::TILE_COUNT],
-        mut west: [u8; Self::TILE_COUNT],
-    ) -> impl Iterator<Item = Self> {
+    pub fn permutations(id: usize, mut faces: [ModuleConstraint; 4]) -> impl Iterator<Item = Self> {
         (0..4)
             .map(move |rotation| {
                 let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
                     id,
-                    rotation,
                     elevation,
-                    north,
-                    east,
-                    south,
-                    west,
+                    rotation,
+                    faces: faces.map(|f| f.map(|i| i + elevation)),
                 });
 
                 // Rotate faces
-                (west, north, east, south) = (north, east, south, west);
+                faces = [faces[3], faces[0], faces[1], faces[2]];
 
                 it
             })
@@ -271,9 +351,7 @@ impl ModuleOption {
     }
 
     pub fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
-        let quat = glam::Quat::from_rotation_y(self.rotation as f32 * std::f32::consts::FRAC_PI_2);
-
-        dbg!(self.elevation);
+        let quat = glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
 
         let translation = glam::vec3(
             pos.x as f32 * Self::WORLD_SIZE as f32,
