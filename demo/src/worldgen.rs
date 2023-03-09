@@ -170,16 +170,10 @@ impl Chunk {
                     elevation_end,
                     elevation_end,
                 ];
-
                 // println!("{c:?} #{i} {face:?}");
-
-                let mut slot = grid[y][x].borrow_mut();
-
                 c.reverse();
 
-                slot.apply_constraints(face, &[c]);
-
-                drop(slot);
+                grid[y][x].borrow_mut().apply_constraints(face, &[c]);
 
                 Self::propagate(&grid, x, y);
             }

@@ -150,15 +150,15 @@ impl Engine {
         );
         self.ambient_light
             .render(ctx, self.config.ambient, self.config.gamma);
-        // self.directional_light.render(
-        //     ctx,
-        //     &self.camera,
-        //     &self.meshes,
-        //     &self.skins,
-        //     &self.animations,
-        //     &self.instances,
-        //     self.config.gamma,
-        // );
+        self.directional_light.render(
+            ctx,
+            &self.camera,
+            &self.meshes,
+            &self.skins,
+            &self.animations,
+            &self.instances,
+            self.config.gamma,
+        );
         self.point_lights
             .render(ctx, &self.camera, &self.lights, self.config.gamma);
         self.ssao.render(ctx, &self.camera);

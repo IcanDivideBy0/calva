@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
             for y in 0..1 {
                 let transform = glam::Mat4::from_translation(glam::vec3(
                     4.0 * x as f32,
-                    4.0 * y as f32,
+                    8.0 + 4.0 * y as f32,
                     4.0 * z as f32,
                 ));
 
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
     // let fog = fog::FogPass::new(&renderer, &engine.camera);
 
     let mut kb_modifiers = ModifiersState::empty();
-    let _time = Instant::now();
+    // let time = Instant::now();
     let mut render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         match event {
