@@ -225,15 +225,17 @@ impl GltfModel {
 
                 mesh.primitives()
                     .map(|primitive| {
+                        let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
+                            buffers.get(buffer.index()).map(std::ops::Deref::deref)
+                        };
+
                         let get_accessor_data = |accessor: gltf::Accessor| -> Option<&[u8]> {
                             let view = accessor.view()?;
 
                             let start = view.offset();
                             let end = start + view.length();
 
-                            let buffer = buffers
-                                .get(view.buffer().index())
-                                .map(std::ops::Deref::deref)?;
+                            let buffer = get_buffer_data(view.buffer())?;
 
                             Some(&buffer[start..end])
                         };
@@ -247,13 +249,11 @@ impl GltfModel {
                                 .ok_or_else(|| anyhow!("Mesh [{mesh_name}] missing [{semantic:?}]"))
                         };
 
-                        let indices_data = primitive
-                            .indices()
-                            .and_then(get_accessor_data)
-                            .ok_or_else(|| anyhow!("Mesh [{mesh_name}] missing indices"))?;
-                        let indices = bytemuck::cast_slice::<_, u16>(indices_data)
-                            .iter()
-                            .map(|&i| i as u32)
+                        let indices = primitive
+                            .reader(get_buffer_data)
+                            .read_indices()
+                            .unwrap()
+                            .into_u32()
                             .collect::<Vec<_>>();
 
                         let bounding_sphere = {

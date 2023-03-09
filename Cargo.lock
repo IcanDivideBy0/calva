@@ -430,6 +430,7 @@ dependencies = [
  "calva",
  "env_logger",
  "glam",
+ "gltf",
  "image",
  "noise",
  "rand 0.8.5",

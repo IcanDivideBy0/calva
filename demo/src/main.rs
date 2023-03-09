@@ -14,12 +14,9 @@ use winit::{
 };
 
 mod camera;
-// mod fog;
-// mod dungen;
-// mod dungen2;
-// mod dungen3;
-// mod dungen4;
+mod navmesh;
 mod worldgen;
+// mod fog;
 
 #[async_std::main]
 async fn main() -> Result<()> {
