@@ -82,7 +82,7 @@ impl AmbientLightPass {
         self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, gamma: f32, factor: f32) {
+    pub fn render(&self, ctx: &mut RenderContext, factor: f32, gamma: f32) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -101,7 +101,7 @@ impl AmbientLightPass {
         rpass.set_push_constants(
             wgpu::ShaderStages::FRAGMENT,
             0,
-            bytemuck::cast_slice(&[(1.0 / gamma), factor]),
+            bytemuck::cast_slice(&[factor, (1.0 / gamma)]),
         );
 
         rpass.draw(0..3, 0..1);

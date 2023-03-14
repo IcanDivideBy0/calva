@@ -19,8 +19,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 @group(0) @binding(0) var t_albedo_metallic: texture_2d<f32>;
 
 struct AmbientConfig {
-    gamma_inv: f32,
     factor: f32,
+    gamma_inv: f32,
 }
 var<push_constant> CONFIG: AmbientConfig;
 
@@ -30,7 +30,7 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 
     color = color / (color + 1.0);
     return vec4<f32>(
-      pow(color, vec3<f32>(CONFIG.gamma_inv)),
-      1.0
+        pow(color, vec3<f32>(CONFIG.gamma_inv)),
+        1.0
     );
 }

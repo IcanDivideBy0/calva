@@ -16,7 +16,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             gamma: 2.2,
-            ambient: 0.25,
+            ambient: 0.005,
             ssao: SsaoConfig::default(),
             skybox: None,
         }

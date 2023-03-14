@@ -131,7 +131,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     color = color / (color + 1.0);
     return vec4<f32>(
-      pow(color, vec3<f32>(GAMMA_INV)),
-      1.0
+        pow(color, vec3<f32>(GAMMA_INV)),
+        1.0
     );
 }
