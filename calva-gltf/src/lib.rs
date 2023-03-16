@@ -430,7 +430,6 @@ impl GltfModel {
                                 const LINEAR: f32 = 0.7;
                                 const QUADRATIC: f32 = 1.8;
 
-                                // what does light.intensity() represents ?
                                 ((LINEAR * LINEAR
                                     - 4.0
                                         * QUADRATIC
@@ -438,12 +437,15 @@ impl GltfModel {
                                 .sqrt()
                                     - LINEAR)
                                     / (2.0 * QUADRATIC)
-                            });
+                            }) * 2.0;
+
+                            let intensity = light.intensity(); // luminous intensity in candela (lm/sr)
 
                             point_lights.push(PointLight {
-                                color,
                                 position,
                                 radius,
+                                intensity,
+                                color,
                             });
                         }
                         Kind::Spot { .. } => {
