@@ -83,7 +83,10 @@ impl PointLightsPass {
                         buffers: &vertex_buffers_layout,
                     },
                     fragment: None,
-                    primitive: wgpu::PrimitiveState::default(),
+                    primitive: wgpu::PrimitiveState {
+                        unclipped_depth: true,
+                        ..Default::default()
+                    },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: Renderer::DEPTH_FORMAT,
                         depth_write_enabled: false,

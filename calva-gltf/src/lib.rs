@@ -426,6 +426,11 @@ impl GltfModel {
                             const LUMINOUS_EFFICACITY: f32 = 683.002; // Photopic luminous efficacy of radiation
                             color *= intensity / LUMINOUS_EFFICACITY;
 
+                            // Would be more correct, but light radius will grow too much and impact
+                            // perfs too much. We can do it after radius computation as well, but light
+                            // cutoff becomes a bit too obvious.
+                            // color *= 4.0 * std::f32::consts::PI;
+
                             let position = global_transform.transform_point3(glam::Vec3::ZERO);
                             let radius = light.range().unwrap_or_else(|| {
                                 // Calculating a light's volume or radius:
