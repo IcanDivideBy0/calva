@@ -421,7 +421,11 @@ impl GltfModel {
                             unimplemented!();
                         }
                         Kind::Point => {
-                            let color: glam::Vec3 = light.color().into();
+                            let mut color: glam::Vec3 = light.color().into();
+                            let intensity = light.intensity(); // Luminous intensity in candela (lm/sr)
+                            const LUMINOUS_EFFICACITY: f32 = 683.002; // Photopic luminous efficacy of radiation
+                            color *= intensity / LUMINOUS_EFFICACITY;
+
                             let position = global_transform.transform_point3(glam::Vec3::ZERO);
                             let radius = light.range().unwrap_or_else(|| {
                                 // Calculating a light's volume or radius:
@@ -437,14 +441,11 @@ impl GltfModel {
                                 .sqrt()
                                     - LINEAR)
                                     / (2.0 * QUADRATIC)
-                            }) * 2.0;
-
-                            let intensity = light.intensity(); // luminous intensity in candela (lm/sr)
+                            });
 
                             point_lights.push(PointLight {
                                 position,
                                 radius,
-                                intensity,
                                 color,
                             });
                         }

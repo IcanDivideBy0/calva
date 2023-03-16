@@ -9,7 +9,6 @@ pub struct PointLightId(u32);
 pub struct PointLight {
     pub position: glam::Vec3,
     pub radius: f32,
-    pub intensity: f32,
     pub color: glam::Vec3,
 }
 

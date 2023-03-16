@@ -11,12 +11,11 @@ struct Camera {
 struct LightInstance {
     @location(0) position: vec3<f32>,
     @location(1) radius: f32,
-    @location(2) intensity: f32,
-    @location(3) color: vec3<f32>,
+    @location(2) color: vec3<f32>,
 }
 
 struct VertexInput {
-    @location(4) position: vec3<f32>,
+    @location(3) position: vec3<f32>,
 }
 
 fn get_clip_pos(
@@ -50,8 +49,7 @@ struct VertexOutput {
 
     @location(2) l_position: vec3<f32>,
     @location(3) l_radius: f32,
-    @location(4) l_intensity: f32,
-    @location(5) l_color: vec3<f32>,
+    @location(4) l_color: vec3<f32>,
 }
 
 @vertex
@@ -67,7 +65,6 @@ fn vs_main_lighting(
 
     out.l_position = (camera.view * vec4<f32>(instance.position, 1.0)).xyz;
     out.l_radius = instance.radius;
-    out.l_intensity = instance.intensity;
     out.l_color = instance.color;
 
     return out;
@@ -143,7 +140,7 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = distance(in.l_position, frag_pos_view);
 
     let attenuation = 1.0 / max(dist * dist, 0.0001);
-    let radiance = in.l_color * attenuation * in.l_intensity / 683.0;
+    let radiance = in.l_color * attenuation;
 
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
     let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
@@ -164,6 +161,6 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     color = color / (color + 1.0);
     return vec4<f32>(
         cutoff * pow(color, vec3<f32>(GAMMA_INV)),
-        1.0
+        cutoff
     );
 }

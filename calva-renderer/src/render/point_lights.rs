@@ -46,15 +46,14 @@ impl PointLightsPass {
                 attributes: &wgpu::vertex_attr_array![
                     0 => Float32x3, // Position
                     1 => Float32,   // Radius
-                    2 => Float32,   // Intensity
-                    3 => Float32x3, // Color
+                    2 => Float32x3, // Color
                 ],
             },
             // Icosphere vertices
             wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<[f32; 3]>() as _,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![4 => Float32x3],
+                attributes: &wgpu::vertex_attr_array![3 => Float32x3],
             },
         ];
 
