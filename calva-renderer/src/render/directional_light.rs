@@ -803,26 +803,33 @@ mod cull {
                     label: Some("DirectionalLight[cull]"),
                 });
 
+            const WORKGROUP_SIZE: u32 = 32;
+
             let meshes_count: u32 = meshes.count();
+            let meshes_workgroups_count =
+                (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+
             let instances_count: u32 = instances.count();
+            let instances_workgroups_count =
+                (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
             cpass.set_pipeline(&self.pipelines.0);
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &uniform.bind_group, &[]);
             cpass.set_bind_group(2, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(meshes_count, 1, 1);
+            cpass.dispatch_workgroups(meshes_workgroups_count, 1, 1);
 
             cpass.set_pipeline(&self.pipelines.1);
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &uniform.bind_group, &[]);
             cpass.set_bind_group(2, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(instances_count, 1, 1);
+            cpass.dispatch_workgroups(instances_workgroups_count, 1, 1);
 
             cpass.set_pipeline(&self.pipelines.2);
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &uniform.bind_group, &[]);
             cpass.set_bind_group(2, &self.bind_group, &[]);
-            cpass.dispatch_workgroups(meshes_count, 1, 1);
+            cpass.dispatch_workgroups(meshes_workgroups_count, 1, 1);
         }
     }
 }
