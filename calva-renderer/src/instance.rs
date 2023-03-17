@@ -1,6 +1,4 @@
-use crate::{
-    AnimationId, AnimationState, MaterialId, MeshId, MeshesManager, ProfilerCommandEncoder,
-};
+use crate::{AnimationId, AnimationState, MaterialId, MeshId, MeshesManager, RenderContext};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -160,14 +158,19 @@ impl InstancesManager {
         self.instances_data.len() as _
     }
 
-    pub fn anim(&self, encoder: &mut ProfilerCommandEncoder, dt: &std::time::Duration) {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("InstancesManager[anim]"),
-        });
+    pub fn anim(&self, ctx: &mut RenderContext, dt: &std::time::Duration) {
+        let mut cpass = ctx
+            .encoder
+            .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("InstancesManager[anim]"),
+            });
 
         cpass.set_pipeline(&self.anim_pipeline);
         cpass.set_bind_group(0, &self.anim_bind_group, &[]);
         cpass.set_push_constants(0, bytemuck::bytes_of(&dt.as_secs_f32()));
-        cpass.dispatch_workgroups(self.count(), 1, 1);
+
+        const WORKGROUP_SIZE: usize = 256;
+        let workgroups_count = (self.count() as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+        cpass.dispatch_workgroups(workgroups_count, 1, 1);
     }
 }

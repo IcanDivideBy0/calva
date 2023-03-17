@@ -12,6 +12,7 @@ pub struct Material {
     pub albedo: TextureId,
     pub normal: TextureId,
     pub metallic_roughness: TextureId,
+    pub emissive: TextureId,
 }
 
 pub struct MaterialsManager {

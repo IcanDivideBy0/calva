@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::cell::{Ref, RefCell};
+#[cfg(feature = "profiler")]
 use wgpu_profiler::{GpuProfiler, GpuTimerScopeResult};
 
 pub struct Renderer {
@@ -15,7 +15,8 @@ pub struct Renderer {
     pub depth: wgpu::TextureView,
     pub depth_stencil: wgpu::TextureView,
 
-    profiler: RefCell<RendererProfiler>,
+    #[cfg(feature = "profiler")]
+    profiler: std::cell::RefCell<RendererProfiler>,
 }
 
 impl Renderer {
@@ -29,7 +30,8 @@ impl Renderer {
         wgpu::Features::PUSH_CONSTANTS, // All except WebGL (DX11 & OpenGL emulated w/ uniforms)
         wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING, // Vulkan, DX12, metal
         wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // All except WebGL
-        GpuProfiler::ALL_WGPU_TIMER_FEATURES,                     // Vulkan, DX12
+        #[cfg(feature = "profiler")]
+        GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
     ];
 
     pub const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -90,12 +92,15 @@ impl Renderer {
 
         let (output, depth, depth_stencil) = Self::make_textures(&device, &surface_config);
 
-        let mut profiler = GpuProfiler::new(4, queue.get_timestamp_period(), device.features());
-        profiler.enable_debug_marker = false;
-        let profiler = RefCell::new(RendererProfiler {
-            inner: profiler,
-            results: vec![],
-        });
+        #[cfg(feature = "profiler")]
+        let profiler = {
+            let mut profiler = GpuProfiler::new(4, queue.get_timestamp_period(), device.features());
+            profiler.enable_debug_marker = false;
+            std::cell::RefCell::new(RendererProfiler {
+                inner: profiler,
+                results: vec![],
+            })
+        };
 
         Ok(Self {
             adapter,
@@ -109,6 +114,7 @@ impl Renderer {
             depth,
             depth_stencil,
 
+            #[cfg(feature = "profiler")]
             profiler,
         })
     }
@@ -136,17 +142,23 @@ impl Renderer {
         let frame = self.surface.get_current_texture()?;
         let frame_view = frame.texture.create_view(&Default::default());
 
+        #[cfg(feature = "profiler")]
         let mut renderer_profiler = self.profiler.try_borrow_mut()?;
+        #[cfg(feature = "profiler")]
         let profiler = &mut renderer_profiler.inner;
 
+        #[cfg(feature = "profiler")]
         profiler.begin_scope("RenderFrame", &mut encoder, &self.device);
 
         let mut context = RenderContext {
+            #[cfg(feature = "profiler")]
             encoder: ProfilerCommandEncoder {
                 device: &self.device,
                 encoder: &mut encoder,
                 profiler,
             },
+            #[cfg(not(feature = "profiler"))]
+            encoder: &mut encoder,
 
             view: &self.output,
             depth_stencil: &self.depth_stencil,
@@ -155,23 +167,32 @@ impl Renderer {
 
         cb(&mut context);
 
-        profiler.end_scope(&mut encoder);
-        profiler.resolve_queries(&mut encoder);
+        drop(context);
+
+        #[cfg(feature = "profiler")]
+        {
+            profiler.end_scope(&mut encoder);
+            profiler.resolve_queries(&mut encoder);
+        }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        profiler.end_frame().unwrap();
+        #[cfg(feature = "profiler")]
+        {
+            profiler.end_frame().unwrap();
 
-        if let Some(results) = profiler.process_finished_frame() {
-            renderer_profiler.results = results
+            if let Some(results) = profiler.process_finished_frame() {
+                renderer_profiler.results = results
+            }
         }
 
         Ok(())
     }
 
+    #[cfg(feature = "profiler")]
     pub fn profiler_results(&self) -> impl std::ops::Deref<Target = Vec<ProfilerResult>> + '_ {
-        Ref::map(self.profiler.borrow(), |p| &p.results)
+        std::cell::Ref::map(self.profiler.borrow(), |p| &p.results)
     }
 
     fn make_textures(
@@ -219,14 +240,11 @@ impl Renderer {
     }
 }
 
-pub type ProfilerResult = GpuTimerScopeResult;
-struct RendererProfiler {
-    inner: GpuProfiler,
-    pub results: Vec<ProfilerResult>,
-}
-
 pub struct RenderContext<'a> {
+    #[cfg(feature = "profiler")]
     pub encoder: ProfilerCommandEncoder<'a>,
+    #[cfg(not(feature = "profiler"))]
+    pub encoder: &'a mut wgpu::CommandEncoder,
 
     pub view: &'a wgpu::TextureView,
     pub depth_stencil: &'a wgpu::TextureView,
@@ -234,12 +252,22 @@ pub struct RenderContext<'a> {
     pub frame: &'a wgpu::TextureView,
 }
 
+#[cfg(feature = "profiler")]
+pub type ProfilerResult = GpuTimerScopeResult;
+#[cfg(feature = "profiler")]
+struct RendererProfiler {
+    inner: GpuProfiler,
+    pub results: Vec<ProfilerResult>,
+}
+
+#[cfg(feature = "profiler")]
 pub struct ProfilerCommandEncoder<'a> {
     device: &'a wgpu::Device,
     encoder: &'a mut wgpu::CommandEncoder,
     profiler: &'a mut GpuProfiler,
 }
 
+#[cfg(feature = "profiler")]
 impl<'a> ProfilerCommandEncoder<'a> {
     pub fn profile_start(&mut self, label: &str) {
         self.encoder.push_debug_group(label);
@@ -276,6 +304,7 @@ impl<'a> ProfilerCommandEncoder<'a> {
     }
 }
 
+#[cfg(feature = "profiler")]
 impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
     type Target = wgpu::CommandEncoder;
 
@@ -283,6 +312,7 @@ impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
         self.encoder
     }
 }
+#[cfg(feature = "profiler")]
 impl<'a> std::ops::DerefMut for ProfilerCommandEncoder<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.encoder

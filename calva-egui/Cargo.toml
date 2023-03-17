@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["winit"]
+default = []
 winit = ["dep:winit", "dep:egui-winit"]
+profiler = ["renderer/profiler"]
 
 [dependencies]
 renderer = { package = "calva-renderer", path = "../calva-renderer" }

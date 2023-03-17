@@ -88,11 +88,12 @@ impl GltfModel {
         doc: &gltf::Document,
         images: &[gltf::image::Data],
     ) -> Result<Vec<TextureId>> {
-        doc.textures()
-            .map(|texture| {
+        let textures = doc
+            .images()
+            .map(|image| {
                 let image_data = images
-                    .get(texture.source().index())
-                    .ok_or_else(|| anyhow!("Invalid texture image index"))?;
+                    .get(image.index())
+                    .ok_or_else(|| anyhow!("Invalid image index"))?;
 
                 // 3 channels texture formats are not supported by WebGPU
                 // https://github.com/gpuweb/gpuweb/issues/66
@@ -121,7 +122,7 @@ impl GltfModel {
 
                 let dimension = wgpu::TextureDimension::D2;
                 let desc = wgpu::TextureDescriptor {
-                    label: texture.name(),
+                    label: image.name(),
                     size,
                     mip_level_count: size.max_mips(dimension),
                     sample_count: 1,
@@ -157,6 +158,15 @@ impl GltfModel {
                     .textures
                     .add(&renderer.device, texture.create_view(&Default::default())))
             })
+            .collect::<Result<Vec<_>>>()?;
+
+        doc.textures()
+            .map(|texture| {
+                textures
+                    .get(texture.source().index())
+                    .copied()
+                    .ok_or_else(|| anyhow!("Invalid texture image index"))
+            })
             .collect()
     }
 
@@ -185,12 +195,18 @@ impl GltfModel {
                     .and_then(|t| textures.get(t.texture().index()).copied())
                     .unwrap_or_default();
 
+                let emissive = material
+                    .emissive_texture()
+                    .and_then(|t| textures.get(t.texture().index()).copied())
+                    .unwrap_or_default();
+
                 Ok(engine.materials.add(
                     &renderer.queue,
                     Material {
                         albedo,
                         normal,
                         metallic_roughness,
+                        emissive,
                     },
                 ))
             })

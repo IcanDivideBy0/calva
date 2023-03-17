@@ -136,7 +136,7 @@ impl Engine {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, dt: std::time::Duration) {
-        self.instances.anim(&mut ctx.encoder, &dt);
+        self.instances.anim(ctx, &dt);
 
         self.geometry.render(
             ctx,

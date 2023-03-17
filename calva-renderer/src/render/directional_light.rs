@@ -317,6 +317,7 @@ impl DirectionalLightPass {
         instances: &InstancesManager,
         gamma: f32,
     ) {
+        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("DirectionalLight");
 
         self.cull
@@ -387,6 +388,7 @@ impl DirectionalLightPass {
 
         drop(lighting_pass);
 
+        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 
@@ -996,6 +998,7 @@ mod blur {
         }
 
         pub fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
+            #[cfg(feature = "profiler")]
             ctx.encoder.profile_start("DirectionalLight[blur]");
 
             ctx.encoder
@@ -1028,6 +1031,7 @@ mod blur {
                 })
                 .execute_bundles(std::iter::once(&self.v_pass));
 
+            #[cfg(feature = "profiler")]
             ctx.encoder.profile_end();
         }
     }

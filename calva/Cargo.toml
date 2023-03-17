@@ -3,7 +3,12 @@ name = "calva"
 version = "0.1.0"
 edition = "2018"
 
+[features]
+default = ["egui", "winit", "gltf", "profiler"]
+winit = ["egui?/winit"]
+profiler = ["renderer/profiler", "egui?/profiler"]
+
 [dependencies]
-egui = { package = "calva-egui", path = "../calva-egui" }
-gltf = { package = "calva-gltf", path = "../calva-gltf" }
+egui = { package = "calva-egui", path = "../calva-egui", optional = true }
+gltf = { package = "calva-gltf", path = "../calva-gltf", optional = true }
 renderer = { package = "calva-renderer", path = "../calva-renderer" }

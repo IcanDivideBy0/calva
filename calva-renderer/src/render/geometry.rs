@@ -44,6 +44,7 @@ pub struct GeometryPass {
 
     pub(crate) albedo_metallic: wgpu::TextureView,
     pub(crate) normal_roughness: wgpu::TextureView,
+    pub(crate) emissive: wgpu::TextureView,
 
     pipeline: wgpu::RenderPipeline,
 }
@@ -58,6 +59,7 @@ impl GeometryPass {
 
     const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+    const EMISSIVE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -70,7 +72,7 @@ impl GeometryPass {
         animations: &AnimationsManager,
         instances: &InstancesManager,
     ) -> Self {
-        let (albedo_metallic, normal_roughness) = Self::make_textures(renderer);
+        let (albedo_metallic, normal_roughness, emissive) = Self::make_textures(renderer);
 
         let cull = GeometryCull::new(renderer, camera, meshes, instances);
         let hiz = GeometryHiZ::new(renderer);
@@ -145,6 +147,11 @@ impl GeometryPass {
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
                         }),
+                        Some(wgpu::ColorTargetState {
+                            format: Self::EMISSIVE_FORMAT,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
                     ],
                 }),
                 primitive: wgpu::PrimitiveState {
@@ -167,13 +174,15 @@ impl GeometryPass {
 
             albedo_metallic,
             normal_roughness,
+            emissive,
 
             pipeline,
         }
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {
-        (self.albedo_metallic, self.normal_roughness) = Self::make_textures(renderer);
+        (self.albedo_metallic, self.normal_roughness, self.emissive) =
+            Self::make_textures(renderer);
         self.hiz.rebind(renderer);
     }
 
@@ -189,6 +198,7 @@ impl GeometryPass {
         animations: &AnimationsManager,
         instances: &InstancesManager,
     ) {
+        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("Geometry");
 
         self.cull.cull(ctx, camera, meshes, instances);
@@ -196,23 +206,20 @@ impl GeometryPass {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),
             color_attachments: &[
+                &self.albedo_metallic,
+                &self.normal_roughness,
+                &self.emissive,
+            ]
+            .map(|view| {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &self.albedo_metallic,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &self.normal_roughness,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
-                    },
-                }),
-            ],
+                })
+            }),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: ctx.depth_stencil,
                 depth_ops: Some(wgpu::Operations {
@@ -251,10 +258,13 @@ impl GeometryPass {
 
         self.hiz.hiz(ctx);
 
+        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 
-    fn make_textures(renderer: &Renderer) -> (wgpu::TextureView, wgpu::TextureView) {
+    fn make_textures(
+        renderer: &Renderer,
+    ) -> (wgpu::TextureView, wgpu::TextureView, wgpu::TextureView) {
         let size = wgpu::Extent3d {
             width: renderer.surface_config.width,
             height: renderer.surface_config.height,
@@ -291,7 +301,22 @@ impl GeometryPass {
             })
             .create_view(&Default::default());
 
-        (albedo_metallic, normal_roughness)
+        let emissive = renderer
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("GBuffer albedo/metallic texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                format: Self::EMISSIVE_FORMAT,
+                view_formats: &[Self::EMISSIVE_FORMAT],
+            })
+            .create_view(&Default::default());
+
+        (albedo_metallic, normal_roughness, emissive)
     }
 }
 

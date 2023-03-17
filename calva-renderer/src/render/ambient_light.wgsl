@@ -17,6 +17,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 //
 
 @group(0) @binding(0) var t_albedo_metallic: texture_2d<f32>;
+@group(0) @binding(1) var t_emissive: texture_2d<f32>;
 
 struct AmbientConfig {
     factor: f32,
@@ -27,6 +28,8 @@ var<push_constant> CONFIG: AmbientConfig;
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     var color = CONFIG.factor * textureLoad(t_albedo_metallic, vec2<i32>(position.xy), 0).rgb;
+
+    color = max(color, textureLoad(t_emissive, vec2<i32>(position.xy), 0).rgb);
 
     color = color / (color + 1.0);
     return vec4<f32>(

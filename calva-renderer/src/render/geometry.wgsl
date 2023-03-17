@@ -15,6 +15,7 @@ struct Material {
     albedo: u32,
     normal: u32,
     metallic_roughness: u32,
+    emissive: u32,
 }
 @group(2) @binding(0) var<storage, read> materials: array<Material>;
 
@@ -175,6 +176,7 @@ fn vs_main(
 struct FragmentOutput {
     @location(0) albedo_metallic: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,
+    @location(2) emissive: vec4<f32>,
 }
 
 fn get_vert_normal(in: VertexOutput) -> vec3<f32> {
@@ -234,6 +236,7 @@ fn fs_main(
     let material = materials[in.material_id];
 
     let albedo = textureSample(textures[material.albedo], textures_sampler, in.uv);
+    let emissive = textureSample(textures[material.emissive], textures_sampler, in.uv);
     let metallic_roughness = textureSample(textures[material.metallic_roughness], textures_sampler, in.uv).bg;
 
     // let material_data = vec3<u32>(
@@ -247,5 +250,6 @@ fn fs_main(
     return FragmentOutput(
         vec4<f32>(albedo.rgb, metallic_roughness.x),
         vec4<f32>(get_normal(in, material), metallic_roughness.y),
+        vec4<f32>(emissive.rgb, 1.0),
     );
 }

@@ -25,6 +25,17 @@ impl AmbientLightPass {
                             },
                             count: None,
                         },
+                        // emissive
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            },
+                            count: None,
+                        },
                     ],
                 });
 
@@ -117,10 +128,16 @@ impl AmbientLightPass {
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("AmbientLight bind group"),
                 layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&geometry.emissive),
+                    },
+                ],
             })
     }
 }

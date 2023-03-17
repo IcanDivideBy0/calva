@@ -1,7 +1,9 @@
 #![warn(clippy::all)]
 
 use egui::ClippedPrimitive;
-use renderer::{wgpu, Engine, ProfilerResult, RenderContext, Renderer, SsaoConfig};
+use renderer::{wgpu, Engine, RenderContext, Renderer, SsaoConfig};
+
+#[cfg(feature = "profiler")]
 use thousands::Separable;
 
 #[cfg(feature = "winit")]
@@ -113,6 +115,7 @@ impl EguiPass {
                 .default_open(true)
                 .show(ui, EguiPass::adapter_info_ui(&renderer.adapter_info));
 
+            #[cfg(feature = "profiler")]
             egui::CollapsingHeader::new("Profiler")
                 .default_open(true)
                 .show(ui, EguiPass::profiler_ui(&renderer.profiler_results()));
@@ -143,7 +146,8 @@ impl EguiPass {
         }
     }
 
-    pub fn profiler_ui(results: &[ProfilerResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
+    #[cfg(feature = "profiler")]
+    pub fn profiler_ui(results: &[renderer::ProfilerResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
         move |ui| {
             let frame = egui::Frame {
                 inner_margin: egui::style::Margin {
@@ -224,6 +228,7 @@ pub struct EguiWinitPass {
     state: egui_winit::State,
 }
 
+#[cfg(feature = "winit")]
 impl EguiWinitPass {
     pub fn new(renderer: &Renderer, event_loop: &EventLoop<()>) -> Self {
         Self {
@@ -257,6 +262,7 @@ impl EguiWinitPass {
     }
 }
 
+#[cfg(feature = "winit")]
 impl std::ops::Deref for EguiWinitPass {
     type Target = EguiPass;
 

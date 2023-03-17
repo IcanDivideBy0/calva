@@ -267,6 +267,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("Ssao");
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -293,6 +294,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         self.blur.render(ctx, &self.output);
         self.blit.render(ctx);
 
+        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 
