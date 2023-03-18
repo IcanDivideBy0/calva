@@ -35,6 +35,9 @@ async fn main() -> Result<()> {
     let mut renderer = Renderer::new(&window, window.inner_size().into()).await?;
     let mut engine = Engine::new(&renderer);
 
+    engine.config.ambient.factor = 0.05;
+    engine.config.tone_mapping.exposure = 0.05;
+
     engine.config.skybox = [
         "./demo/assets/sky/right.jpg",
         "./demo/assets/sky/left.jpg",
@@ -54,9 +57,25 @@ async fn main() -> Result<()> {
 
     let mut egui = EguiWinitPass::new(&renderer, &event_loop);
 
+    use std::io::Read;
+    let mut dungeon_buffer = Vec::new();
+    std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
+    let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
+
+    let navmesh = navmesh::NavMesh::new(&renderer, &engine.camera, &doc, &buffers);
+    let dungeon = GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?;
+    // if let Some((instances, point_lights)) = dungeon.node_instances("module01", None, None) {
+    //     engine.instances.add(&renderer.queue, instances);
+    //     engine
+    //         .lights
+    //         .add_point_lights(&renderer.queue, &point_lights);
+    // }
+
     let worldgen = worldgen::WorldGenerator::new(
         "Calva!533d", // rand::random::<u32>(),
-        GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?,
+        // GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?,
+        // GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?,
+        dungeon,
     );
 
     for x in -3..3 {
@@ -85,7 +104,7 @@ async fn main() -> Result<()> {
         "./demo/assets/demons/demon-imp.glb",
     ]
     .iter()
-    .take(1)
+    .take(0)
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
@@ -111,7 +130,8 @@ async fn main() -> Result<()> {
     engine.instances.add(&renderer.queue, instances);
 
     let mut directional_light = DirectionalLight {
-        color: glam::vec4(1.0, 1.0, 1.0, 1.0),
+        color: glam::vec3(1.0, 1.0, 1.0),
+        intensity: 100.0,
         direction: glam::vec3(-1.0, -1.0, -1.0),
     };
 
@@ -138,7 +158,7 @@ async fn main() -> Result<()> {
 
                 camera.controller.update(dt);
 
-                let egui_output = egui.run(&window, |ctx| {
+                egui.update(&renderer, &window, |ctx| {
                     egui::SidePanel::right("engine_panel")
                         .min_width(320.0)
                         .frame(egui::containers::Frame {
@@ -173,7 +193,6 @@ async fn main() -> Result<()> {
                             EguiPass::renderer_ui(&renderer)(ui);
                         });
                 });
-                egui.update(&renderer, &window, egui_output);
 
                 engine.update(
                     &renderer,
@@ -185,6 +204,7 @@ async fn main() -> Result<()> {
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
                     // fog.render(ctx, &engine.camera, &time);
+                    navmesh.render(ctx, &engine.camera);
                     egui.render(ctx);
                 });
 

@@ -1,7 +1,9 @@
 #![warn(clippy::all)]
 
 use egui::ClippedPrimitive;
-use renderer::{wgpu, Engine, RenderContext, Renderer, SsaoConfig};
+use renderer::{
+    wgpu, AmbientLightConfig, Engine, RenderContext, Renderer, SsaoConfig, ToneMappingConfig,
+};
 
 #[cfg(feature = "profiler")]
 use thousands::Separable;
@@ -181,10 +183,6 @@ impl EguiPass {
         engine: &'e mut Engine,
     ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
-            egui::CollapsingHeader::new("Gamma")
-                .default_open(true)
-                .show(ui, EguiPass::gamma_config_ui(&mut engine.config.gamma));
-
             egui::CollapsingHeader::new("Ambient")
                 .default_open(true)
                 .show(ui, EguiPass::ambient_config_ui(&mut engine.config.ambient));
@@ -192,22 +190,21 @@ impl EguiPass {
             egui::CollapsingHeader::new("SSAO")
                 .default_open(true)
                 .show(ui, EguiPass::ssao_config_ui(&mut engine.config.ssao));
-        }
-    }
 
-    pub fn gamma_config_ui<'cfg: 'ui, 'ui>(
-        gamma: &'cfg mut f32,
-    ) -> impl FnOnce(&mut egui::Ui) + 'ui {
-        move |ui| {
-            ui.add(egui::Slider::new(gamma, 1.0..=3.0).text("Gamma"));
+            egui::CollapsingHeader::new("Tone mapping")
+                .default_open(true)
+                .show(
+                    ui,
+                    EguiPass::tone_mapping_config_ui(&mut engine.config.tone_mapping),
+                );
         }
     }
 
     pub fn ambient_config_ui<'cfg: 'ui, 'ui>(
-        factor: &'cfg mut f32,
+        config: &'cfg mut AmbientLightConfig,
     ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
-            ui.add(egui::Slider::new(factor, 0.0..=1.0).text("Factor"));
+            ui.add(egui::Slider::new(&mut config.factor, 0.0..=1.0).text("Factor"));
         }
     }
 
@@ -218,6 +215,19 @@ impl EguiPass {
             ui.add(egui::Slider::new(&mut config.radius, 0.0..=4.0).text("Radius"));
             ui.add(egui::Slider::new(&mut config.bias, 0.0..=0.1).text("Bias"));
             ui.add(egui::Slider::new(&mut config.power, 0.0..=8.0).text("Power"));
+        }
+    }
+
+    pub fn tone_mapping_config_ui<'cfg: 'ui, 'ui>(
+        config: &'cfg mut ToneMappingConfig,
+    ) -> impl FnOnce(&mut egui::Ui) + 'ui {
+        move |ui| {
+            ui.add(
+                egui::Slider::new(&mut config.exposure, 0.0..=10.0)
+                    .text("Exposure")
+                    .logarithmic(true),
+            );
+            ui.add(egui::Slider::new(&mut config.gamma, 1.0..=3.0).text("Gamma"));
         }
     }
 }
@@ -241,20 +251,14 @@ impl EguiWinitPass {
         self.state.on_event(&self.pass.context, event)
     }
 
-    pub fn run(
-        &mut self,
-        window: &winit::window::Window,
-        ui: impl FnOnce(&egui::Context),
-    ) -> egui::FullOutput {
-        self.pass.run(self.state.take_egui_input(window), ui)
-    }
-
     pub fn update(
         &mut self,
         renderer: &Renderer,
         window: &winit::window::Window,
-        output: egui::FullOutput,
+        ui: impl FnOnce(&egui::Context),
     ) {
+        let output = self.pass.run(self.state.take_egui_input(window), ui);
+
         self.state
             .handle_platform_output(window, &self.pass.context, output.platform_output);
         self.pass

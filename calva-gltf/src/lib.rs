@@ -323,9 +323,9 @@ impl GltfModel {
 
             let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
 
-            traverse_nodes_tree(
+            traverse_nodes_tree::<glam::Mat4>(
                 root_nodes,
-                &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
+                &mut |parent_transform, node| {
                     let local_transform =
                         glam::Mat4::from_cols_array_2d(&node.transform().matrix());
                     let global_transform = *parent_transform * local_transform;
@@ -413,9 +413,9 @@ impl GltfModel {
         let mut instances = vec![];
         let mut point_lights = vec![];
 
-        traverse_nodes_tree(
+        traverse_nodes_tree::<glam::Mat4>(
             std::iter::once(node),
-            &mut |parent_transform: &glam::Mat4, node: &gltf::Node| {
+            &mut |parent_transform, node| {
                 let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
                 let global_transform = *parent_transform * local_transform;
 
@@ -437,31 +437,19 @@ impl GltfModel {
                             unimplemented!();
                         }
                         Kind::Point => {
-                            let mut color: glam::Vec3 = light.color().into();
-                            let intensity = light.intensity(); // Luminous intensity in candela (lm/sr)
-                            const LUMINOUS_EFFICACITY: f32 = 683.002; // Photopic luminous efficacy of radiation
-                            color *= intensity / LUMINOUS_EFFICACITY;
-
-                            // Would be more correct, but light radius will grow too much and impact
-                            // perfs too much. We can do it after radius computation as well, but light
-                            // cutoff becomes a bit too obvious.
-                            // color *= 4.0 * std::f32::consts::PI;
-
                             let position = global_transform.transform_point3(glam::Vec3::ZERO);
-                            let radius = light.range().unwrap_or_else(|| {
-                                // Calculating a light's volume or radius:
-                                // https://learnopengl.com/Advanced-Lighting/Deferred-Shading
-                                const CONSTANT: f32 = 1.0;
-                                const LINEAR: f32 = 0.7;
-                                const QUADRATIC: f32 = 1.8;
 
-                                ((LINEAR * LINEAR
-                                    - 4.0
-                                        * QUADRATIC
-                                        * (CONSTANT - (256.0 / 5.0) * color.max_element()))
-                                .sqrt()
-                                    - LINEAR)
-                                    / (2.0 * QUADRATIC)
+                            // Luminous intensity in candela (lm/sr) ; converted to luminous power (lumens)
+                            let intensity = light.intensity() / (4.0 * std::f32::consts::PI);
+
+                            let color = glam::Vec3::from(light.color()) * intensity;
+
+                            let radius = light.range().unwrap_or_else(|| {
+                                // Get light's luminance using Rec 709 luminance formula
+                                let luminance = color.dot(glam::vec3(0.2126, 0.7152, 0.0722));
+
+                                const ATTENUATION_MAX: f32 = 1.0 - (5.0 / 256.0);
+                                (luminance * ATTENUATION_MAX).sqrt()
                             });
 
                             point_lights.push(PointLight {

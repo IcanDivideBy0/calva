@@ -34,7 +34,7 @@ impl Renderer {
         GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
     ];
 
-    pub const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+    pub const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
     pub async fn new<W>(window: &W, size: (u32, u32)) -> Result<Self>

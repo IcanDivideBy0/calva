@@ -1,26 +1,16 @@
 use crate::{
-    AmbientLightPass, AnimationsManager, CameraManager, DirectionalLight, DirectionalLightPass,
-    FxaaPass, GeometryPass, InstancesManager, LightsManager, MaterialsManager, MeshesManager,
-    PointLightsPass, RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SsaoConfig,
-    SsaoPass, TexturesManager,
+    AmbientLightConfig, AmbientLightPass, AnimationsManager, CameraManager, DirectionalLight,
+    DirectionalLightPass, FxaaPass, GeometryPass, InstancesManager, LightsManager,
+    MaterialsManager, MeshesManager, PointLightsPass, RenderContext, Renderer, SkinsManager,
+    Skybox, SkyboxPass, SsaoConfig, SsaoPass, TexturesManager, ToneMappingConfig, ToneMappingPass,
 };
 
+#[derive(Default)]
 pub struct EngineConfig {
-    pub gamma: f32,
-    pub ambient: f32,
+    pub ambient: AmbientLightConfig,
     pub ssao: SsaoConfig,
+    pub tone_mapping: ToneMappingConfig,
     pub skybox: Option<Skybox>,
-}
-
-impl Default for EngineConfig {
-    fn default() -> Self {
-        Self {
-            gamma: 2.2,
-            ambient: 0.005,
-            ssao: SsaoConfig::default(),
-            skybox: None,
-        }
-    }
 }
 
 pub struct Engine {
@@ -41,6 +31,7 @@ pub struct Engine {
     ssao: SsaoPass<640, 480>,
     skybox: SkyboxPass,
     fxaa: FxaaPass,
+    tone_mapping: ToneMappingPass,
 
     pub config: EngineConfig,
 }
@@ -82,6 +73,7 @@ impl Engine {
         let ssao = SsaoPass::new(renderer, &camera, &geometry);
         let skybox = SkyboxPass::new(renderer, &camera);
         let fxaa = FxaaPass::new(renderer);
+        let tone_mapping = ToneMappingPass::new(renderer);
 
         Self {
             camera,
@@ -101,6 +93,7 @@ impl Engine {
             ssao,
             skybox,
             fxaa,
+            tone_mapping,
 
             config: Default::default(),
         }
@@ -117,6 +110,7 @@ impl Engine {
         self.point_lights.rebind(renderer, &self.geometry);
         self.ssao.rebind(renderer, &self.geometry);
         self.fxaa.rebind(renderer);
+        self.tone_mapping.rebind(renderer);
 
         self.size = renderer.size();
     }
@@ -148,8 +142,7 @@ impl Engine {
             &self.animations,
             &self.instances,
         );
-        self.ambient_light
-            .render(ctx, self.config.ambient, self.config.gamma);
+        self.ambient_light.render(ctx, &self.config.ambient);
         // self.directional_light.render(
         //     ctx,
         //     &self.camera,
@@ -157,10 +150,8 @@ impl Engine {
         //     &self.skins,
         //     &self.animations,
         //     &self.instances,
-        //     self.config.gamma,
         // );
-        self.point_lights
-            .render(ctx, &self.camera, &self.lights, self.config.gamma);
+        self.point_lights.render(ctx, &self.camera, &self.lights);
         self.ssao.render(ctx, &self.camera);
 
         if let Some(skybox) = &self.config.skybox {
@@ -168,6 +159,7 @@ impl Engine {
         }
 
         self.fxaa.render(ctx);
+        self.tone_mapping.render(ctx, &self.config.tone_mapping);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

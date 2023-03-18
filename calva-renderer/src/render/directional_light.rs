@@ -225,10 +225,7 @@ impl DirectionalLightPass {
                             &uniform.bind_group_layout,
                             &bind_group_layout,
                         ],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::FRAGMENT,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             let pipeline =
@@ -315,7 +312,6 @@ impl DirectionalLightPass {
         skins: &SkinsManager,
         animations: &AnimationsManager,
         instances: &InstancesManager,
-        gamma: f32,
     ) {
         #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("DirectionalLight");
@@ -377,12 +373,6 @@ impl DirectionalLightPass {
         lighting_pass.set_bind_group(0, &camera.bind_group, &[]);
         lighting_pass.set_bind_group(1, &self.uniform.bind_group, &[]);
         lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
-
-        lighting_pass.set_push_constants(
-            wgpu::ShaderStages::FRAGMENT,
-            0,
-            bytemuck::bytes_of(&(1.0 / gamma)),
-        );
 
         lighting_pass.draw(0..3, 0..1);
 
@@ -514,9 +504,9 @@ mod uniform {
             &self,
             renderer: &Renderer,
             camera: &CameraManager,
-            directional_light: &DirectionalLight,
+            light: &DirectionalLight,
         ) {
-            let light_dir = directional_light.direction.normalize();
+            let light_dir = light.direction.normalize();
             let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
             // Frustum bounding sphere in view space
@@ -571,7 +561,7 @@ mod uniform {
                 &self.buffer,
                 0,
                 bytemuck::bytes_of(&DirectionalLightUniformRaw {
-                    color: directional_light.color,
+                    color: (light.color * light.intensity).extend(1.0),
                     direction_world: light_dir.extend(0.0),
                     direction_view: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(0.0),
                     view_proj: (light_proj * light_view),

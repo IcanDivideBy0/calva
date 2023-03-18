@@ -12,8 +12,9 @@ use calva::{
 pub struct WorldGenerator {
     seed: u32,
     noise: Box<dyn NoiseFn<f64, 2>>,
-    model: GltfModel,
     options: BTreeSet<ModuleOption>,
+
+    pub model: GltfModel,
 }
 
 impl WorldGenerator {

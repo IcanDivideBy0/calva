@@ -1,45 +1,38 @@
-use crate::{GeometryPass, RenderContext, Renderer};
+use crate::{RenderContext, Renderer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct AmbientLightConfig {
-    pub factor: f32,
+pub struct ToneMappingConfig {
+    pub exposure: f32,
+    pub gamma: f32,
 }
 
-impl Default for AmbientLightConfig {
+impl Default for ToneMappingConfig {
     fn default() -> Self {
-        Self { factor: 0.005 }
+        Self {
+            exposure: 1.0,
+            gamma: 2.2,
+        }
     }
 }
 
-pub struct AmbientLightPass {
+pub struct ToneMappingPass {
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl AmbientLightPass {
-    pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+impl ToneMappingPass {
+    pub fn new(renderer: &Renderer) -> Self {
         let bind_group_layout =
             renderer
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("AmbientLight bind group layout"),
+                    label: Some("ToneMapping bind group layout"),
                     entries: &[
-                        // albedo
+                        // hdr
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            },
-                            count: None,
-                        },
-                        // emissive
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
@@ -51,28 +44,28 @@ impl AmbientLightPass {
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(renderer, geometry, &bind_group_layout);
+        let bind_group = Self::make_bind_group(renderer, &bind_group_layout);
 
         let shader = renderer
             .device
-            .create_shader_module(wgpu::include_wgsl!("ambient_light.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("tone_mapping.wgsl"));
 
         let pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("AmbientLight pipeline layout"),
+                    label: Some("ToneMapping pipeline layout"),
                     bind_group_layouts: &[&bind_group_layout],
                     push_constant_ranges: &[wgpu::PushConstantRange {
                         stages: wgpu::ShaderStages::FRAGMENT,
-                        range: 0..(std::mem::size_of::<f32>() as _),
+                        range: 0..(std::mem::size_of::<ToneMappingConfig>() as _),
                     }],
                 });
 
         let pipeline = renderer
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("AmbientLight pipeline"),
+                label: Some("ToneMapping pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -83,7 +76,7 @@ impl AmbientLightPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
+                        format: renderer.surface_config.format,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -101,15 +94,15 @@ impl AmbientLightPass {
         }
     }
 
-    pub fn rebind(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
-        self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
+    pub fn rebind(&mut self, renderer: &Renderer) {
+        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, config: &AmbientLightConfig) {
+    pub fn render(&self, ctx: &mut RenderContext, config: &ToneMappingConfig) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("AmbientLight"),
+            label: Some("ToneMapping"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: ctx.frame,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -126,26 +119,16 @@ impl AmbientLightPass {
         rpass.draw(0..3, 0..1);
     }
 
-    fn make_bind_group(
-        renderer: &Renderer,
-        geometry: &GeometryPass,
-        layout: &wgpu::BindGroupLayout,
-    ) -> wgpu::BindGroup {
+    fn make_bind_group(renderer: &Renderer, layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
         renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("AmbientLight bind group"),
+                label: Some("ToneMapping bind group"),
                 layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&geometry.albedo_metallic),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&geometry.emissive),
-                    },
-                ],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&renderer.output),
+                }],
             })
     }
 }

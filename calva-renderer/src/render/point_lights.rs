@@ -178,10 +178,7 @@ impl PointLightsPass {
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("PointLights[lighting] pipeline layout"),
                         bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
-                        push_constant_ranges: &[wgpu::PushConstantRange {
-                            stages: wgpu::ShaderStages::FRAGMENT,
-                            range: 0..(std::mem::size_of::<f32>() as _),
-                        }],
+                        push_constant_ranges: &[],
                     });
 
             renderer
@@ -203,19 +200,16 @@ impl PointLightsPass {
                                 color: wgpu::BlendComponent {
                                     src_factor: wgpu::BlendFactor::One,
                                     dst_factor: wgpu::BlendFactor::One,
-                                    operation: wgpu::BlendOperation::Max,
+                                    operation: wgpu::BlendOperation::Add,
                                 },
-                                alpha: wgpu::BlendComponent {
-                                    src_factor: wgpu::BlendFactor::One,
-                                    dst_factor: wgpu::BlendFactor::One,
-                                    operation: wgpu::BlendOperation::Max,
-                                },
+                                alpha: wgpu::BlendComponent::REPLACE,
                             }),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                     }),
                     primitive: wgpu::PrimitiveState {
                         cull_mode: Some(wgpu::Face::Front),
+                        unclipped_depth: true,
                         ..Default::default()
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
@@ -264,13 +258,7 @@ impl PointLightsPass {
             Self::make_bind_group(renderer, geometry, &self.bind_group_layout, &self.sampler);
     }
 
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        camera: &CameraManager,
-        lights: &LightsManager,
-        gamma: f32,
-    ) {
+    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager, lights: &LightsManager) {
         #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("PointLights");
 
@@ -322,12 +310,6 @@ impl PointLightsPass {
         lighting_pass.set_vertex_buffer(0, lights.point_lights.slice(..));
         lighting_pass.set_vertex_buffer(1, self.vertices.slice(..));
         lighting_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
-
-        lighting_pass.set_push_constants(
-            wgpu::ShaderStages::FRAGMENT,
-            0,
-            bytemuck::bytes_of(&(1.0 / gamma)),
-        );
 
         lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
 

@@ -12,6 +12,8 @@ pub struct FlyingCamera {
     amount_right: f32,
     amount_forward: f32,
     amount_backward: f32,
+    amount_up: f32,
+    amount_down: f32,
 
     mouse_dx: f32,
     mouse_dy: f32,
@@ -32,6 +34,8 @@ impl Default for FlyingCamera {
             amount_right: 0.0,
             amount_forward: 0.0,
             amount_backward: 0.0,
+            amount_up: 0.0,
+            amount_down: 0.0,
 
             mouse_dx: 0.0,
             mouse_dy: 0.0,
@@ -74,6 +78,14 @@ impl FlyingCamera {
                         self.amount_right = amount;
                         true
                     }
+                    18 => {
+                        self.amount_up = amount;
+                        true
+                    }
+                    16 => {
+                        self.amount_down = amount;
+                        true
+                    }
                     _ => false,
                 }
             }
@@ -100,14 +112,16 @@ impl FlyingCamera {
 
         let mut right = glam::vec3(matrix[0], matrix[1], matrix[2]);
         let mut back = glam::vec3(matrix[8], matrix[9], matrix[10]);
-        let mut position = glam::vec3(matrix[12], matrix[13], matrix[14]);
 
-        position += -back * (self.amount_forward - self.amount_backward) * self.speed * dt;
-        position += right * (self.amount_right - self.amount_left) * self.speed * dt;
+        let mut movement = glam::Vec3::ZERO;
+        movement += back * (self.amount_backward - self.amount_forward);
+        movement += right * (self.amount_right - self.amount_left);
+        movement += back.cross(right) * (self.amount_up - self.amount_down);
+        movement *= self.speed * dt;
 
-        matrix[12] = position.x;
-        matrix[13] = position.y;
-        matrix[14] = position.z;
+        matrix[12] += movement.x;
+        matrix[13] += movement.y;
+        matrix[14] += movement.z;
 
         if self.mouse_pressed {
             let mut yaw = back.x.atan2(back.z);
