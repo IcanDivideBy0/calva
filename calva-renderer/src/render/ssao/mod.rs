@@ -228,8 +228,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                 multisample: Default::default(),
             });
 
-        let output =
-            Self::make_texture(renderer, Some("Ssao output")).create_view(&Default::default());
+        let output = Self::make_texture(renderer, Some("Ssao output"));
 
         let blur = blur::SsaoBlur::new(renderer, &output);
         let blit = blit::SsaoBlit::new(renderer, &output);
@@ -266,7 +265,12 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             .write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(config));
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        output: &wgpu::TextureView,
+        camera: &CameraManager,
+    ) {
         #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("Ssao");
 
@@ -292,27 +296,31 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         drop(rpass);
 
         self.blur.render(ctx, &self.output);
-        self.blit.render(ctx);
+        self.blit.render(ctx, output);
 
         #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 
-    fn make_texture(renderer: &Renderer, label: wgpu::Label<'static>) -> wgpu::Texture {
-        renderer.device.create_texture(&wgpu::TextureDescriptor {
-            label,
-            size: wgpu::Extent3d {
-                width: WIDTH,
-                height: HEIGHT,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::OUTPUT_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[Self::OUTPUT_FORMAT],
-        })
+    fn make_texture(renderer: &Renderer, label: wgpu::Label<'static>) -> wgpu::TextureView {
+        renderer
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label,
+                size: wgpu::Extent3d {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: Self::OUTPUT_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[Self::OUTPUT_FORMAT],
+            })
+            .create_view(&Default::default())
     }
 
     fn make_bind_group(

@@ -23,7 +23,7 @@ pub struct ToneMappingPass {
 }
 
 impl ToneMappingPass {
-    pub fn new(renderer: &Renderer) -> Self {
+    pub fn new(renderer: &Renderer, input: &wgpu::TextureView) -> Self {
         let bind_group_layout =
             renderer
                 .device
@@ -44,7 +44,7 @@ impl ToneMappingPass {
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(renderer, &bind_group_layout);
+        let bind_group = Self::make_bind_group(renderer, input, &bind_group_layout);
 
         let shader = renderer
             .device
@@ -77,7 +77,7 @@ impl ToneMappingPass {
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: renderer.surface_config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
+                        blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -94,15 +94,20 @@ impl ToneMappingPass {
         }
     }
 
-    pub fn rebind(&mut self, renderer: &Renderer) {
-        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout);
+    pub fn rebind(&mut self, renderer: &Renderer, input: &wgpu::TextureView) {
+        self.bind_group = Self::make_bind_group(renderer, input, &self.bind_group_layout);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, config: &ToneMappingConfig) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        config: &ToneMappingConfig,
+        output: &wgpu::TextureView,
+    ) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ToneMapping"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.frame,
+                view: output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -119,7 +124,11 @@ impl ToneMappingPass {
         rpass.draw(0..3, 0..1);
     }
 
-    fn make_bind_group(renderer: &Renderer, layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
+    fn make_bind_group(
+        renderer: &Renderer,
+        input: &wgpu::TextureView,
+        layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::BindGroup {
         renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -127,7 +136,7 @@ impl ToneMappingPass {
                 layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&renderer.output),
+                    resource: wgpu::BindingResource::TextureView(input),
                 }],
             })
     }

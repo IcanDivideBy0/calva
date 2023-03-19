@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{CameraManager, RenderContext, Renderer};
+use crate::{AmbientLightPass, CameraManager, RenderContext, Renderer};
 
 pub struct Skybox {
     bind_group: wgpu::BindGroup,
@@ -73,7 +73,7 @@ impl SkyboxPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
+                        format: AmbientLightPass::OUTPUT_FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -96,11 +96,17 @@ impl SkyboxPass {
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager, skybox: &Skybox) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        output: &wgpu::TextureView,
+        camera: &CameraManager,
+        skybox: &Skybox,
+    ) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skybox"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,

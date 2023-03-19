@@ -13,13 +13,19 @@ impl Default for AmbientLightConfig {
 }
 
 pub struct AmbientLightPass {
+    pub output: wgpu::TextureView,
+
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl AmbientLightPass {
+    pub const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
     pub fn new(renderer: &Renderer, geometry: &GeometryPass) -> Self {
+        let output = Self::make_texture(renderer);
+
         let bind_group_layout =
             renderer
                 .device
@@ -83,8 +89,8 @@ impl AmbientLightPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
-                        blend: Some(wgpu::BlendState::REPLACE),
+                        format: Self::OUTPUT_FORMAT,
+                        blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -95,6 +101,8 @@ impl AmbientLightPass {
             });
 
         Self {
+            output,
+
             bind_group_layout,
             bind_group,
             pipeline,
@@ -102,6 +110,7 @@ impl AmbientLightPass {
     }
 
     pub fn rebind(&mut self, renderer: &Renderer, geometry: &GeometryPass) {
+        self.output = Self::make_texture(renderer);
         self.bind_group = Self::make_bind_group(renderer, geometry, &self.bind_group_layout);
     }
 
@@ -109,7 +118,7 @@ impl AmbientLightPass {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: &self.output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -124,6 +133,27 @@ impl AmbientLightPass {
         rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(config));
 
         rpass.draw(0..3, 0..1);
+    }
+
+    fn make_texture(renderer: &Renderer) -> wgpu::TextureView {
+        renderer
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("AmbientLight output"),
+                size: wgpu::Extent3d {
+                    width: renderer.surface_config.width,
+                    height: renderer.surface_config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: Self::OUTPUT_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[Self::OUTPUT_FORMAT],
+            })
+            .create_view(&Default::default())
     }
 
     fn make_bind_group(

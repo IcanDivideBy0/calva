@@ -1,6 +1,7 @@
 use crate::{
-    AnimationState, AnimationsManager, CameraManager, DirectionalLight, GeometryPass,
-    InstancesManager, MaterialId, MeshesManager, RenderContext, Renderer, SkinsManager,
+    AmbientLightPass, AnimationState, AnimationsManager, CameraManager, DirectionalLight,
+    GeometryPass, InstancesManager, MaterialId, MeshesManager, RenderContext, Renderer,
+    SkinsManager,
 };
 
 #[repr(C)]
@@ -244,7 +245,7 @@ impl DirectionalLightPass {
                             module: &shader,
                             entry_point: "fs_main",
                             targets: &[Some(wgpu::ColorTargetState {
-                                format: Renderer::OUTPUT_FORMAT,
+                                format: AmbientLightPass::OUTPUT_FORMAT,
                                 blend: Some(wgpu::BlendState {
                                     color: wgpu::BlendComponent {
                                         src_factor: wgpu::BlendFactor::One,
@@ -307,6 +308,7 @@ impl DirectionalLightPass {
     pub fn render(
         &self,
         ctx: &mut RenderContext,
+        output: &wgpu::TextureView,
         camera: &CameraManager,
         meshes: &MeshesManager,
         skins: &SkinsManager,
@@ -358,7 +360,7 @@ impl DirectionalLightPass {
         let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("DirectionalLight[lighting]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,

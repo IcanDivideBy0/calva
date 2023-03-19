@@ -1,6 +1,8 @@
-use crate::{RenderContext, Renderer};
+use crate::{AmbientLightPass, RenderContext, Renderer};
 
 pub struct FxaaPass {
+    pub output: wgpu::TextureView,
+
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -8,9 +10,13 @@ pub struct FxaaPass {
 }
 
 impl FxaaPass {
-    pub fn new(renderer: &Renderer) -> Self {
+    const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+    pub fn new(renderer: &Renderer, lights: &wgpu::TextureView) -> Self {
+        let output = Self::make_texture(renderer);
+
         let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("FXAA sampler"),
+            label: Some("Fxaa sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -21,7 +27,7 @@ impl FxaaPass {
             renderer
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("FXAA bind group layout"),
+                    label: Some("Fxaa bind group layout"),
                     entries: &[
                         // Sampler
                         wgpu::BindGroupLayoutEntry {
@@ -44,13 +50,13 @@ impl FxaaPass {
                     ],
                 });
 
-        let bind_group = Self::make_bind_group(renderer, &bind_group_layout, &sampler);
+        let bind_group = Self::make_bind_group(renderer, lights, &bind_group_layout, &sampler);
 
         let pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("FXAA pipeline layout"),
+                    label: Some("Fxaa pipeline layout"),
                     bind_group_layouts: &[&bind_group_layout],
                     push_constant_ranges: &[],
                 });
@@ -62,7 +68,7 @@ impl FxaaPass {
         let pipeline = renderer
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("FXAA pipeline"),
+                label: Some("Fxaa pipeline"),
                 layout: Some(&pipeline_layout),
                 multiview: None,
                 vertex: wgpu::VertexState {
@@ -74,7 +80,7 @@ impl FxaaPass {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
+                        format: AmbientLightPass::OUTPUT_FORMAT,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -85,6 +91,8 @@ impl FxaaPass {
             });
 
         Self {
+            output,
+
             sampler,
             bind_group_layout,
             bind_group,
@@ -92,15 +100,17 @@ impl FxaaPass {
         }
     }
 
-    pub fn rebind(&mut self, renderer: &Renderer) {
-        self.bind_group = Self::make_bind_group(renderer, &self.bind_group_layout, &self.sampler);
+    pub fn rebind(&mut self, renderer: &Renderer, lights: &wgpu::TextureView) {
+        self.output = Self::make_texture(renderer);
+        self.bind_group =
+            Self::make_bind_group(renderer, lights, &self.bind_group_layout, &self.sampler);
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("FXAA"),
+            label: Some("Fxaa"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.frame,
+                view: &self.output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -116,15 +126,37 @@ impl FxaaPass {
         rpass.draw(0..3, 0..1);
     }
 
+    fn make_texture(renderer: &Renderer) -> wgpu::TextureView {
+        renderer
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Fxaa output"),
+                size: wgpu::Extent3d {
+                    width: renderer.surface_config.width,
+                    height: renderer.surface_config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: Self::OUTPUT_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[Self::OUTPUT_FORMAT],
+            })
+            .create_view(&Default::default())
+    }
+
     fn make_bind_group(
         renderer: &Renderer,
+        lights: &wgpu::TextureView,
         layout: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
         renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("FXAA bind group"),
+                label: Some("Fxaa bind group"),
                 layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -133,7 +165,7 @@ impl FxaaPass {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&renderer.output),
+                        resource: wgpu::BindingResource::TextureView(&lights),
                     },
                 ],
             })

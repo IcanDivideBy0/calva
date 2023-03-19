@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    util::icosphere::Icosphere, CameraManager, GeometryPass, LightsManager, PointLight,
-    RenderContext, Renderer,
+    util::icosphere::Icosphere, AmbientLightPass, CameraManager, GeometryPass, LightsManager,
+    PointLight, RenderContext, Renderer,
 };
 
 pub struct PointLightsPass {
@@ -195,7 +195,7 @@ impl PointLightsPass {
                         module: &shader,
                         entry_point: "fs_main_lighting",
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: Renderer::OUTPUT_FORMAT,
+                            format: AmbientLightPass::OUTPUT_FORMAT,
                             blend: Some(wgpu::BlendState {
                                 color: wgpu::BlendComponent {
                                     src_factor: wgpu::BlendFactor::One,
@@ -258,7 +258,13 @@ impl PointLightsPass {
             Self::make_bind_group(renderer, geometry, &self.bind_group_layout, &self.sampler);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager, lights: &LightsManager) {
+    pub fn render(
+        &self,
+        ctx: &mut RenderContext,
+        output: &wgpu::TextureView,
+        camera: &CameraManager,
+        lights: &LightsManager,
+    ) {
         #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("PointLights");
 
@@ -289,7 +295,7 @@ impl PointLightsPass {
         let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PointLights[lighting]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,

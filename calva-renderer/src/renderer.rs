@@ -11,7 +11,6 @@ pub struct Renderer {
     pub surface: wgpu::Surface,
     pub surface_config: wgpu::SurfaceConfiguration,
 
-    pub output: wgpu::TextureView,
     pub depth: wgpu::TextureView,
     pub depth_stencil: wgpu::TextureView,
 
@@ -34,7 +33,6 @@ impl Renderer {
         GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
     ];
 
-    pub const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
     pub async fn new<W>(window: &W, size: (u32, u32)) -> Result<Self>
@@ -90,7 +88,7 @@ impl Renderer {
         };
         surface.configure(&device, &surface_config);
 
-        let (output, depth, depth_stencil) = Self::make_textures(&device, &surface_config);
+        let (depth, depth_stencil) = Self::make_textures(&device, &surface_config);
 
         #[cfg(feature = "profiler")]
         let profiler = {
@@ -110,7 +108,6 @@ impl Renderer {
             surface,
             surface_config,
 
-            output,
             depth,
             depth_stencil,
 
@@ -132,8 +129,7 @@ impl Renderer {
         self.surface_config.height = size.1;
         self.surface.configure(&self.device, &self.surface_config);
 
-        (self.output, self.depth, self.depth_stencil) =
-            Self::make_textures(&self.device, &self.surface_config);
+        (self.depth, self.depth_stencil) = Self::make_textures(&self.device, &self.surface_config);
     }
 
     pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<()> {
@@ -160,7 +156,6 @@ impl Renderer {
             #[cfg(not(feature = "profiler"))]
             encoder: &mut encoder,
 
-            view: &self.output,
             depth_stencil: &self.depth_stencil,
             frame: &frame_view,
         };
@@ -198,26 +193,12 @@ impl Renderer {
     fn make_textures(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
-    ) -> (wgpu::TextureView, wgpu::TextureView, wgpu::TextureView) {
+    ) -> (wgpu::TextureView, wgpu::TextureView) {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
             depth_or_array_layers: 1,
         };
-
-        let output = device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("Renderer output texture"),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                format: Self::OUTPUT_FORMAT,
-                view_formats: &[Self::OUTPUT_FORMAT],
-            })
-            .create_view(&Default::default());
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Renderer depth texture"),
@@ -236,7 +217,7 @@ impl Renderer {
         });
         let depth_stencil = depth_texture.create_view(&Default::default());
 
-        (output, depth, depth_stencil)
+        (depth, depth_stencil)
     }
 }
 
@@ -246,9 +227,7 @@ pub struct RenderContext<'a> {
     #[cfg(not(feature = "profiler"))]
     pub encoder: &'a mut wgpu::CommandEncoder,
 
-    pub view: &'a wgpu::TextureView,
     pub depth_stencil: &'a wgpu::TextureView,
-
     pub frame: &'a wgpu::TextureView,
 }
 

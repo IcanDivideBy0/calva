@@ -24,6 +24,7 @@ pub struct Engine {
     pub lights: LightsManager,
 
     size: (u32, u32),
+
     geometry: GeometryPass,
     ambient_light: AmbientLightPass,
     directional_light: DirectionalLightPass,
@@ -72,8 +73,8 @@ impl Engine {
         let point_lights = PointLightsPass::new(renderer, &camera, &geometry);
         let ssao = SsaoPass::new(renderer, &camera, &geometry);
         let skybox = SkyboxPass::new(renderer, &camera);
-        let fxaa = FxaaPass::new(renderer);
-        let tone_mapping = ToneMappingPass::new(renderer);
+        let fxaa = FxaaPass::new(renderer, &ambient_light.output);
+        let tone_mapping = ToneMappingPass::new(renderer, &fxaa.output);
 
         Self {
             camera,
@@ -109,8 +110,8 @@ impl Engine {
         self.directional_light.rebind(renderer, &self.geometry);
         self.point_lights.rebind(renderer, &self.geometry);
         self.ssao.rebind(renderer, &self.geometry);
-        self.fxaa.rebind(renderer);
-        self.tone_mapping.rebind(renderer);
+        self.fxaa.rebind(renderer, &self.ambient_light.output);
+        self.tone_mapping.rebind(renderer, &self.fxaa.output);
 
         self.size = renderer.size();
     }
@@ -145,21 +146,27 @@ impl Engine {
         self.ambient_light.render(ctx, &self.config.ambient);
         // self.directional_light.render(
         //     ctx,
+        //     &self.ambient_light.output,
         //     &self.camera,
         //     &self.meshes,
         //     &self.skins,
         //     &self.animations,
         //     &self.instances,
         // );
-        self.point_lights.render(ctx, &self.camera, &self.lights);
-        self.ssao.render(ctx, &self.camera);
+        self.point_lights
+            .render(ctx, &self.ambient_light.output, &self.camera, &self.lights);
+        self.ssao
+            .render(ctx, &self.ambient_light.output, &self.camera);
 
         if let Some(skybox) = &self.config.skybox {
-            self.skybox.render(ctx, &self.camera, skybox);
+            self.skybox
+                .render(ctx, &self.ambient_light.output, &self.camera, skybox);
         }
 
         self.fxaa.render(ctx);
-        self.tone_mapping.render(ctx, &self.config.tone_mapping);
+
+        self.tone_mapping
+            .render(ctx, &self.config.tone_mapping, &ctx.frame);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

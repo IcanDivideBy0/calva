@@ -1,4 +1,4 @@
-use crate::{RenderContext, Renderer};
+use crate::{AmbientLightPass, RenderContext, Renderer};
 
 pub struct SsaoBlit {
     bind_group: wgpu::BindGroup,
@@ -82,7 +82,7 @@ impl SsaoBlit {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
+                        format: AmbientLightPass::OUTPUT_FORMAT,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::OVER,
                             alpha: wgpu::BlendComponent::OVER,
@@ -102,11 +102,11 @@ impl SsaoBlit {
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ssao[blit]"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.view,
+                view: output,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,

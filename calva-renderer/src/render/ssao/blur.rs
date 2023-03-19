@@ -26,8 +26,7 @@ pub struct SsaoBlur<const WIDTH: u32, const HEIGHT: u32> {
 
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlur<WIDTH, HEIGHT> {
     pub fn new(renderer: &Renderer, output: &wgpu::TextureView) -> Self {
-        let temp = SsaoPass::<WIDTH, HEIGHT>::make_texture(renderer, Some("SsaoBlur temp texture"))
-            .create_view(&Default::default());
+        let temp = SsaoPass::<WIDTH, HEIGHT>::make_texture(renderer, Some("SsaoBlur temp texture"));
 
         let bind_group_layout =
             renderer
