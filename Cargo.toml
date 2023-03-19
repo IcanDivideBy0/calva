@@ -22,7 +22,6 @@ opt-level = 3
 # egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "master" }
 # egui-winit = { git = "https://github.com/emilk/egui.git", branch = "master" }
 # egui = { git = "https://github.com/emilk/egui.git", branch = "master" }
-smaa = { path = "../smaa-rs" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

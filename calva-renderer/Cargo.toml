@@ -16,4 +16,3 @@ wgpu = "0.15"
 wgpu-profiler = { version = "0.11", optional = true }
 raw-window-handle = "0.5"
 rand = "0.8"
-smaa = "0.9"

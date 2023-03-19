@@ -477,7 +477,6 @@ dependencies = [
  "glam",
  "rand 0.8.5",
  "raw-window-handle",
- "smaa",
  "wgpu",
  "wgpu-profiler",
 ]
@@ -1519,7 +1518,6 @@ dependencies = [
  "indexmap",
  "log",
  "num-traits",
- "pp-rs",
  "rustc-hash",
  "spirv",
  "termcolor",
@@ -1888,15 +1886,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pp-rs"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb458bb7f6e250e6eb79d5026badc10a3ebb8f9a15d1fff0f13d17c71f4d6dee"
-dependencies = [
- "unicode-xid",
-]
-
-[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2239,14 +2228,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1e08e261d0e8f5c43123b7adf3e4ca1690d655377ac93a03b2c9d3e98de1342"
 dependencies = [
  "version_check",
-]
-
-[[package]]
-name = "smaa"
-version = "0.9.0"
-dependencies = [
- "naga",
- "wgpu",
 ]
 
 [[package]]
