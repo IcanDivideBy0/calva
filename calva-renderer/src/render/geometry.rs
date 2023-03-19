@@ -198,7 +198,6 @@ impl GeometryPass {
         animations: &AnimationsManager,
         instances: &InstancesManager,
     ) {
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("Geometry");
 
         self.cull.cull(ctx, camera, meshes, instances);
@@ -258,7 +257,6 @@ impl GeometryPass {
 
         self.hiz.hiz(ctx);
 
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 

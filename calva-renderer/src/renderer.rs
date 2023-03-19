@@ -147,14 +147,14 @@ impl Renderer {
         profiler.begin_scope("RenderFrame", &mut encoder, &self.device);
 
         let mut context = RenderContext {
-            #[cfg(feature = "profiler")]
             encoder: ProfilerCommandEncoder {
-                device: &self.device,
                 encoder: &mut encoder,
+
+                #[cfg(feature = "profiler")]
+                device: &self.device,
+                #[cfg(feature = "profiler")]
                 profiler,
             },
-            #[cfg(not(feature = "profiler"))]
-            encoder: &mut encoder,
 
             depth_stencil: &self.depth_stencil,
             frame: &frame_view,
@@ -222,10 +222,7 @@ impl Renderer {
 }
 
 pub struct RenderContext<'a> {
-    #[cfg(feature = "profiler")]
     pub encoder: ProfilerCommandEncoder<'a>,
-    #[cfg(not(feature = "profiler"))]
-    pub encoder: &'a mut wgpu::CommandEncoder,
 
     pub depth_stencil: &'a wgpu::TextureView,
     pub frame: &'a wgpu::TextureView,
@@ -239,25 +236,31 @@ struct RendererProfiler {
     pub results: Vec<ProfilerResult>,
 }
 
-#[cfg(feature = "profiler")]
 pub struct ProfilerCommandEncoder<'a> {
-    device: &'a wgpu::Device,
     encoder: &'a mut wgpu::CommandEncoder,
+
+    #[cfg(feature = "profiler")]
+    device: &'a wgpu::Device,
+    #[cfg(feature = "profiler")]
     profiler: &'a mut GpuProfiler,
 }
 
-#[cfg(feature = "profiler")]
 impl<'a> ProfilerCommandEncoder<'a> {
     pub fn profile_start(&mut self, label: &str) {
+        #[cfg(debug_assertions)]
         self.encoder.push_debug_group(label);
+        #[cfg(feature = "profiler")]
         self.profiler.begin_scope(label, self.encoder, self.device);
     }
 
     pub fn profile_end(&mut self) {
+        #[cfg(feature = "profiler")]
         self.profiler.end_scope(self.encoder);
+        #[cfg(debug_assertions)]
         self.encoder.pop_debug_group();
     }
 
+    #[cfg(feature = "profiler")]
     pub fn begin_compute_pass(
         &mut self,
         desc: &wgpu::ComputePassDescriptor,
@@ -270,6 +273,7 @@ impl<'a> ProfilerCommandEncoder<'a> {
         )
     }
 
+    #[cfg(feature = "profiler")]
     pub fn begin_render_pass<'pass>(
         &'pass mut self,
         desc: &wgpu::RenderPassDescriptor<'pass, '_>,
@@ -283,7 +287,6 @@ impl<'a> ProfilerCommandEncoder<'a> {
     }
 }
 
-#[cfg(feature = "profiler")]
 impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
     type Target = wgpu::CommandEncoder;
 
@@ -291,7 +294,6 @@ impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
         self.encoder
     }
 }
-#[cfg(feature = "profiler")]
 impl<'a> std::ops::DerefMut for ProfilerCommandEncoder<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.encoder

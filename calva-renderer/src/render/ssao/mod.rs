@@ -271,7 +271,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         output: &wgpu::TextureView,
         camera: &CameraManager,
     ) {
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("Ssao");
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -280,7 +279,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                 view: &self.output,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: wgpu::LoadOp::Load,
                     store: true,
                 },
             })],
@@ -298,7 +297,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         self.blur.render(ctx, &self.output);
         self.blit.render(ctx, output);
 
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 

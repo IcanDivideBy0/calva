@@ -129,7 +129,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlur<WIDTH, HEIGHT> {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, output: &wgpu::TextureView) {
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("Ssao[blur]");
 
         ctx.encoder
@@ -139,7 +138,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlur<WIDTH, HEIGHT> {
                     view: &self.temp,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 })],
@@ -154,7 +153,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlur<WIDTH, HEIGHT> {
                     view: output,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 })],
@@ -162,7 +161,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlur<WIDTH, HEIGHT> {
             })
             .execute_bundles(std::iter::once(&self.v_pass));
 
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 }

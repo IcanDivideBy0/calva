@@ -265,7 +265,6 @@ impl PointLightsPass {
         camera: &CameraManager,
         lights: &LightsManager,
     ) {
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_start("PointLights");
 
         let mut stencil_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -321,7 +320,6 @@ impl PointLightsPass {
 
         drop(lighting_pass);
 
-        #[cfg(feature = "profiler")]
         ctx.encoder.profile_end();
     }
 
