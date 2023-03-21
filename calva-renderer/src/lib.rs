@@ -2,29 +2,17 @@
 
 pub use wgpu;
 
-mod animation;
-mod camera;
 mod engine;
-mod instance;
-mod light;
-mod material;
-mod mesh;
-mod render;
+mod graph;
+mod passes;
 mod renderer;
-mod skin;
-mod texture;
+mod ressources;
 
-pub use animation::*;
-pub use camera::*;
 pub use engine::*;
-pub use instance::*;
-pub use light::*;
-pub use material::*;
-pub use mesh::*;
-pub use render::*;
+pub use graph::*;
+pub use passes::*;
 pub use renderer::*;
-pub use skin::*;
-pub use texture::*;
+pub use ressources::*;
 
 pub mod util {
     pub mod icosphere;

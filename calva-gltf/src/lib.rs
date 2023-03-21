@@ -147,7 +147,7 @@ impl GltfModel {
                     size,
                 );
 
-                engine.textures.generate_mipmaps(
+                engine.ressources.textures.generate_mipmaps(
                     &renderer.device,
                     &renderer.queue,
                     &texture,
@@ -155,6 +155,7 @@ impl GltfModel {
                 )?;
 
                 Ok(engine
+                    .ressources
                     .textures
                     .add(&renderer.device, texture.create_view(&Default::default())))
             })
@@ -200,7 +201,7 @@ impl GltfModel {
                     .and_then(|t| textures.get(t.texture().index()).copied())
                     .unwrap_or_default();
 
-                Ok(engine.materials.add(
+                Ok(engine.ressources.materials.add(
                     &renderer.queue,
                     Material {
                         albedo,
@@ -284,10 +285,13 @@ impl GltfModel {
                             get_data(&gltf::Semantic::Weights(0)),
                         )
                         .map(|(joints, weights)| {
-                            engine.skins.add(&renderer.queue, joints, weights)
+                            engine
+                                .ressources
+                                .skins
+                                .add(&renderer.queue, joints, weights)
                         });
 
-                        let mesh = engine.meshes.add(
+                        let mesh = engine.ressources.meshes.add(
                             &renderer.queue,
                             bounding_sphere,
                             get_data_res(&gltf::Semantic::Positions)?,
@@ -392,6 +396,7 @@ impl GltfModel {
                     }
 
                     engine
+                        .ressources
                         .animations
                         .add(&renderer.device, &renderer.queue, animation)
                 });

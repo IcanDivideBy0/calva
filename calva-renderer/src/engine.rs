@@ -1,8 +1,11 @@
 use crate::{
-    AmbientLightConfig, AmbientLightPass, AnimationsManager, CameraManager, DirectionalLight,
-    DirectionalLightPass, FxaaPass, GeometryPass, InstancesManager, LightsManager,
-    MaterialsManager, MeshesManager, PointLightsPass, RenderContext, Renderer, SkinsManager,
-    Skybox, SkyboxPass, SsaoConfig, SsaoPass, TexturesManager, ToneMappingConfig, ToneMappingPass,
+    AmbientLightConfig, AmbientLightPass, AmbientLightPassInputs, AnimationsManager, CameraManager,
+    DirectionalLight, DirectionalLightPass, DirectionalLightPassInputs, FxaaPass, FxaaPassInputs,
+    GeometryPass, HierarchicalDepthPass, HierarchicalDepthPassInputs, InstancesManager,
+    LightsManager, MaterialsManager, MeshesManager, PointLightsPass, PointLightsPassInputs,
+    RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SkyboxPassInputs, SsaoConfig,
+    SsaoPass, SsaoPassInputs, TexturesManager, ToneMappingConfig, ToneMappingPass,
+    ToneMappingPassInputs,
 };
 
 #[derive(Default)]
@@ -13,7 +16,7 @@ pub struct EngineConfig {
     pub skybox: Option<Skybox>,
 }
 
-pub struct Engine {
+pub struct EngineRessources {
     pub camera: CameraManager,
     pub textures: TexturesManager,
     pub materials: MaterialsManager,
@@ -22,10 +25,15 @@ pub struct Engine {
     pub animations: AnimationsManager,
     pub instances: InstancesManager,
     pub lights: LightsManager,
+}
+
+pub struct Engine {
+    pub ressources: EngineRessources,
 
     size: (u32, u32),
 
     geometry: GeometryPass,
+    hierarchical_depth: HierarchicalDepthPass,
     ambient_light: AmbientLightPass,
     directional_light: DirectionalLightPass,
     point_lights: PointLightsPass,
@@ -39,55 +47,114 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(renderer: &Renderer) -> Self {
-        let camera = CameraManager::new(&renderer.device);
-        let textures = TexturesManager::new(&renderer.device);
-        let materials = MaterialsManager::new(&renderer.device);
-        let meshes = MeshesManager::new(&renderer.device);
-        let skins = SkinsManager::new(&renderer.device);
-        let animations = AnimationsManager::new(&renderer.device);
-        let instances = InstancesManager::new(&renderer.device);
-        let lights = LightsManager::new(&renderer.device);
+        let ressources = EngineRessources {
+            camera: CameraManager::new(&renderer.device),
+            textures: TexturesManager::new(&renderer.device),
+            materials: MaterialsManager::new(&renderer.device),
+            meshes: MeshesManager::new(&renderer.device),
+            skins: SkinsManager::new(&renderer.device),
+            animations: AnimationsManager::new(&renderer.device),
+            instances: InstancesManager::new(&renderer.device),
+            lights: LightsManager::new(&renderer.device),
+        };
 
         let size = renderer.size();
 
         let geometry = GeometryPass::new(
-            renderer,
-            &camera,
-            &textures,
-            &materials,
-            &meshes,
-            &skins,
-            &animations,
-            &instances,
+            &renderer.device,
+            &renderer.surface_config,
+            &ressources.camera,
+            &ressources.textures,
+            &ressources.materials,
+            &ressources.meshes,
+            &ressources.skins,
+            &ressources.animations,
+            &ressources.instances,
         );
-        let ambient_light = AmbientLightPass::new(renderer, &geometry);
+
+        let hierarchical_depth = HierarchicalDepthPass::new(
+            &renderer.device,
+            &renderer.surface_config,
+            HierarchicalDepthPassInputs {
+                depth: &geometry.outputs.depth,
+            },
+        );
+
+        let ambient_light = AmbientLightPass::new(
+            &renderer.device,
+            AmbientLightPassInputs {
+                albedo: &geometry.outputs.albedo_metallic,
+                emissive: &geometry.outputs.emissive,
+            },
+        );
+
         let directional_light = DirectionalLightPass::new(
-            renderer,
-            &camera,
-            &meshes,
-            &skins,
-            &animations,
-            &instances,
-            &geometry,
+            &renderer.device,
+            &ressources.camera,
+            &ressources.meshes,
+            &ressources.skins,
+            &ressources.animations,
+            &ressources.instances,
+            DirectionalLightPassInputs {
+                albedo_metallic: &geometry.outputs.albedo_metallic,
+                normal_roughness: &geometry.outputs.normal_roughness,
+                depth: &geometry.outputs.depth,
+                output: &ambient_light.outputs.output,
+            },
         );
-        let point_lights = PointLightsPass::new(renderer, &camera, &geometry);
-        let ssao = SsaoPass::new(renderer, &camera, &geometry);
-        let skybox = SkyboxPass::new(renderer, &camera);
-        let fxaa = FxaaPass::new(renderer, &ambient_light.output);
-        let tone_mapping = ToneMappingPass::new(renderer, &fxaa.output);
+
+        let point_lights = PointLightsPass::new(
+            &renderer.device,
+            &ressources.camera,
+            PointLightsPassInputs {
+                albedo_metallic: &geometry.outputs.albedo_metallic,
+                normal_roughness: &geometry.outputs.normal_roughness,
+                depth: &geometry.outputs.depth,
+                output: &ambient_light.outputs.output,
+            },
+        );
+
+        let skybox = SkyboxPass::new(
+            &renderer.device,
+            &ressources.camera,
+            SkyboxPassInputs {
+                depth: &geometry.outputs.depth,
+                output: &ambient_light.outputs.output,
+            },
+        );
+
+        let fxaa = FxaaPass::new(
+            &renderer.device,
+            FxaaPassInputs {
+                input: &ambient_light.outputs.output,
+            },
+        );
+
+        let ssao = SsaoPass::new(
+            &renderer.device,
+            &ressources.camera,
+            SsaoPassInputs {
+                normal: &geometry.outputs.normal_roughness,
+                depth: &geometry.outputs.depth,
+                output: &fxaa.outputs.output,
+            },
+        );
+
+        let tone_mapping = ToneMappingPass::new(
+            &renderer.device,
+            ToneMappingPassInputs {
+                format: renderer.surface_config.format,
+                input: &fxaa.outputs.output,
+            },
+        );
 
         Self {
-            camera,
-            textures,
-            materials,
-            meshes,
-            instances,
-            skins,
-            animations,
-            lights,
+            ressources,
 
             size,
+
             geometry,
+            hierarchical_depth,
             ambient_light,
             directional_light,
             point_lights,
@@ -105,13 +172,73 @@ impl Engine {
             return;
         }
 
-        self.geometry.resize(renderer);
-        self.ambient_light.rebind(renderer, &self.geometry);
-        self.directional_light.rebind(renderer, &self.geometry);
-        self.point_lights.rebind(renderer, &self.geometry);
-        self.ssao.rebind(renderer, &self.geometry);
-        self.fxaa.rebind(renderer, &self.ambient_light.output);
-        self.tone_mapping.rebind(renderer, &self.fxaa.output);
+        self.geometry
+            .resize(&renderer.device, &renderer.surface_config);
+
+        self.hierarchical_depth.rebind(
+            &renderer.device,
+            &renderer.surface_config,
+            HierarchicalDepthPassInputs {
+                depth: &self.geometry.outputs.depth,
+            },
+        );
+
+        self.ambient_light.rebind(
+            &renderer.device,
+            AmbientLightPassInputs {
+                albedo: &self.geometry.outputs.albedo_metallic,
+                emissive: &self.geometry.outputs.emissive,
+            },
+        );
+
+        self.directional_light.rebind(
+            &renderer.device,
+            DirectionalLightPassInputs {
+                albedo_metallic: &self.geometry.outputs.albedo_metallic,
+                normal_roughness: &self.geometry.outputs.normal_roughness,
+                depth: &self.geometry.outputs.depth,
+                output: &self.ambient_light.outputs.output,
+            },
+        );
+
+        self.point_lights.rebind(
+            &renderer.device,
+            PointLightsPassInputs {
+                albedo_metallic: &self.geometry.outputs.albedo_metallic,
+                normal_roughness: &self.geometry.outputs.normal_roughness,
+                depth: &self.geometry.outputs.depth,
+                output: &self.ambient_light.outputs.output,
+            },
+        );
+
+        self.skybox.rebind(SkyboxPassInputs {
+            depth: &self.geometry.outputs.depth,
+            output: &self.ambient_light.outputs.output,
+        });
+
+        self.fxaa.rebind(
+            &renderer.device,
+            FxaaPassInputs {
+                input: &self.ambient_light.outputs.output,
+            },
+        );
+
+        self.ssao.rebind(
+            &renderer.device,
+            SsaoPassInputs {
+                normal: &self.geometry.outputs.normal_roughness,
+                depth: &self.geometry.outputs.depth,
+                output: &self.fxaa.outputs.output,
+            },
+        );
+
+        self.tone_mapping.rebind(
+            &renderer.device,
+            ToneMappingPassInputs {
+                format: renderer.surface_config.format,
+                input: &self.fxaa.outputs.output,
+            },
+        );
 
         self.size = renderer.size();
     }
@@ -123,53 +250,58 @@ impl Engine {
         proj: glam::Mat4,
         directional_light: &DirectionalLight,
     ) {
-        self.camera.update(&renderer.queue, view, proj);
+        self.ressources.camera.update(&renderer.queue, view, proj);
 
         self.directional_light
-            .update(renderer, &self.camera, directional_light);
-        self.ssao.update(renderer, &self.config.ssao);
+            .update(&renderer.queue, &self.ressources.camera, directional_light);
+
+        self.ssao.update(&renderer.queue, &self.config.ssao);
     }
 
     pub fn render(&self, ctx: &mut RenderContext, dt: std::time::Duration) {
-        self.instances.anim(ctx, &dt);
+        self.ressources.instances.anim(ctx, &dt);
 
         self.geometry.render(
             ctx,
-            &self.camera,
-            &self.textures,
-            &self.materials,
-            &self.meshes,
-            &self.skins,
-            &self.animations,
-            &self.instances,
+            &self.ressources.camera,
+            &self.ressources.textures,
+            &self.ressources.materials,
+            &self.ressources.meshes,
+            &self.ressources.skins,
+            &self.ressources.animations,
+            &self.ressources.instances,
         );
+
+        self.hierarchical_depth.render(ctx);
+
         self.ambient_light.render(ctx, &self.config.ambient);
+
         // self.directional_light.render(
         //     ctx,
-        //     &self.ambient_light.output,
         //     &self.camera,
         //     &self.meshes,
         //     &self.skins,
         //     &self.animations,
         //     &self.instances,
         // );
+
         self.point_lights
-            .render(ctx, &self.ambient_light.output, &self.camera, &self.lights);
-        self.ssao
-            .render(ctx, &self.ambient_light.output, &self.camera);
+            .render(ctx, &self.ressources.camera, &self.ressources.lights);
 
         if let Some(skybox) = &self.config.skybox {
-            self.skybox
-                .render(ctx, &self.ambient_light.output, &self.camera, skybox);
+            self.skybox.render(ctx, &self.ressources.camera, skybox);
         }
 
         self.fxaa.render(ctx);
+
+        self.ssao.render(ctx, &self.ressources.camera);
 
         self.tone_mapping
             .render(ctx, &self.config.tone_mapping, &ctx.frame);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {
-        self.skybox.create_skybox(renderer, pixels)
+        self.skybox
+            .create_skybox(&renderer.device, &renderer.queue, pixels)
     }
 }

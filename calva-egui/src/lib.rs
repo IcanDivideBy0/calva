@@ -15,6 +15,7 @@ pub use egui;
 
 pub struct EguiPass {
     pub context: egui::Context,
+
     paint_jobs: Vec<ClippedPrimitive>,
     screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
     egui_renderer: egui_wgpu::Renderer,
@@ -22,12 +23,8 @@ pub struct EguiPass {
 
 impl EguiPass {
     pub fn new(renderer: &Renderer) -> Self {
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &renderer.device,
-            renderer.surface_config.format,
-            Some(Renderer::DEPTH_FORMAT),
-            1,
-        );
+        let egui_renderer =
+            egui_wgpu::Renderer::new(&renderer.device, renderer.surface_config.format, None, 1);
 
         let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
             size_in_pixels: [
@@ -100,11 +97,7 @@ impl EguiPass {
                         store: true,
                     },
                 })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: ctx.depth_stencil,
-                    depth_ops: None,
-                    stencil_ops: None,
-                }),
+                depth_stencil_attachment: None,
             }),
             &self.paint_jobs,
             &self.screen_descriptor,

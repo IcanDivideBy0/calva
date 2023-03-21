@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
     let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
 
-    let navmesh = navmesh::NavMesh::new(&renderer, &engine.camera, &doc, &buffers);
+    let navmesh = navmesh::NavMesh::new(&renderer, &engine.ressources.camera, &doc, &buffers);
     let dungeon = GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?;
     // if let Some((instances, point_lights)) = dungeon.node_instances("module01", None, None) {
     //     engine.instances.add(&renderer.queue, instances);
@@ -81,8 +81,11 @@ async fn main() -> Result<()> {
     for x in -3..3 {
         for y in -3..3 {
             let res = worldgen.chunk(glam::ivec2(x, y));
-            engine.instances.add(&renderer.queue, res.0);
-            engine.lights.add_point_lights(&renderer.queue, &res.1);
+            engine.ressources.instances.add(&renderer.queue, res.0);
+            engine
+                .ressources
+                .lights
+                .add_point_lights(&renderer.queue, &res.1);
         }
     }
 
@@ -127,7 +130,7 @@ async fn main() -> Result<()> {
             }
         }
     }
-    engine.instances.add(&renderer.queue, instances);
+    engine.ressources.instances.add(&renderer.queue, instances);
 
     let mut directional_light = DirectionalLight {
         color: glam::vec3(1.0, 1.0, 1.0),
@@ -203,8 +206,8 @@ async fn main() -> Result<()> {
 
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
-                    // fog.render(ctx, &engine.camera, &time);
-                    navmesh.render(ctx, &engine.camera);
+                    // fog.render(ctx, &engine.ressources.camera, &time);
+                    navmesh.render(ctx, &engine.ressources.camera);
                     egui.render(ctx);
                 });
 

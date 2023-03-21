@@ -8,7 +8,7 @@ use calva::renderer::{
 };
 
 pub struct NavMesh {
-    triangles: Vec<Triangle>,
+    // triangles: Vec<Triangle>,
     lines: Vec<glam::Vec3>,
     vertices: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
@@ -124,18 +124,12 @@ impl NavMesh {
                     topology: wgpu::PrimitiveTopology::LineList,
                     ..Default::default()
                 },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Renderer::DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
+                depth_stencil: None,
                 multisample: Default::default(),
             });
 
         Self {
-            triangles,
+            // triangles,
             lines,
             vertices,
             pipeline,
@@ -153,11 +147,7 @@ impl NavMesh {
                     store: true,
                 },
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.depth_stencil,
-                depth_ops: None,
-                stencil_ops: None,
-            }),
+            depth_stencil_attachment: None,
         });
 
         rpass.set_pipeline(&self.pipeline);
