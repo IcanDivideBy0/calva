@@ -74,7 +74,6 @@ impl Engine {
 
         let hierarchical_depth = HierarchicalDepthPass::new(
             &renderer.device,
-            &renderer.surface_config,
             HierarchicalDepthPassInputs {
                 depth: &geometry.outputs.depth,
             },
@@ -177,7 +176,6 @@ impl Engine {
 
         self.hierarchical_depth.rebind(
             &renderer.device,
-            &renderer.surface_config,
             HierarchicalDepthPassInputs {
                 depth: &self.geometry.outputs.depth,
             },

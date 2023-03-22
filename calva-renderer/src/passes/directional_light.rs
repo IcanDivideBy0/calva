@@ -49,8 +49,8 @@ pub struct DirectionalLightPass {
 
     sampler: wgpu::Sampler,
 
-    depth_view: wgpu::TextureView,
-    depth_pipeline: wgpu::RenderPipeline,
+    light_depth_view: wgpu::TextureView,
+    light_depth_pipeline: wgpu::RenderPipeline,
 
     blur_pass: DirectionalLightBlur,
 
@@ -87,11 +87,12 @@ impl DirectionalLightPass {
             ..Default::default()
         });
 
-        let depth = Self::make_depth_texture(device, Some("DirectionalLight depth texture"));
-        let depth_view = depth.create_view(&Default::default());
         let output_view = inputs.output.create_view(&Default::default());
 
-        let depth_pipeline = {
+        let light_depth = Self::make_depth_texture(device, Some("DirectionalLight depth texture"));
+        let light_depth_view = light_depth.create_view(&Default::default());
+
+        let light_depth_pipeline = {
             let shader =
                 device.create_shader_module(wgpu::include_wgsl!("directional_light.depth.wgsl",));
 
@@ -128,7 +129,7 @@ impl DirectionalLightPass {
                     ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: depth.format(),
+                    format: light_depth.format(),
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: Default::default(),
@@ -138,7 +139,7 @@ impl DirectionalLightPass {
             })
         };
 
-        let blur_pass = blur::DirectionalLightBlur::new(device, &depth);
+        let blur_pass = blur::DirectionalLightBlur::new(device, &light_depth);
 
         let (lighting_bind_group_layout, lighting_bind_group, lighting_pipeline) = {
             let shader = device
@@ -205,7 +206,7 @@ impl DirectionalLightPass {
             let bind_group = Self::make_lighting_bind_group(
                 device,
                 &bind_group_layout,
-                &depth_view,
+                &light_depth_view,
                 &sampler,
                 &inputs,
             );
@@ -259,8 +260,8 @@ impl DirectionalLightPass {
 
             output_view,
             sampler,
-            depth_view,
-            depth_pipeline,
+            light_depth_view,
+            light_depth_pipeline,
 
             blur_pass,
 
@@ -274,7 +275,7 @@ impl DirectionalLightPass {
         self.lighting_bind_group = Self::make_lighting_bind_group(
             device,
             &self.lighting_bind_group_layout,
-            &self.depth_view,
+            &self.light_depth_view,
             &self.sampler,
             &inputs,
         );
@@ -310,7 +311,7 @@ impl DirectionalLightPass {
             label: Some("DirectionalLight[depth]"),
             color_attachments: &[],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
+                view: &self.light_depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -319,7 +320,7 @@ impl DirectionalLightPass {
             }),
         });
 
-        depth_pass.set_pipeline(&self.depth_pipeline);
+        depth_pass.set_pipeline(&self.light_depth_pipeline);
 
         depth_pass.set_bind_group(0, &self.uniform.bind_group, &[]);
         depth_pass.set_bind_group(1, &skins.bind_group, &[]);
@@ -371,7 +372,7 @@ impl DirectionalLightPass {
     fn make_lighting_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        depth: &wgpu::TextureView,
+        light_depth: &wgpu::TextureView,
         sampler: &wgpu::Sampler,
         inputs: &DirectionalLightPassInputs,
     ) -> wgpu::BindGroup {
@@ -402,7 +403,7 @@ impl DirectionalLightPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(depth),
+                    resource: wgpu::BindingResource::TextureView(light_depth),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,

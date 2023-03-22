@@ -21,12 +21,8 @@ pub struct HierarchicalDepthPass {
 }
 
 impl HierarchicalDepthPass {
-    pub fn new(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
-        inputs: HierarchicalDepthPassInputs,
-    ) -> Self {
-        let size = (surface_config.width / 16, surface_config.height / 16);
+    pub fn new(device: &wgpu::Device, inputs: HierarchicalDepthPassInputs) -> Self {
+        let size = (inputs.depth.width() / 16, inputs.depth.height() / 16);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("HierarchicalDepth sampler"),
@@ -35,7 +31,7 @@ impl HierarchicalDepthPass {
             ..Default::default()
         });
 
-        let outputs = Self::make_outputs(device, surface_config);
+        let outputs = Self::make_outputs(device, &inputs);
         let output_view = outputs.output.create_view(&Default::default());
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -104,15 +100,10 @@ impl HierarchicalDepthPass {
         }
     }
 
-    pub fn rebind(
-        &mut self,
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
-        inputs: HierarchicalDepthPassInputs,
-    ) {
-        self.size = (surface_config.width / 16, surface_config.height / 16);
+    pub fn rebind(&mut self, device: &wgpu::Device, inputs: HierarchicalDepthPassInputs) {
+        self.size = (inputs.depth.width() / 16, inputs.depth.height() / 16);
 
-        self.outputs = Self::make_outputs(device, surface_config);
+        self.outputs = Self::make_outputs(device, &inputs);
         self.output_view = self.outputs.output.create_view(&Default::default());
 
         self.bind_group = Self::make_bind_group(
@@ -138,13 +129,13 @@ impl HierarchicalDepthPass {
 
     fn make_outputs(
         device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
+        inputs: &HierarchicalDepthPassInputs,
     ) -> HierarchicalDepthPassOutputs {
         let output = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("HierarchicalDepth output"),
             size: wgpu::Extent3d {
-                width: surface_config.width / 16,
-                height: surface_config.height / 16,
+                width: inputs.depth.width() / 16,
+                height: inputs.depth.height() / 16,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
