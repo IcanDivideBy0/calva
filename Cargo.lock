@@ -471,7 +471,6 @@ name = "calva-renderer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitflags",
  "bytemuck",
  "glam",
  "rand 0.8.5",

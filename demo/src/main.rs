@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
         "./demo/assets/demons/demon-imp.glb",
     ]
     .iter()
-    .take(0)
+    .take(1)
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
