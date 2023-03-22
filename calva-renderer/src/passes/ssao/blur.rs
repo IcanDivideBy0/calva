@@ -78,7 +78,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
                     module: &shader,
                     entry_point: format!("fs_main_{direction}").as_str(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: SsaoPass::<WIDTH, HEIGHT>::OUTPUT_FORMAT,
+                        format: output.format(),
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -92,7 +92,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
             let mut encoder =
                 device.create_render_bundle_encoder(&wgpu::RenderBundleEncoderDescriptor {
                     label: Some(format!("SsaoBlur[{direction}] render bundle").as_str()),
-                    color_formats: &[Some(SsaoPass::<WIDTH, HEIGHT>::OUTPUT_FORMAT)],
+                    color_formats: &[Some(output.format())],
                     depth_stencil: None,
                     sample_count: 1,
                     multiview: None,

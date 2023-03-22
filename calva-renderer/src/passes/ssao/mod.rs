@@ -88,20 +88,18 @@ pub struct SsaoPassInputs<'a> {
 pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
     config_buffer: wgpu::Buffer,
     random_buffer: wgpu::Buffer,
-    sampler: wgpu::Sampler,
+    output_view: wgpu::TextureView,
 
+    sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 
-    output_view: wgpu::TextureView,
     blur: blur::SsaoBlurPass<WIDTH, HEIGHT>,
     blit: blit::SsaoBlitPass,
 }
 
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
-    const OUTPUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
-
     pub fn new(device: &wgpu::Device, camera: &CameraManager, inputs: SsaoPassInputs) -> Self {
         let config_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Ssao config buffer"),
@@ -115,6 +113,9 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             contents: bytemuck::bytes_of(&SsaoRandomUniform::new()),
             usage: wgpu::BufferUsages::UNIFORM,
         });
+
+        let output = Self::make_texture(device, Some("Ssao output"));
+        let output_view = output.create_view(&Default::default());
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Ssao sampler"),
@@ -211,7 +212,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Self::OUTPUT_FORMAT,
+                    format: output.format(),
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -221,9 +222,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             multiview: None,
             multisample: Default::default(),
         });
-
-        let output = Self::make_texture(device, Some("Ssao output"));
-        let output_view = output.create_view(&Default::default());
 
         let blur = blur::SsaoBlurPass::new(device, &output);
         let blit = blit::SsaoBlitPass::new(device, &output, &inputs.output);
@@ -301,9 +299,9 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: Self::OUTPUT_FORMAT,
+            format: wgpu::TextureFormat::R8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[Self::OUTPUT_FORMAT],
+            view_formats: &[wgpu::TextureFormat::R8Unorm],
         })
     }
 

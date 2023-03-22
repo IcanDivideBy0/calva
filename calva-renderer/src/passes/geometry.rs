@@ -66,11 +66,6 @@ impl GeometryPass {
         wgpu::Features::MULTI_DRAW_INDIRECT,
     ];
 
-    const ALBEDO_METALLIC_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
-    const NORMAL_ROUGHNESS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-    const EMISSIVE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
-    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
@@ -147,17 +142,17 @@ impl GeometryPass {
                 entry_point: "fs_main",
                 targets: &[
                     Some(wgpu::ColorTargetState {
-                        format: Self::ALBEDO_METALLIC_FORMAT,
+                        format: outputs.albedo_metallic.format(),
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
                     Some(wgpu::ColorTargetState {
-                        format: Self::NORMAL_ROUGHNESS_FORMAT,
+                        format: outputs.normal_roughness.format(),
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
                     Some(wgpu::ColorTargetState {
-                        format: Self::EMISSIVE_FORMAT,
+                        format: outputs.emissive.format(),
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
@@ -168,7 +163,7 @@ impl GeometryPass {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: Self::DEPTH_FORMAT,
+                format: outputs.depth.format(),
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: Default::default(),
@@ -295,8 +290,8 @@ impl GeometryPass {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            format: Self::ALBEDO_METALLIC_FORMAT,
-            view_formats: &[Self::ALBEDO_METALLIC_FORMAT],
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            view_formats: &[wgpu::TextureFormat::Bgra8Unorm],
         });
 
         let normal_roughness = device.create_texture(&wgpu::TextureDescriptor {
@@ -306,8 +301,8 @@ impl GeometryPass {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            format: Self::NORMAL_ROUGHNESS_FORMAT,
-            view_formats: &[Self::NORMAL_ROUGHNESS_FORMAT],
+            format: wgpu::TextureFormat::Rgba16Float,
+            view_formats: &[wgpu::TextureFormat::Rgba16Float],
         });
 
         let emissive = device.create_texture(&wgpu::TextureDescriptor {
@@ -317,8 +312,8 @@ impl GeometryPass {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            format: Self::EMISSIVE_FORMAT,
-            view_formats: &[Self::EMISSIVE_FORMAT],
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            view_formats: &[wgpu::TextureFormat::Bgra8Unorm],
         });
 
         let depth = device.create_texture(&wgpu::TextureDescriptor {
@@ -328,8 +323,8 @@ impl GeometryPass {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            format: Self::DEPTH_FORMAT,
-            view_formats: &[Self::DEPTH_FORMAT],
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            view_formats: &[wgpu::TextureFormat::Depth24PlusStencil8],
         });
 
         GeometryPassOutputs {
