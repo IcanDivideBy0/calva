@@ -1,7 +1,6 @@
 use noise::NoiseFn;
 use rand::prelude::*;
 use rand_seeder::SipHasher;
-use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, collections::BTreeSet, hash::Hash};
 
 use calva::{
@@ -9,16 +8,19 @@ use calva::{
     renderer::{Instance, PointLight},
 };
 
+pub mod tile;
+use tile::{Face, Tile};
+
 pub struct WorldGenerator {
     seed: u32,
     noise: Box<dyn NoiseFn<f64, 2>>,
-    options: BTreeSet<ModuleOption>,
+    options: BTreeSet<SlotOption>,
 
     pub model: GltfModel,
 }
 
 impl WorldGenerator {
-    pub fn new(seed: impl Hash, model: GltfModel) -> Self {
+    pub fn new(seed: impl Hash, model: GltfModel, tiles: &[Tile]) -> Self {
         let seed = SipHasher::from(seed).into_rng().gen();
 
         let noise = Box::new(
@@ -30,32 +32,9 @@ impl WorldGenerator {
             .set_scale(0.08),
         );
 
-        let options = model
-            .doc
-            .nodes()
-            .filter_map(|node| {
-                let id = node.index();
-                let extras = node.extras().as_ref()?;
-
-                #[derive(Debug, Serialize, Deserialize)]
-                struct WfcInfo {
-                    #[serde(rename = "wfc_north")]
-                    north: ModuleConstraint,
-                    #[serde(rename = "wfc_east")]
-                    east: ModuleConstraint,
-                    #[serde(rename = "wfc_south")]
-                    south: ModuleConstraint,
-                    #[serde(rename = "wfc_west")]
-                    west: ModuleConstraint,
-                }
-                let infos = serde_json::from_str::<WfcInfo>(extras.get()).ok()?;
-
-                Some(ModuleOption::permutations(
-                    id,
-                    [infos.north, infos.east, infos.south, infos.west],
-                ))
-            })
-            .flatten()
+        let options = tiles
+            .iter()
+            .flat_map(|tile| SlotOption::permutations(tile.node_id, tile.wfc_constraints()))
             .collect();
 
         Self {
@@ -111,7 +90,7 @@ impl Chunk {
         seed: impl Hash,
         coord: glam::IVec2,
         noise: &dyn NoiseFn<f64, 2>,
-        options: &BTreeSet<ModuleOption>,
+        options: &BTreeSet<SlotOption>,
     ) -> Self {
         let mut rng = SipHasher::from((seed, coord)).into_rng();
 
@@ -146,7 +125,7 @@ impl Chunk {
                         _ => 0.0,
                     };
 
-                let elevation_start = noise.get([nx, ny]) * ModuleOption::ELEVATION_MAX as f64;
+                let elevation_start = noise.get([nx, ny]) * SlotOption::ELEVATION_MAX as f64;
 
                 let nxx = match face {
                     Face::North => nx + 1.0,
@@ -159,22 +138,23 @@ impl Chunk {
                     _ => ny,
                 };
 
-                let elevation_end = noise.get([nxx, nyy]) * ModuleOption::ELEVATION_MAX as f64;
+                let elevation_end = noise.get([nxx, nyy]) * SlotOption::ELEVATION_MAX as f64;
 
-                let elevation_start = (elevation_start / 2.0) as u8 * 2;
-                let elevation_end = (elevation_end / 2.0) as u8 * 2;
+                let elevation_start = elevation_start as u8 * 2;
+                let elevation_end = elevation_end as u8 * 2;
 
-                let mut c = [
-                    elevation_start,
-                    elevation_start,
-                    elevation_start.max(elevation_end),
-                    elevation_end,
-                    elevation_end,
+                let mut constraint = [
+                    Some(elevation_start),
+                    Some(elevation_start),
+                    Some(elevation_start.max(elevation_end)),
+                    Some(elevation_end),
+                    Some(elevation_end),
                 ];
-                // println!("{c:?} #{i} {face:?}");
-                c.reverse();
+                constraint.reverse();
 
-                grid[y][x].borrow_mut().apply_constraints(face, &[c]);
+                grid[y][x]
+                    .borrow_mut()
+                    .apply_constraints(face, &[constraint]);
 
                 Self::propagate(&grid, x, y);
             }
@@ -236,7 +216,7 @@ impl Chunk {
 
 #[derive(Debug)]
 struct Slot {
-    options: BTreeSet<ModuleOption>,
+    options: BTreeSet<SlotOption>,
 }
 
 impl Slot {
@@ -270,24 +250,24 @@ impl Slot {
     }
 }
 
-type ModuleConstraint = [u8; ModuleOption::TILE_COUNT];
+type ModuleConstraint = [Option<u8>; Tile::WFC_SAMPLES];
 
 #[derive(Debug, Clone, Copy)]
-pub struct ModuleOption {
+pub struct SlotOption {
     id: usize,
     elevation: u8,
     rotation: u8,
     faces: [ModuleConstraint; 4], // north east south west
 }
 
-impl Eq for ModuleOption {}
-impl PartialEq for ModuleOption {
+impl Eq for SlotOption {}
+impl PartialEq for SlotOption {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id && self.rotation == other.rotation && self.elevation == other.elevation
     }
 }
 
-impl Hash for ModuleOption {
+impl Hash for SlotOption {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
         self.elevation.hash(state);
@@ -295,13 +275,13 @@ impl Hash for ModuleOption {
     }
 }
 
-impl std::cmp::PartialOrd for ModuleOption {
+impl std::cmp::PartialOrd for SlotOption {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl std::cmp::Ord for ModuleOption {
+impl std::cmp::Ord for SlotOption {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.id
             .cmp(&other.id)
@@ -310,13 +290,8 @@ impl std::cmp::Ord for ModuleOption {
     }
 }
 
-impl ModuleOption {
-    pub const TILE_COUNT: usize = 5;
-    pub const TILE_SIZE: usize = 6;
-    pub const ELEVATION_MAX: usize = 8;
-
-    pub const WORLD_FLOOR_HEIGHT: usize = 4;
-    pub const WORLD_SIZE: usize = Self::TILE_COUNT * Self::TILE_SIZE;
+impl SlotOption {
+    pub const ELEVATION_MAX: usize = 4;
 
     pub fn constraint(&self, face: Face) -> ModuleConstraint {
         match face {
@@ -334,7 +309,7 @@ impl ModuleOption {
                     id,
                     elevation,
                     rotation,
-                    faces: faces.map(|f| f.map(|i| i + elevation)),
+                    faces: faces.map(|face| face.map(|value| value.map(|i| i + elevation))),
                 });
 
                 // Rotate faces
@@ -348,35 +323,9 @@ impl ModuleOption {
     pub fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
         let quat = glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
 
-        let translation = glam::vec3(
-            pos.x as f32 * Self::WORLD_SIZE as f32,
-            self.elevation as f32 * Self::WORLD_FLOOR_HEIGHT as f32,
-            pos.y as f32 * Self::WORLD_SIZE as f32,
-        );
+        let translation =
+            glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32) * Tile::WORLD_POS;
 
         glam::Mat4::from_rotation_translation(quat, translation)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Face {
-    North,
-    East,
-    South,
-    West,
-}
-
-impl Face {
-    const fn all() -> impl IntoIterator<Item = Self> {
-        [Self::North, Self::East, Self::South, Self::West]
-    }
-
-    const fn opposite(self) -> Self {
-        match self {
-            Self::North => Self::South,
-            Self::East => Self::West,
-            Self::South => Self::North,
-            Self::West => Self::East,
-        }
     }
 }

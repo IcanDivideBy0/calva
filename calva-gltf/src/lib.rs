@@ -327,7 +327,7 @@ impl GltfModel {
 
             let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
 
-            traverse_nodes_tree::<glam::Mat4>(
+            Self::traverse_nodes_tree::<glam::Mat4>(
                 root_nodes,
                 &mut |parent_transform, node| {
                     let local_transform =
@@ -418,7 +418,7 @@ impl GltfModel {
         let mut instances = vec![];
         let mut point_lights = vec![];
 
-        traverse_nodes_tree::<glam::Mat4>(
+        Self::traverse_nodes_tree::<glam::Mat4>(
             std::iter::once(node),
             &mut |parent_transform, node| {
                 let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
@@ -543,15 +543,15 @@ impl GltfModel {
     pub fn animations(&self) -> impl Iterator<Item = &String> {
         self.animations.keys()
     }
-}
 
-fn traverse_nodes_tree<'a, T>(
-    nodes: impl Iterator<Item = gltf::Node<'a>>,
-    cb: &mut dyn FnMut(&T, &gltf::Node) -> T,
-    acc: T,
-) {
-    for node in nodes {
-        let res = cb(&acc, &node);
-        traverse_nodes_tree(node.children(), cb, res);
+    pub fn traverse_nodes_tree<'a, T>(
+        nodes: impl Iterator<Item = gltf::Node<'a>>,
+        visitor: &mut dyn FnMut(&T, &gltf::Node) -> T,
+        acc: T,
+    ) {
+        for node in nodes {
+            let res = visitor(&acc, &node);
+            Self::traverse_nodes_tree(node.children(), visitor, res);
+        }
     }
 }

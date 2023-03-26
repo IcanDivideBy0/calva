@@ -16,19 +16,22 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    const FEATURES: &'static [wgpu::Features] = &[
-        wgpu::Features::DEPTH_CLIP_CONTROL,             // all platforms
-        wgpu::Features::TEXTURE_BINDING_ARRAY,          // Vulkan, DX12, metal
-        wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY, // Vulkan, metal
-        wgpu::Features::MULTI_DRAW_INDIRECT,            // Vulkan, DX12, metal
-        wgpu::Features::MULTI_DRAW_INDIRECT_COUNT,      // Vulkan, DX12
-        wgpu::Features::INDIRECT_FIRST_INSTANCE,        // Vulkan, DX12, metal
-        wgpu::Features::PUSH_CONSTANTS, // All except WebGL (DX11 & OpenGL emulated w/ uniforms)
-        wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING, // Vulkan, DX12, metal
-        wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // All except WebGL
-        #[cfg(feature = "profiler")]
-        GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
-    ];
+    const FEATURES: wgpu::Features = wgpu::Features::empty()
+        .union(wgpu::Features::DEPTH_CLIP_CONTROL) // all platforms
+        .union(wgpu::Features::TEXTURE_BINDING_ARRAY) // Vulkan, DX12, metal
+        .union(wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY) // Vulkan, metal
+        .union(wgpu::Features::MULTI_DRAW_INDIRECT) // Vulkan, DX12, metal
+        .union(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) // Vulkan, DX12
+        .union(wgpu::Features::INDIRECT_FIRST_INSTANCE) // Vulkan, DX12, metal
+        .union(wgpu::Features::PUSH_CONSTANTS) // All except WebGL (DX11 & OpenGL emulated w/ uniforms)
+        .union(wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING) // Vulkan, DX12, metal
+        .union(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) // All except WebGL
+        .union(
+            #[cfg(feature = "profiler")]
+            GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
+            #[cfg(not(feature = "profiler"))]
+            wgpu::Features::empty(),
+        );
 
     pub async fn new<W>(window: &W, size: (u32, u32)) -> Result<Self>
     where
@@ -54,10 +57,7 @@ impl Renderer {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("Renderer device"),
-                    features: Self::FEATURES
-                        .iter()
-                        .copied()
-                        .fold(wgpu::Features::empty(), core::ops::BitOr::bitor),
+                    features: Self::FEATURES,
                     limits: wgpu::Limits {
                         max_sampled_textures_per_shader_stage: 512,
                         max_push_constant_size: 128,

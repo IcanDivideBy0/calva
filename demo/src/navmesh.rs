@@ -4,20 +4,21 @@ struct Triangle(glam::Vec3, glam::Vec3, glam::Vec3);
 
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    CameraManager, RenderContext, Renderer,
+    RenderContext,
 };
 
 pub struct NavMesh {
-    // triangles: Vec<Triangle>,
-    lines: Vec<glam::Vec3>,
     vertices: wgpu::Buffer,
+    count: u32,
+
+    depth: wgpu::Texture,
+    depth_view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl NavMesh {
     pub fn new(
-        renderer: &Renderer,
-        camera: &CameraManager,
+        device: &wgpu::Device,
         doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
     ) -> Self {
@@ -34,8 +35,8 @@ impl NavMesh {
         traverse_nodes_tree::<glam::Mat4>(
             module1.children(),
             &mut |parent_transform, node| {
-                let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-                let global_transform = *parent_transform * local_transform;
+                let transform =
+                    *parent_transform * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
 
                 if let Some(mesh) = node.mesh() {
                     for primitive in mesh.primitives() {
@@ -57,106 +58,119 @@ impl NavMesh {
                             let [i1, i2, i3] = <[u32; 3]>::try_from(chunk).ok()?;
 
                             Some(Triangle(
-                                global_transform.transform_point3(*vertices.get(i1 as usize)?),
-                                global_transform.transform_point3(*vertices.get(i2 as usize)?),
-                                global_transform.transform_point3(*vertices.get(i3 as usize)?),
+                                transform.transform_point3(*vertices.get(i1 as usize)?),
+                                transform.transform_point3(*vertices.get(i2 as usize)?),
+                                transform.transform_point3(*vertices.get(i3 as usize)?),
                             ))
                         }));
                     }
                 }
 
-                global_transform
+                transform
             },
             glam::Mat4::IDENTITY,
         );
 
-        let lines = triangles
-            .iter()
-            .flat_map(|&Triangle(v1, v2, v3)| [v1, v2, v2, v3, v3, v1])
-            .collect::<Vec<_>>();
+        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("NavMesh verts buffer"),
+            contents: bytemuck::cast_slice(&triangles),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let count = 3 * triangles.len() as u32;
 
-        let vertices = renderer
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("NavMesh verts buffer"),
-                contents: bytemuck::cast_slice(&lines),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+        let depth = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("NavMesh depth"),
+            size: wgpu::Extent3d {
+                width: 12 * 5,
+                height: 12 * 5,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[wgpu::TextureFormat::Depth32Float],
+        });
+        let depth_view = depth.create_view(&Default::default());
 
-        let pipeline_layout =
-            renderer
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("NavMesh pipeline layout"),
-                    bind_group_layouts: &[&camera.bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("NavMesh pipeline layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
 
-        let shader = renderer
-            .device
-            .create_shader_module(wgpu::include_wgsl!("navmesh.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("NavMesh shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+                    @vertex
+                    fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
+                        return vec4<f32>(
+                            pos.xz / (5.0 * 3.0),
+                            (20.0 - pos.y) / 30.0,
+                            1.0,
+                        );
+                    }
+                "#
+                .into(),
+            ),
+        });
 
-        let pipeline = renderer
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("NavMesh render pipeline"),
-                layout: Some(&pipeline_layout),
-                multiview: None,
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 3]>() as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-                    }],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::LineList,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: Default::default(),
-            });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("NavMesh render pipeline"),
+            layout: Some(&pipeline_layout),
+            multiview: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 3]>() as _,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                }],
+            },
+            fragment: None,
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: depth.format(),
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+        });
 
         Self {
-            // triangles,
-            lines,
             vertices,
+            count,
+
+            depth,
+            depth_view,
             pipeline,
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("NavMesh"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.frame,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
                     store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
+                }),
+                stencil_ops: None,
+            }),
         });
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &camera.bind_group, &[]);
 
         rpass.set_vertex_buffer(0, self.vertices.slice(..));
 
-        let count = self.lines.len() as u32;
-        rpass.draw(0..count, 0..1);
+        rpass.draw(0..self.count, 0..1);
     }
 }
 

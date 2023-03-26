@@ -14,7 +14,7 @@ use winit::{
 };
 
 mod camera;
-mod navmesh;
+// mod navmesh;
 mod worldgen;
 // mod fog;
 
@@ -62,24 +62,27 @@ async fn main() -> Result<()> {
     std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
     let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
 
-    let navmesh = navmesh::NavMesh::new(&renderer, &engine.ressources.camera, &doc, &buffers);
-    let dungeon = GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?;
-    // if let Some((instances, point_lights)) = dungeon.node_instances("module01", None, None) {
-    //     engine.instances.add(&renderer.queue, instances);
-    //     engine
-    //         .lights
-    //         .add_point_lights(&renderer.queue, &point_lights);
-    // }
+    let tile_builder = worldgen::tile::TileBuilder::new(&renderer.device, &doc, &buffers);
+
+    let tiles = [
+        "module01", "module03", "module07", "module08", "module09", "module10", "module11",
+        "module12", "module13", "module14", "module15", "module16", "module17", "module18",
+        "module19",
+    ]
+    .iter()
+    .map(|tile_name| tile_builder.build(&renderer.device, &renderer.queue, tile_name))
+    .collect::<Vec<_>>();
 
     let worldgen = worldgen::WorldGenerator::new(
         "Calva!533d", // rand::random::<u32>(),
         // GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?,
-        // GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?,
-        dungeon,
+        GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?,
+        &tiles,
     );
 
-    for x in -3..3 {
-        for y in -3..3 {
+    const DIM: i32 = 3;
+    for x in -DIM..=DIM {
+        for y in -DIM..=DIM {
             let res = worldgen.chunk(glam::ivec2(x, y));
             engine.ressources.instances.add(&renderer.queue, res.0);
             engine
@@ -107,7 +110,7 @@ async fn main() -> Result<()> {
         "./demo/assets/demons/demon-imp.glb",
     ]
     .iter()
-    .take(1)
+    .take(0)
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
@@ -207,7 +210,6 @@ async fn main() -> Result<()> {
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
                     // fog.render(ctx, &engine.ressources.camera, &time);
-                    navmesh.render(ctx, &engine.ressources.camera);
                     egui.render(ctx);
                 });
 

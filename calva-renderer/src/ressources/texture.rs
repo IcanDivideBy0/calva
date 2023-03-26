@@ -278,7 +278,9 @@ impl MipmapGenerator {
             }
         };
 
-        let mut encoder = device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("MipmapGenerator command encoder"),
+        });
 
         let mips = (0..desc.size.max_mips(desc.dimension))
             .map(|mip_level| {
