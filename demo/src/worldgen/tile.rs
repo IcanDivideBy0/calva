@@ -111,12 +111,13 @@ impl<'a> TileBuilder<'a> {
 
         fn traverse_nodes_tree<'a, T>(
             nodes: impl Iterator<Item = gltf::Node<'a>>,
-            visitor: &mut dyn FnMut(&T, &gltf::Node) -> T,
+            visitor: &mut dyn FnMut(&T, &gltf::Node) -> Option<T>,
             acc: T,
         ) {
             for node in nodes {
-                let res = visitor(&acc, &node);
-                traverse_nodes_tree(node.children(), visitor, res);
+                if let Some(res) = visitor(&acc, &node) {
+                    traverse_nodes_tree(node.children(), visitor, res);
+                }
             }
         }
 
@@ -124,6 +125,27 @@ impl<'a> TileBuilder<'a> {
         traverse_nodes_tree::<glam::Mat4>(
             root_node.children(),
             &mut |parent_transform, node| {
+                let skip = node
+                    .extras()
+                    .as_ref()
+                    .and_then(|extras| {
+                        let extras =
+                            serde_json::from_str::<serde_json::Map<_, _>>(extras.get()).ok()?;
+
+                        Some(["partly_hidden", "prop"].iter().any(|&name| {
+                            extras
+                                .get(name.into())
+                                .and_then(|value| value.as_u64())
+                                .map(|i| i > 0)
+                                .unwrap_or(false)
+                        }))
+                    })
+                    .unwrap_or(false);
+
+                if skip {
+                    return None;
+                }
+
                 let transform =
                     *parent_transform * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
 
@@ -155,7 +177,7 @@ impl<'a> TileBuilder<'a> {
                     }
                 }
 
-                transform
+                Some(transform)
             },
             glam::Mat4::IDENTITY,
         );

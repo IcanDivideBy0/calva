@@ -327,15 +327,15 @@ impl GltfModel {
 
             let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
 
-            Self::traverse_nodes_tree::<glam::Mat4>(
+            Self::traverse_nodes_tree(
                 root_nodes,
                 &mut |parent_transform, node| {
-                    let local_transform =
-                        glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-                    let global_transform = *parent_transform * local_transform;
+                    let transform = *parent_transform
+                        * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
 
-                    transforms.insert(node.index(), global_transform);
-                    global_transform
+                    transforms.insert(node.index(), transform);
+
+                    Some(transform)
                 },
                 glam::Mat4::IDENTITY,
             );
@@ -409,27 +409,27 @@ impl GltfModel {
             .collect()
     }
 
-    fn node_data(
+    fn nodes_data<'a>(
         &self,
-        node: gltf::Node,
+        nodes: impl Iterator<Item = gltf::Node<'a>>,
         transform: glam::Mat4,
         animation: AnimationId,
     ) -> (Vec<Instance>, Vec<PointLight>) {
         let mut instances = vec![];
         let mut point_lights = vec![];
 
-        Self::traverse_nodes_tree::<glam::Mat4>(
-            std::iter::once(node),
+        Self::traverse_nodes_tree(
+            nodes,
             &mut |parent_transform, node| {
-                let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-                let global_transform = *parent_transform * local_transform;
+                let transform =
+                    *parent_transform * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
 
                 if let Some(mesh_instances) = node
                     .mesh()
                     .and_then(|mesh| self.meshes_instances.get(mesh.index()))
                 {
                     instances.extend(mesh_instances.iter().map(|&instance| Instance {
-                        transform: global_transform,
+                        transform,
                         animation: animation.into(),
                         ..instance
                     }))
@@ -442,7 +442,7 @@ impl GltfModel {
                             unimplemented!();
                         }
                         Kind::Point => {
-                            let position = global_transform.transform_point3(glam::Vec3::ZERO);
+                            let position = transform.transform_point3(glam::Vec3::ZERO);
 
                             // Luminous intensity in candela (lm/sr) ; converted to luminous power (lumens)
                             let intensity = light.intensity() / (4.0 * std::f32::consts::PI);
@@ -469,7 +469,7 @@ impl GltfModel {
                     }
                 }
 
-                global_transform
+                Some(transform)
             },
             transform,
         );
@@ -496,7 +496,7 @@ impl GltfModel {
             _ => Default::default(),
         };
 
-        Some(self.node_data(node, transform, animation))
+        Some(self.nodes_data(std::iter::once(node), transform, animation))
     }
 
     fn scene_data(
@@ -505,16 +505,7 @@ impl GltfModel {
         animation: AnimationId,
         transform: glam::Mat4,
     ) -> (Vec<Instance>, Vec<PointLight>) {
-        let mut instances = vec![];
-        let mut point_lights = vec![];
-
-        for node in scene.nodes() {
-            let (node_instances, node_point_lights) = self.node_data(node, transform, animation);
-            instances.extend(node_instances);
-            point_lights.extend(node_point_lights);
-        }
-
-        (instances, point_lights)
+        self.nodes_data(scene.nodes(), transform, animation)
     }
 
     pub fn scene_instances(
@@ -546,12 +537,13 @@ impl GltfModel {
 
     pub fn traverse_nodes_tree<'a, T>(
         nodes: impl Iterator<Item = gltf::Node<'a>>,
-        visitor: &mut dyn FnMut(&T, &gltf::Node) -> T,
+        visitor: &mut dyn FnMut(&T, &gltf::Node) -> Option<T>,
         acc: T,
     ) {
         for node in nodes {
-            let res = visitor(&acc, &node);
-            Self::traverse_nodes_tree(node.children(), visitor, res);
+            if let Some(res) = visitor(&acc, &node) {
+                Self::traverse_nodes_tree(node.children(), visitor, res);
+            }
         }
     }
 }
