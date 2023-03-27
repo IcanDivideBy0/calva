@@ -20,9 +20,6 @@ pub struct WorldGenerator {
 }
 
 impl WorldGenerator {
-    pub const WFC_SAMPLES: usize = 5;
-    pub const FLOOR_HEIGHT: f32 = 4.0;
-
     pub fn new(seed: impl Hash, model: GltfModel, tiles: &[Tile]) -> Self {
         let seed = SipHasher::from(seed).into_rng().gen();
 
@@ -35,38 +32,7 @@ impl WorldGenerator {
             .set_scale(0.08),
         );
 
-        let options = tiles
-            .iter()
-            .flat_map(|tile| {
-                fn wfc_to_world(i: usize) -> f32 {
-                    const STEP: f32 = Tile::WORLD_SIZE / WorldGenerator::WFC_SAMPLES as f32;
-                    const HALF: f32 = STEP / 2.0;
-
-                    i as f32 * STEP + HALF
-                }
-
-                let constraints = Face::all().map(|face| {
-                    std::array::from_fn(|i| {
-                        let reverse = |i: usize| Self::WFC_SAMPLES - 1 - i;
-
-                        let height = tile.get_height(
-                            match face {
-                                Face::North => [wfc_to_world(i), 0.0],
-                                Face::East => [Tile::WORLD_SIZE, wfc_to_world(i)],
-                                Face::South => [wfc_to_world(reverse(i)), Tile::WORLD_SIZE],
-                                Face::West => [0.0, wfc_to_world(reverse(i))],
-                            }
-                            .into(),
-                        );
-
-                        let floor_level = (height / Self::FLOOR_HEIGHT).round();
-                        (floor_level as i32).try_into().ok()
-                    })
-                });
-
-                SlotOption::permutations(tile.node_id, constraints)
-            })
-            .collect();
+        let options = tiles.iter().flat_map(SlotOption::permutations).collect();
 
         Self {
             seed,
@@ -281,14 +247,14 @@ impl Slot {
     }
 }
 
-type ModuleConstraint = [Option<u8>; WorldGenerator::WFC_SAMPLES];
+type ModuleConstraint = [Option<u8>; SlotOption::WFC_SAMPLES];
 
 #[derive(Debug, Clone, Copy)]
 pub struct SlotOption {
     id: usize,
     elevation: u8,
     rotation: u8,
-    faces: [ModuleConstraint; 4], // north east south west
+    constraints: [ModuleConstraint; 4], // north east south west
 }
 
 impl Eq for SlotOption {}
@@ -322,28 +288,63 @@ impl std::cmp::Ord for SlotOption {
 }
 
 impl SlotOption {
+    pub const WFC_SAMPLES: usize = 5;
+    pub const FLOOR_HEIGHT: f32 = 4.0;
+
     pub const ELEVATION_MAX: usize = 4;
 
     pub fn constraint(&self, face: Face) -> ModuleConstraint {
         match face {
-            Face::North => self.faces[0],
-            Face::East => self.faces[1],
-            Face::South => self.faces[2],
-            Face::West => self.faces[3],
+            Face::North => self.constraints[0],
+            Face::East => self.constraints[1],
+            Face::South => self.constraints[2],
+            Face::West => self.constraints[3],
         }
     }
 
-    pub fn permutations(id: usize, mut faces: [ModuleConstraint; 4]) -> impl Iterator<Item = Self> {
+    pub fn permutations(tile: &Tile) -> impl Iterator<Item = Self> + '_ {
+        fn wfc_to_world(i: usize) -> f32 {
+            const STEP: f32 = Tile::WORLD_SIZE / SlotOption::WFC_SAMPLES as f32;
+            const HALF: f32 = STEP / 2.0;
+
+            i as f32 * STEP + HALF
+        }
+
+        let mut constraints = Face::all().map(|face| {
+            std::array::from_fn(|i| {
+                let reverse = |i: usize| Self::WFC_SAMPLES - 1 - i;
+
+                let height = tile.get_height(
+                    match face {
+                        Face::North => [wfc_to_world(i), 0.0],
+                        Face::East => [Tile::WORLD_SIZE, wfc_to_world(i)],
+                        Face::South => [wfc_to_world(reverse(i)), Tile::WORLD_SIZE],
+                        Face::West => [0.0, wfc_to_world(reverse(i))],
+                    }
+                    .into(),
+                );
+
+                let floor_level = (height / Self::FLOOR_HEIGHT).round();
+                u8::try_from(floor_level as i32).ok()
+            })
+        });
+
         (0..4).flat_map(move |rotation| {
             let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
-                id,
+                id: tile.node_id,
                 elevation,
                 rotation,
-                faces: faces.map(|face| face.map(|value| value.map(|i| i + elevation))),
+                constraints: constraints
+                    .map(|constraint| constraint.map(|value| value.map(|i| i + elevation))),
             });
 
             // Rotate faces
-            faces = [faces[3], faces[0], faces[1], faces[2]];
+            constraints = [
+                constraints[3],
+                constraints[0],
+                constraints[1],
+                constraints[2],
+            ];
 
             it
         })
@@ -353,11 +354,7 @@ impl SlotOption {
         let quat = glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
 
         let translation = glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32)
-            * glam::vec3(
-                Tile::WORLD_SIZE,
-                WorldGenerator::FLOOR_HEIGHT,
-                Tile::WORLD_SIZE,
-            );
+            * glam::vec3(Tile::WORLD_SIZE, Self::FLOOR_HEIGHT, Tile::WORLD_SIZE);
 
         glam::Mat4::from_rotation_translation(quat, translation)
     }
