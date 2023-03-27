@@ -295,7 +295,7 @@ impl Engine {
         self.ssao.render(ctx, &self.ressources.camera);
 
         self.tone_mapping
-            .render(ctx, &self.config.tone_mapping, &ctx.frame);
+            .render(ctx, &self.config.tone_mapping, ctx.frame);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

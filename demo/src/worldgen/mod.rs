@@ -20,6 +20,9 @@ pub struct WorldGenerator {
 }
 
 impl WorldGenerator {
+    pub const WFC_SAMPLES: usize = 5;
+    pub const FLOOR_HEIGHT: f32 = 4.0;
+
     pub fn new(seed: impl Hash, model: GltfModel, tiles: &[Tile]) -> Self {
         let seed = SipHasher::from(seed).into_rng().gen();
 
@@ -34,7 +37,35 @@ impl WorldGenerator {
 
         let options = tiles
             .iter()
-            .flat_map(|tile| SlotOption::permutations(tile.node_id, tile.wfc_constraints()))
+            .flat_map(|tile| {
+                fn wfc_to_world(i: usize) -> f32 {
+                    const STEP: f32 = Tile::WORLD_SIZE / WorldGenerator::WFC_SAMPLES as f32;
+                    const HALF: f32 = STEP / 2.0;
+
+                    i as f32 * STEP + HALF
+                }
+
+                let constraints = Face::all().map(|face| {
+                    std::array::from_fn(|i| {
+                        let reverse = |i: usize| Self::WFC_SAMPLES - 1 - i;
+
+                        let height = tile.get_height(
+                            match face {
+                                Face::North => [wfc_to_world(i), 0.0],
+                                Face::East => [Tile::WORLD_SIZE, wfc_to_world(i)],
+                                Face::South => [wfc_to_world(reverse(i)), Tile::WORLD_SIZE],
+                                Face::West => [0.0, wfc_to_world(reverse(i))],
+                            }
+                            .into(),
+                        );
+
+                        let floor_level = (height / Self::FLOOR_HEIGHT).round();
+                        (floor_level as i32).try_into().ok()
+                    })
+                });
+
+                SlotOption::permutations(tile.node_id, constraints)
+            })
             .collect();
 
         Self {
@@ -46,7 +77,7 @@ impl WorldGenerator {
     }
 
     pub fn chunk(&self, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
-        let chunk = Chunk::new(&self.seed, coord, self.noise.as_ref(), &self.options);
+        let chunk = Chunk::new(self.seed, coord, self.noise.as_ref(), &self.options);
 
         let mut instances = vec![];
         let mut point_lights = vec![];
@@ -250,7 +281,7 @@ impl Slot {
     }
 }
 
-type ModuleConstraint = [Option<u8>; Tile::WFC_SAMPLES];
+type ModuleConstraint = [Option<u8>; WorldGenerator::WFC_SAMPLES];
 
 #[derive(Debug, Clone, Copy)]
 pub struct SlotOption {
@@ -303,28 +334,30 @@ impl SlotOption {
     }
 
     pub fn permutations(id: usize, mut faces: [ModuleConstraint; 4]) -> impl Iterator<Item = Self> {
-        (0..4)
-            .map(move |rotation| {
-                let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
-                    id,
-                    elevation,
-                    rotation,
-                    faces: faces.map(|face| face.map(|value| value.map(|i| i + elevation))),
-                });
+        (0..4).flat_map(move |rotation| {
+            let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
+                id,
+                elevation,
+                rotation,
+                faces: faces.map(|face| face.map(|value| value.map(|i| i + elevation))),
+            });
 
-                // Rotate faces
-                faces = [faces[3], faces[0], faces[1], faces[2]];
+            // Rotate faces
+            faces = [faces[3], faces[0], faces[1], faces[2]];
 
-                it
-            })
-            .flatten()
+            it
+        })
     }
 
     pub fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
         let quat = glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
 
-        let translation =
-            glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32) * Tile::WORLD_POS;
+        let translation = glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32)
+            * glam::vec3(
+                Tile::WORLD_SIZE,
+                WorldGenerator::FLOOR_HEIGHT,
+                Tile::WORLD_SIZE,
+            );
 
         glam::Mat4::from_rotation_translation(quat, translation)
     }

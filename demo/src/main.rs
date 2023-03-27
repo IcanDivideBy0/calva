@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
     let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
 
-    let tile_builder = worldgen::tile::TileBuilder::new(&renderer.device, &doc, &buffers);
+    let tile_builder = worldgen::tile::TileBuilder::new(&renderer.device);
 
     let tiles = [
         "module01", "module03", "module07", "module08", "module09", "module10", "module11",
@@ -70,7 +70,9 @@ async fn main() -> Result<()> {
         "module19",
     ]
     .iter()
-    .map(|tile_name| tile_builder.build(&renderer.device, &renderer.queue, tile_name))
+    .map(|tile_name| {
+        tile_builder.build(&renderer.device, &renderer.queue, &doc, &buffers, tile_name)
+    })
     .collect::<Vec<_>>();
 
     let worldgen = worldgen::WorldGenerator::new(

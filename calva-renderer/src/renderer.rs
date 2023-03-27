@@ -148,8 +148,6 @@ impl Renderer {
 
         cb(&mut context);
 
-        drop(context);
-
         #[cfg(feature = "profiler")]
         {
             profiler.end_scope(&mut encoder);

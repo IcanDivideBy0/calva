@@ -4,21 +4,14 @@ struct Triangle(glam::Vec3, glam::Vec3, glam::Vec3);
 
 use calva::renderer::wgpu::{self, util::DeviceExt};
 
-pub struct TileBuilder<'a> {
-    doc: &'a gltf::Document,
-    buffers: &'a [gltf::buffer::Data],
-
+pub struct TileBuilder {
     depth: wgpu::Texture,
     depth_view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
 }
 
-impl<'a> TileBuilder<'a> {
-    pub fn new(
-        device: &wgpu::Device,
-        doc: &'a gltf::Document,
-        buffers: &'a [gltf::buffer::Data],
-    ) -> Self {
+impl TileBuilder {
+    pub fn new(device: &wgpu::Device) -> Self {
         let depth = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("TileBuilder depth"),
             size: wgpu::Extent3d {
@@ -56,7 +49,7 @@ impl<'a> TileBuilder<'a> {
                             );
                         }}
                     "#,
-                    tile_half_size = Tile::WORLD_SIZE as f32 / 2.0,
+                    tile_half_size = Tile::WORLD_SIZE / 2.0,
                     tile_max_height = Tile::MAX_HEIGHT,
                 )
                 .into(),
@@ -89,24 +82,27 @@ impl<'a> TileBuilder<'a> {
         });
 
         Self {
-            doc,
-            buffers,
-
             depth,
             depth_view,
             pipeline,
         }
     }
 
-    pub fn build(&self, device: &wgpu::Device, queue: &wgpu::Queue, tile_name: &str) -> Tile {
-        let root_node = self
-            .doc
+    pub fn build(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        doc: &gltf::Document,
+        buffers: &[gltf::buffer::Data],
+        tile_name: &str,
+    ) -> Tile {
+        let root_node = doc
             .nodes()
             .find(|node| Some(tile_name) == node.name())
-            .expect(&format!("Unable to find node: {}", tile_name));
+            .unwrap_or_else(|| panic!("Unable to find node: {}", tile_name));
 
         let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
-            self.buffers.get(buffer.index()).map(std::ops::Deref::deref)
+            buffers.get(buffer.index()).map(std::ops::Deref::deref)
         };
 
         fn traverse_nodes_tree<'a, T>(
@@ -134,7 +130,7 @@ impl<'a> TileBuilder<'a> {
 
                         Some(["partly_hidden", "prop"].iter().any(|&name| {
                             extras
-                                .get(name.into())
+                                .get(name)
                                 .and_then(|value| value.as_u64())
                                 .map(|i| i > 0)
                                 .unwrap_or(false)
@@ -190,7 +186,7 @@ impl<'a> TileBuilder<'a> {
         let vertices_count = 3 * triangles.len() as u32;
 
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(&format!("{}", tile_name)),
+            label: Some(tile_name),
             size: (self.depth.width()
                 * self.depth.height()
                 * self.depth.format().describe().block_size as u32) as _,
@@ -204,7 +200,7 @@ impl<'a> TileBuilder<'a> {
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("TileBuilder"),
+                label: Some(&format!("TileBuilder {}", tile_name)),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
@@ -249,69 +245,50 @@ impl<'a> TileBuilder<'a> {
         device.poll(wgpu::Maintain::WaitForSubmissionIndex(submission_index));
 
         let buffer_view = buffer_slice.get_mapped_range();
-        let data: [u16; Tile::TEXTURE_SIZE.pow(2)] = bytemuck::cast_slice::<u8, u16>(&*buffer_view)
-            .try_into()
-            .unwrap();
+
+        let height_map = {
+            let mut it = bytemuck::cast_slice::<u8, u16>(&buffer_view)
+                .chunks_exact(Tile::TEXTURE_SIZE)
+                .map(|slice| {
+                    let mut it = slice.iter().map(|&depth| {
+                        ((depth as f32 / u16::MAX as f32) - 0.5) * -2.0 * Tile::MAX_HEIGHT
+                    });
+
+                    std::array::from_fn(|_| it.next().unwrap())
+                });
+
+            std::array::from_fn(|_| it.next().unwrap())
+        };
 
         Tile {
             node_id: root_node.index(),
-
-            // wait for https://doc.rust-lang.org/nightly/core/primitive.slice.html#method.as_chunks
-            height_map: unsafe { std::mem::transmute(data) },
+            height_map,
         }
     }
 }
 
 pub struct Tile {
     pub node_id: usize,
-    pub height_map: [[u16; Self::TEXTURE_SIZE]; Self::TEXTURE_SIZE],
+    pub height_map: [[f32; Self::TEXTURE_SIZE]; Self::TEXTURE_SIZE],
 }
 
 impl Tile {
     pub const WORLD_SIZE: f32 = 5.0 * 6.0;
-    pub const WORLD_FLOOR_HEIGHT: f32 = 4.0;
-
-    pub const WORLD_POS: glam::Vec3 =
-        glam::vec3(Self::WORLD_SIZE, Self::WORLD_FLOOR_HEIGHT, Self::WORLD_SIZE);
-
     pub const MAX_HEIGHT: f32 = 40.0;
 
     pub const TEXTURE_SIZE: usize =
         wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize / std::mem::size_of::<u16>();
-    pub const WFC_SAMPLES: usize = 5;
 
-    pub fn iter_face(&self, face: Face) -> Box<dyn Iterator<Item = &u16> + '_> {
-        match face {
-            Face::North => Box::new(self.height_map[0].iter()),
-            Face::East => Box::new(
-                self.height_map
-                    .iter()
-                    .map(|row| &row[Tile::TEXTURE_SIZE - 1]),
+    pub fn get_height(&self, pos: glam::Vec2) -> f32 {
+        let coord = (pos / Self::WORLD_SIZE * Self::TEXTURE_SIZE as f32).clamp(
+            glam::vec2(0.0, 0.0),
+            glam::vec2(
+                (Self::TEXTURE_SIZE - 1) as f32,
+                (Self::TEXTURE_SIZE - 1) as f32,
             ),
-            Face::South => Box::new(self.height_map[Tile::TEXTURE_SIZE - 1].iter().rev()),
-            Face::West => Box::new(self.height_map.iter().map(|row| &row[0]).rev()),
-        }
-    }
+        );
 
-    pub fn wfc_constraints(&self) -> [[Option<u8>; Tile::WFC_SAMPLES]; 4] {
-        Face::all().map(|face: Face| -> [Option<u8>; Tile::WFC_SAMPLES] {
-            (0..Tile::WFC_SAMPLES)
-                .map(|i| {
-                    const STEP: f32 = Tile::TEXTURE_SIZE as f32 / Tile::WFC_SAMPLES as f32;
-                    ((i as f32 + 0.5) * STEP) as usize
-                })
-                .map(|i| {
-                    let height = *self.iter_face(face).skip(i).next().unwrap();
-
-                    let world_height = ((height as f32 / u16::MAX as f32) - 0.5) * -2.0 * 40.0;
-                    ((world_height / Tile::WORLD_FLOOR_HEIGHT).round() as i32)
-                        .try_into()
-                        .ok()
-                })
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap()
-        })
+        self.height_map[coord.y.floor() as usize][coord.x.floor() as usize]
     }
 }
 

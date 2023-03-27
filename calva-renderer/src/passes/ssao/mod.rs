@@ -224,7 +224,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         });
 
         let blur = blur::SsaoBlurPass::new(device, &output);
-        let blit = blit::SsaoBlitPass::new(device, &output, &inputs.output);
+        let blit = blit::SsaoBlitPass::new(device, &output, inputs.output);
 
         Self {
             config_buffer,
@@ -251,7 +251,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             &inputs,
         );
 
-        self.blit.rebind(&inputs.output);
+        self.blit.rebind(inputs.output);
     }
 
     pub fn update(&self, queue: &wgpu::Queue, config: &SsaoConfig) {
