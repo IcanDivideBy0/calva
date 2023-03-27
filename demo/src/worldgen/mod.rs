@@ -8,7 +8,9 @@ use calva::{
     renderer::{Instance, PointLight},
 };
 
+pub mod navmesh;
 pub mod tile;
+
 use tile::{Face, Tile};
 
 pub struct WorldGenerator {

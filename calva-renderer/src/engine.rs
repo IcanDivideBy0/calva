@@ -32,15 +32,15 @@ pub struct Engine {
 
     size: (u32, u32),
 
-    geometry: GeometryPass,
-    hierarchical_depth: HierarchicalDepthPass,
-    ambient_light: AmbientLightPass,
-    directional_light: DirectionalLightPass,
-    point_lights: PointLightsPass,
-    ssao: SsaoPass<640, 480>,
-    skybox: SkyboxPass,
-    fxaa: FxaaPass,
-    tone_mapping: ToneMappingPass,
+    pub geometry: GeometryPass,
+    pub hierarchical_depth: HierarchicalDepthPass,
+    pub ambient_light: AmbientLightPass,
+    pub directional_light: DirectionalLightPass,
+    pub point_lights: PointLightsPass,
+    pub ssao: SsaoPass<640, 480>,
+    pub skybox: SkyboxPass,
+    pub fxaa: FxaaPass,
+    pub tone_mapping: ToneMappingPass,
 
     pub config: EngineConfig,
 }
@@ -293,7 +293,9 @@ impl Engine {
         self.fxaa.render(ctx);
 
         self.ssao.render(ctx, &self.ressources.camera);
+    }
 
+    pub fn finish(&self, ctx: &mut RenderContext) {
         self.tone_mapping
             .render(ctx, &self.config.tone_mapping, ctx.frame);
     }

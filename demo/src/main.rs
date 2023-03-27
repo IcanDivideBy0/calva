@@ -75,24 +75,43 @@ async fn main() -> Result<()> {
     })
     .collect::<Vec<_>>();
 
-    let worldgen = worldgen::WorldGenerator::new(
+    let dungeon = GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?;
+    {
+        let (instances, point_lights) = dungeon.node_instances("module01", None, None).unwrap();
+        engine.ressources.instances.add(&renderer.queue, instances);
+        engine
+            .ressources
+            .lights
+            .add_point_lights(&renderer.queue, &point_lights);
+    }
+
+    let navmesh = worldgen::navmesh::NavMesh::new(&tiles[0]);
+    let mut navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
+        &renderer.device,
+        &engine.ressources.camera,
+        worldgen::navmesh::NavMeshDebugInput {
+            output: &engine.fxaa.outputs.output,
+            depth: &engine.geometry.outputs.depth,
+        },
+    );
+
+    let _worldgen = worldgen::WorldGenerator::new(
         "Calva!533d", // rand::random::<u32>(),
-        // GltfModel::from_path(&renderer, &mut engine, "./demo/assets/dungeon.glb")?,
-        GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?,
+        dungeon,
         &tiles,
     );
 
-    const DIM: i32 = 3;
-    for x in -DIM..=DIM {
-        for y in -DIM..=DIM {
-            let res = worldgen.chunk(glam::ivec2(x, y));
-            engine.ressources.instances.add(&renderer.queue, res.0);
-            engine
-                .ressources
-                .lights
-                .add_point_lights(&renderer.queue, &res.1);
-        }
-    }
+    // const DIM: i32 = 3;
+    // for x in -DIM..=DIM {
+    //     for y in -DIM..=DIM {
+    //         let res = worldgen.chunk(glam::ivec2(x, y));
+    //         engine.ressources.instances.add(&renderer.queue, res.0);
+    //         engine
+    //             .ressources
+    //             .lights
+    //             .add_point_lights(&renderer.queue, &res.1);
+    //     }
+    // }
 
     let ennemies = [
         "./demo/assets/zombies/zombie-boss.glb",
@@ -161,6 +180,11 @@ async fn main() -> Result<()> {
                 renderer.resize(size);
                 engine.resize(&renderer);
 
+                navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
+                    output: &engine.fxaa.outputs.output,
+                    depth: &engine.geometry.outputs.depth,
+                });
+
                 let dt = render_time.elapsed();
                 render_time = Instant::now();
 
@@ -209,9 +233,15 @@ async fn main() -> Result<()> {
                     &directional_light,
                 );
 
+                navmesh_debug.update(&renderer.queue, &navmesh);
+
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
                     // fog.render(ctx, &engine.ressources.camera, &time);
+                    navmesh_debug.render(ctx, &engine.ressources.camera);
+
+                    engine.finish(ctx);
+
                     egui.render(ctx);
                 });
 

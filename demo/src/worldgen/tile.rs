@@ -57,7 +57,7 @@ impl TileBuilder {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("NavMesh render pipeline"),
+            label: Some("TileBuilder render pipeline"),
             layout: Some(&pipeline_layout),
             multiview: None,
             vertex: wgpu::VertexState {
@@ -274,10 +274,12 @@ pub struct Tile {
 
 impl Tile {
     pub const WORLD_SIZE: f32 = 5.0 * 6.0;
+
     pub const MAX_HEIGHT: f32 = 40.0;
 
     pub const TEXTURE_SIZE: usize =
         wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize / std::mem::size_of::<u16>();
+    pub const PIXEL_SIZE: f32 = Self::WORLD_SIZE / Self::TEXTURE_SIZE as f32;
 
     pub fn get_height(&self, pos: glam::Vec2) -> f32 {
         let coord = (pos / Self::WORLD_SIZE * Self::TEXTURE_SIZE as f32).clamp(
