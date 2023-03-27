@@ -311,19 +311,6 @@ impl Tile {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap()
-
-            // self.iter_face(face)
-            //     .skip(STEP / 2)
-            //     .step_by(STEP)
-            //     .map(|&height| {
-            //         let world_height = ((height as f32 / u16::MAX as f32) - 0.5) * -2.0 * 40.0;
-            //         ((world_height / Tile::WORLD_FLOOR_HEIGHT).round() as i32)
-            //             .try_into()
-            //             .ok()
-            //     })
-            //     .collect::<Vec<_>>()
-            //     .try_into()
-            //     .unwrap()
         })
     }
 }
