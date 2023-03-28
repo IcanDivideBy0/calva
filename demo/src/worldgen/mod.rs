@@ -13,16 +13,16 @@ pub mod tile;
 
 use tile::{Face, Tile};
 
+#[allow(unused)]
 pub struct WorldGenerator {
     seed: u32,
     noise: Box<dyn NoiseFn<f64, 2>>,
     options: BTreeSet<SlotOption>,
-
-    pub model: GltfModel,
 }
 
 impl WorldGenerator {
-    pub fn new(seed: impl Hash, model: GltfModel, tiles: &[Tile]) -> Self {
+    #[allow(unused)]
+    pub fn new(seed: impl Hash, tiles: &[Tile]) -> Self {
         let seed = SipHasher::from(seed).into_rng().gen();
 
         let noise = Box::new(
@@ -39,12 +39,12 @@ impl WorldGenerator {
         Self {
             seed,
             noise,
-            model,
             options,
         }
     }
 
-    pub fn chunk(&self, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
+    #[allow(unused)]
+    pub fn chunk(&self, model: &GltfModel, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
         let chunk = Chunk::new(self.seed, coord, self.noise.as_ref(), &self.options);
 
         let mut instances = vec![];
@@ -56,20 +56,16 @@ impl WorldGenerator {
             for x in 0..Chunk::SIZE {
                 let slot = chunk.grid[y][x].borrow();
 
-                slot.options.first().and_then(|opt| {
-                    let node_name = self.model.doc.nodes().nth(opt.id)?.name()?;
-
-                    let res = self.model.node_instances(
-                        node_name,
+                if let Some(opt) = slot.options.first() {
+                    let res = model.node_instances(
+                        model.doc.nodes().nth(opt.id).unwrap(),
                         Some(opt.transform(offset + glam::ivec2(x as _, y as _))),
                         None,
-                    )?;
+                    );
 
                     instances.extend(res.0);
                     point_lights.extend(res.1);
-
-                    Some(())
-                });
+                };
             }
         }
 
@@ -83,9 +79,9 @@ struct Chunk {
 }
 
 impl Chunk {
-    pub const SIZE: usize = 3;
+    const SIZE: usize = 3;
 
-    pub fn new(
+    fn new(
         seed: impl Hash,
         coord: glam::IVec2,
         noise: &dyn NoiseFn<f64, 2>,
@@ -219,19 +215,19 @@ struct Slot {
 }
 
 impl Slot {
-    pub fn entropy(&self) -> usize {
+    fn entropy(&self) -> usize {
         self.options.len()
     }
 
-    pub fn collapsed(&self) -> bool {
+    fn collapsed(&self) -> bool {
         self.entropy() == 1
     }
 
-    pub fn constraints(&self, face: Face) -> impl Iterator<Item = ModuleConstraint> + '_ {
+    fn constraints(&self, face: Face) -> impl Iterator<Item = ModuleConstraint> + '_ {
         self.options.iter().map(move |opt| opt.constraint(face))
     }
 
-    pub fn apply_constraints(&mut self, face: Face, constraints: &[ModuleConstraint]) -> bool {
+    fn apply_constraints(&mut self, face: Face, constraints: &[ModuleConstraint]) -> bool {
         if self.collapsed() {
             return false;
         }
@@ -252,7 +248,7 @@ impl Slot {
 type ModuleConstraint = [Option<u8>; SlotOption::WFC_SAMPLES];
 
 #[derive(Debug, Clone, Copy)]
-pub struct SlotOption {
+struct SlotOption {
     id: usize,
     elevation: u8,
     rotation: u8,
@@ -290,12 +286,12 @@ impl std::cmp::Ord for SlotOption {
 }
 
 impl SlotOption {
-    pub const WFC_SAMPLES: usize = 5;
-    pub const FLOOR_HEIGHT: f32 = 4.0;
+    const WFC_SAMPLES: usize = 5;
+    const FLOOR_HEIGHT: f32 = 4.0;
 
-    pub const ELEVATION_MAX: usize = 4;
+    const ELEVATION_MAX: usize = 4;
 
-    pub fn constraint(&self, face: Face) -> ModuleConstraint {
+    fn constraint(&self, face: Face) -> ModuleConstraint {
         match face {
             Face::North => self.constraints[0],
             Face::East => self.constraints[1],
@@ -304,7 +300,7 @@ impl SlotOption {
         }
     }
 
-    pub fn permutations(tile: &Tile) -> impl Iterator<Item = Self> + '_ {
+    fn permutations(tile: &Tile) -> impl Iterator<Item = Self> + '_ {
         fn wfc_to_world(i: usize) -> f32 {
             const STEP: f32 = Tile::WORLD_SIZE / SlotOption::WFC_SAMPLES as f32;
             const HALF: f32 = STEP / 2.0;
@@ -352,7 +348,7 @@ impl SlotOption {
         })
     }
 
-    pub fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
+    fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
         let quat = glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
 
         let translation = glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32)

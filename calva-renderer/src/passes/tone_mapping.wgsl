@@ -27,17 +27,14 @@ var<push_constant> CONFIG: Config;
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let hdr_color = textureLoad(t_hdr, vec2<i32>(position.xy), 0).rgb;
+    let hdr = textureLoad(t_hdr, vec2<i32>(position.xy), 0).rgb;
 
-    // Reinhard tone mapping
-    // let mapped = hdr_color / (hdr_color + 1.0);
-
-    // Exposure tone mapping
-    let mapped = vec3(1.0) - exp(-hdr_color * CONFIG.exposure);
+    // https://docs.blender.org/manual/en/3.4/render/color_management.html?highlight=exposure
+    let color = hdr * exp2(CONFIG.exposure);
 
     // Gamma correction
     return vec4<f32>(
-        pow(mapped, vec3<f32>(1.0 / CONFIG.gamma)),
+        pow(color, vec3<f32>(1.0 / CONFIG.gamma)),
         1.0
     );
 }

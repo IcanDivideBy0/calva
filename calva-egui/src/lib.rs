@@ -215,12 +215,8 @@ impl EguiPass {
         config: &'cfg mut ToneMappingConfig,
     ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
-            ui.add(
-                egui::Slider::new(&mut config.exposure, 0.0..=10.0)
-                    .text("Exposure")
-                    .logarithmic(true),
-            );
-            ui.add(egui::Slider::new(&mut config.gamma, 1.0..=3.0).text("Gamma"));
+            ui.add(egui::Slider::new(&mut config.exposure, -10.0..=10.0).text("Exposure"));
+            ui.add(egui::Slider::new(&mut config.gamma, 0.0..=5.0).text("Gamma"));
         }
     }
 }

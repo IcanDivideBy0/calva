@@ -70,16 +70,16 @@ impl Renderer {
             .await?;
 
         let surface_capabilities = surface.get_capabilities(&adapter);
-        let format = surface_capabilities.formats[0].remove_srgb_suffix();
+        let format = surface_capabilities.formats[0].add_srgb_suffix();
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: size.0,
             height: size.1,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
-            // present_mode: wgpu::PresentMode::AutoVsync,
+            // present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![format],
+            view_formats: vec![],
         };
         surface.configure(&device, &surface_config);
 

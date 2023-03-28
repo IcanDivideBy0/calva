@@ -32,7 +32,7 @@ impl NavMesh {
         };
 
         let mut triangles = vec![];
-        traverse_nodes_tree::<glam::Mat4>(
+        calva::gltf::traverse_nodes_tree::<glam::Mat4>(
             module1.children(),
             &mut |parent_transform, node| {
                 let transform =
@@ -171,16 +171,5 @@ impl NavMesh {
         rpass.set_vertex_buffer(0, self.vertices.slice(..));
 
         rpass.draw(0..self.count, 0..1);
-    }
-}
-
-fn traverse_nodes_tree<'a, T>(
-    nodes: impl Iterator<Item = gltf::Node<'a>>,
-    cb: &mut dyn FnMut(&T, &gltf::Node) -> T,
-    acc: T,
-) {
-    for node in nodes {
-        let res = cb(&acc, &node);
-        traverse_nodes_tree(node.children(), cb, res);
     }
 }

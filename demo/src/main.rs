@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let mut renderer = Renderer::new(&window, window.inner_size().into()).await?;
     let mut engine = Engine::new(&renderer);
 
-    engine.config.ambient.factor = 0.05;
+    engine.config.ambient.factor = 0.1;
     engine.config.tone_mapping.exposure = 0.05;
 
     engine.config.skybox = [
@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
     let mut dungeon_buffer = Vec::new();
     std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
     let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
+    let dungeon = GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?;
 
     let tile_builder = worldgen::tile::TileBuilder::new(&renderer.device);
 
@@ -70,14 +71,19 @@ async fn main() -> Result<()> {
         "module19",
     ]
     .iter()
-    .map(|tile_name| {
-        tile_builder.build(&renderer.device, &renderer.queue, &doc, &buffers, tile_name)
+    .map(|node_name| {
+        tile_builder.build(
+            &renderer.device,
+            &renderer.queue,
+            &buffers,
+            dungeon.get_node(node_name).unwrap(),
+        )
     })
     .collect::<Vec<_>>();
 
-    let dungeon = GltfModel::new(&renderer, &mut engine, doc, &buffers, &images)?;
     {
-        let (instances, point_lights) = dungeon.node_instances("module01", None, None).unwrap();
+        let (instances, point_lights) =
+            dungeon.node_instances(dungeon.get_node("module01").unwrap(), None, None);
         engine.ressources.instances.add(&renderer.queue, instances);
         engine
             .ressources
@@ -89,29 +95,29 @@ async fn main() -> Result<()> {
     let mut navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
         &renderer.device,
         &engine.ressources.camera,
+        &navmesh,
+        renderer.surface_config.format,
         worldgen::navmesh::NavMeshDebugInput {
-            output: &engine.fxaa.outputs.output,
             depth: &engine.geometry.outputs.depth,
         },
     );
 
-    let _worldgen = worldgen::WorldGenerator::new(
+    let worldgen = worldgen::WorldGenerator::new(
         "Calva!533d", // rand::random::<u32>(),
-        dungeon,
         &tiles,
     );
 
-    // const DIM: i32 = 3;
-    // for x in -DIM..=DIM {
-    //     for y in -DIM..=DIM {
-    //         let res = worldgen.chunk(glam::ivec2(x, y));
-    //         engine.ressources.instances.add(&renderer.queue, res.0);
-    //         engine
-    //             .ressources
-    //             .lights
-    //             .add_point_lights(&renderer.queue, &res.1);
-    //     }
-    // }
+    const DIM: i32 = 3;
+    for x in -DIM..=DIM {
+        for y in -DIM..=DIM {
+            let res = worldgen.chunk(&dungeon, glam::ivec2(x, y));
+            engine.ressources.instances.add(&renderer.queue, res.0);
+            engine
+                .ressources
+                .lights
+                .add_point_lights(&renderer.queue, &res.1);
+        }
+    }
 
     let ennemies = [
         "./demo/assets/zombies/zombie-boss.glb",
@@ -137,7 +143,7 @@ async fn main() -> Result<()> {
 
     let mut instances = vec![];
     for (z, ennemy) in ennemies.iter().enumerate() {
-        for (x, animation) in ennemy.animations().enumerate() {
+        for (x, animation) in ennemy.animations.values().enumerate() {
             for y in 0..1 {
                 let transform = glam::Mat4::from_translation(glam::vec3(
                     4.0 * x as f32,
@@ -147,7 +153,7 @@ async fn main() -> Result<()> {
 
                 instances.extend(
                     ennemy
-                        .scene_instances(None, Some(animation), Some(transform))
+                        .scene_instances(None, Some(transform), Some(*animation))
                         .unwrap()
                         .0,
                 );
@@ -181,7 +187,6 @@ async fn main() -> Result<()> {
                 engine.resize(&renderer);
 
                 navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
-                    output: &engine.fxaa.outputs.output,
                     depth: &engine.geometry.outputs.depth,
                 });
 
@@ -233,15 +238,10 @@ async fn main() -> Result<()> {
                     &directional_light,
                 );
 
-                navmesh_debug.update(&renderer.queue, &navmesh);
-
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);
                     // fog.render(ctx, &engine.ressources.camera, &time);
                     navmesh_debug.render(ctx, &engine.ressources.camera);
-
-                    engine.finish(ctx);
-
                     egui.render(ctx);
                 });
 

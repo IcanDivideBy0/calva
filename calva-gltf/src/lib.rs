@@ -16,7 +16,7 @@ pub struct GltfModel {
     pub doc: gltf::Document,
 
     meshes_instances: Vec<Vec<Instance>>,
-    animations: HashMap<String, AnimationId>,
+    pub animations: HashMap<String, AnimationId>,
 }
 
 impl GltfModel {
@@ -327,7 +327,7 @@ impl GltfModel {
 
             let mut transforms: BTreeMap<usize, glam::Mat4> = BTreeMap::new();
 
-            Self::traverse_nodes_tree(
+            traverse_nodes_tree(
                 root_nodes,
                 &mut |parent_transform, node| {
                     let transform = *parent_transform
@@ -413,24 +413,24 @@ impl GltfModel {
         &self,
         nodes: impl Iterator<Item = gltf::Node<'a>>,
         transform: glam::Mat4,
-        animation: AnimationId,
+        animation: Option<AnimationId>,
     ) -> (Vec<Instance>, Vec<PointLight>) {
         let mut instances = vec![];
         let mut point_lights = vec![];
 
-        Self::traverse_nodes_tree(
+        traverse_nodes_tree(
             nodes,
             &mut |parent_transform, node| {
                 let transform =
                     *parent_transform * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
 
-                if let Some(mesh_instances) = node
+                let mesh_instances = node
                     .mesh()
-                    .and_then(|mesh| self.meshes_instances.get(mesh.index()))
-                {
+                    .and_then(|mesh| self.meshes_instances.get(mesh.index()));
+                if let Some(mesh_instances) = mesh_instances {
                     instances.extend(mesh_instances.iter().map(|&instance| Instance {
                         transform,
-                        animation: animation.into(),
+                        animation: animation.unwrap_or_default().into(),
                         ..instance
                     }))
                 }
@@ -444,18 +444,22 @@ impl GltfModel {
                         Kind::Point => {
                             let position = transform.transform_point3(glam::Vec3::ZERO);
 
-                            // Luminous intensity in candela (lm/sr) ; converted to luminous power (lumens)
-                            let intensity = light.intensity() / (4.0 * std::f32::consts::PI);
+                            const WATTS_TO_LUMENS: f32 = 683.0;
+                            // Luminous intensity in candela (lm/sr) ; multiplied by 4π to get luminous power (lumens) ; converted to watts
+                            let intensity =
+                                light.intensity() * (4.0 * std::f32::consts::PI) / WATTS_TO_LUMENS;
 
                             let color = glam::Vec3::from(light.color()) * intensity;
 
                             let radius = light.range().unwrap_or_else(|| {
-                                // Get light's luminance using Rec 709 luminance formula
-                                let luminance = color.dot(glam::vec3(0.2126, 0.7152, 0.0722));
-
                                 const ATTENUATION_MAX: f32 = 1.0 - (5.0 / 256.0);
-                                (luminance * ATTENUATION_MAX).sqrt()
+                                (color.max_element() * ATTENUATION_MAX).sqrt()
                             });
+
+                            // There must be an error in blender export, removing the 4π factor will give the exact
+                            // same result as blender renders when using the same exposure algorithm, but we also
+                            // need to keep it for radius computation to get a somewhat similar range :/
+                            let color = color / (4.0 * std::f32::consts::PI);
 
                             point_lights.push(PointLight {
                                 position,
@@ -479,31 +483,21 @@ impl GltfModel {
 
     pub fn node_instances(
         &self,
-        node_name: &str,
+        node: gltf::Node,
         transform: Option<glam::Mat4>,
-        animation_name: Option<&str>,
-    ) -> Option<(Vec<Instance>, Vec<PointLight>)> {
-        let node = self
-            .doc
-            .nodes()
-            .find(|node| node.name() == Some(node_name))?;
-
+        animation: Option<AnimationId>,
+    ) -> (Vec<Instance>, Vec<PointLight>) {
         let transform = transform.unwrap_or_default()
             * glam::Mat4::from_cols_array_2d(&node.transform().matrix()).inverse();
 
-        let animation = match animation_name {
-            Some(animation_name) => self.animations.get(animation_name).copied()?,
-            _ => Default::default(),
-        };
-
-        Some(self.nodes_data(std::iter::once(node), transform, animation))
+        self.nodes_data(std::iter::once(node), transform, animation)
     }
 
     fn scene_data(
         &self,
         scene: gltf::Scene,
-        animation: AnimationId,
         transform: glam::Mat4,
+        animation: Option<AnimationId>,
     ) -> (Vec<Instance>, Vec<PointLight>) {
         self.nodes_data(scene.nodes(), transform, animation)
     }
@@ -511,8 +505,8 @@ impl GltfModel {
     pub fn scene_instances(
         &self,
         scene_name: Option<&str>,
-        animation_name: Option<&str>,
         transform: Option<glam::Mat4>,
+        animation: Option<AnimationId>,
     ) -> Option<(Vec<Instance>, Vec<PointLight>)> {
         let scene = if let Some(scene_name) = scene_name {
             self.doc
@@ -522,28 +516,25 @@ impl GltfModel {
             self.doc.default_scene()?
         };
 
-        let animation = if let Some(animation_name) = animation_name {
-            self.animations.get(animation_name).copied()?
-        } else {
-            AnimationId::default()
-        };
-
-        Some(self.scene_data(scene, animation, transform.unwrap_or_default()))
+        Some(self.scene_data(scene, transform.unwrap_or_default(), animation))
     }
 
-    pub fn animations(&self) -> impl Iterator<Item = &String> {
-        self.animations.keys()
+    pub fn get_node(&self, name: &str) -> Option<gltf::Node> {
+        self.doc.nodes().find(|node| node.name() == Some(name))
     }
+    pub fn get_animation(&self, name: &str) -> Option<AnimationId> {
+        self.animations.get(name).copied()
+    }
+}
 
-    pub fn traverse_nodes_tree<'a, T>(
-        nodes: impl Iterator<Item = gltf::Node<'a>>,
-        visitor: &mut dyn FnMut(&T, &gltf::Node) -> Option<T>,
-        acc: T,
-    ) {
-        for node in nodes {
-            if let Some(res) = visitor(&acc, &node) {
-                Self::traverse_nodes_tree(node.children(), visitor, res);
-            }
+pub fn traverse_nodes_tree<'a, T>(
+    nodes: impl Iterator<Item = gltf::Node<'a>>,
+    visitor: &mut dyn FnMut(&T, &gltf::Node) -> Option<T>,
+    acc: T,
+) {
+    for node in nodes {
+        if let Some(res) = visitor(&acc, &node) {
+            traverse_nodes_tree(node.children(), visitor, res);
         }
     }
 }

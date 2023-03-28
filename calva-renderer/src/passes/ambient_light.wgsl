@@ -30,5 +30,7 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     var ambient = textureLoad(t_albedo_metallic, vec2<i32>(position.xy), 0).rgb;
     var emissive = textureLoad(t_emissive, vec2<i32>(position.xy), 0).rgb;
 
-    return vec4<f32>(CONFIG.factor * ambient + emissive, 1.0);
+    let color = vec3<f32>(0.106535, 0.061572, 0.037324);
+
+    return vec4<f32>(CONFIG.factor * color * ambient + emissive, 1.0);
 }

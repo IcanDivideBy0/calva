@@ -92,34 +92,16 @@ impl TileBuilder {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
-        tile_name: &str,
+        node: gltf::Node,
     ) -> Tile {
-        let root_node = doc
-            .nodes()
-            .find(|node| Some(tile_name) == node.name())
-            .unwrap_or_else(|| panic!("Unable to find node: {}", tile_name));
-
         let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
             buffers.get(buffer.index()).map(std::ops::Deref::deref)
         };
 
-        fn traverse_nodes_tree<'a, T>(
-            nodes: impl Iterator<Item = gltf::Node<'a>>,
-            visitor: &mut dyn FnMut(&T, &gltf::Node) -> Option<T>,
-            acc: T,
-        ) {
-            for node in nodes {
-                if let Some(res) = visitor(&acc, &node) {
-                    traverse_nodes_tree(node.children(), visitor, res);
-                }
-            }
-        }
-
         let mut triangles = vec![];
-        traverse_nodes_tree::<glam::Mat4>(
-            root_node.children(),
+        calva::gltf::traverse_nodes_tree::<glam::Mat4>(
+            node.children(),
             &mut |parent_transform, node| {
                 let skip = node
                     .extras()
@@ -186,7 +168,7 @@ impl TileBuilder {
         let vertices_count = 3 * triangles.len() as u32;
 
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(tile_name),
+            label: node.name(),
             size: (self.depth.width()
                 * self.depth.height()
                 * self.depth.format().describe().block_size as u32) as _,
@@ -200,7 +182,7 @@ impl TileBuilder {
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(&format!("TileBuilder {}", tile_name)),
+                label: Some(&format!("TileBuilder {}", node.name().unwrap_or_default())),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
@@ -261,7 +243,7 @@ impl TileBuilder {
         };
 
         Tile {
-            node_id: root_node.index(),
+            node_id: node.index(),
             height_map,
         }
     }

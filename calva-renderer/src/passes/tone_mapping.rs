@@ -11,7 +11,7 @@ impl Default for ToneMappingConfig {
     fn default() -> Self {
         Self {
             exposure: 1.0,
-            gamma: 2.2,
+            gamma: 1.0,
         }
     }
 }

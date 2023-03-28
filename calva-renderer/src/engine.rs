@@ -293,9 +293,7 @@ impl Engine {
         self.fxaa.render(ctx);
 
         self.ssao.render(ctx, &self.ressources.camera);
-    }
 
-    pub fn finish(&self, ctx: &mut RenderContext) {
         self.tone_mapping
             .render(ctx, &self.config.tone_mapping, ctx.frame);
     }

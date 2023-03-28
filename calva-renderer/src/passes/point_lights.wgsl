@@ -138,6 +138,7 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let NdotL = max(dot(N, L), 0.0);
 
     let dist_square = dot(light_to_frag, light_to_frag);
+    // let attenuation = 1.0 / max(dist_square, 0.0001);
     let factor = dist_square * in.l_inv_square_radius;
     let smooth_factor = saturate(1.0 - factor * factor);
     let attenuation = smooth_factor * smooth_factor / max(dist_square, 0.0001);
