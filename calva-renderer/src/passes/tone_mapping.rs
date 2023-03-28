@@ -10,7 +10,7 @@ pub struct ToneMappingConfig {
 impl Default for ToneMappingConfig {
     fn default() -> Self {
         Self {
-            exposure: 1.0,
+            exposure: 0.0,
             gamma: 1.0,
         }
     }

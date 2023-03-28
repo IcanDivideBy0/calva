@@ -35,9 +35,6 @@ async fn main() -> Result<()> {
     let mut renderer = Renderer::new(&window, window.inner_size().into()).await?;
     let mut engine = Engine::new(&renderer);
 
-    engine.config.ambient.factor = 0.1;
-    engine.config.tone_mapping.exposure = 0.05;
-
     engine.config.skybox = [
         "./demo/assets/sky/right.jpg",
         "./demo/assets/sky/left.jpg",

@@ -8,7 +8,7 @@ pub struct AmbientLightConfig {
 
 impl Default for AmbientLightConfig {
     fn default() -> Self {
-        Self { factor: 0.005 }
+        Self { factor: 0.1 }
     }
 }
 
