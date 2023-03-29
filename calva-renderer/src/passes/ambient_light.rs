@@ -1,14 +1,19 @@
-use crate::RenderContext;
+use crate::{RenderContext, UniformBuffer};
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct AmbientLightConfig {
-    pub factor: f32,
+    pub color: [f32; 3],
+    pub strength: f32,
 }
 
 impl Default for AmbientLightConfig {
     fn default() -> Self {
-        Self { factor: 0.1 }
+        // Blender defaults
+        Self {
+            color: [0.05; 3],
+            strength: 1.0,
+        }
     }
 }
 
@@ -22,6 +27,7 @@ pub struct AmbientLightPassOutputs {
 }
 
 pub struct AmbientLightPass {
+    pub config: UniformBuffer<AmbientLightConfig>,
     pub outputs: AmbientLightPassOutputs,
     output_view: wgpu::TextureView,
 
@@ -32,6 +38,8 @@ pub struct AmbientLightPass {
 
 impl AmbientLightPass {
     pub fn new(device: &wgpu::Device, inputs: AmbientLightPassInputs) -> Self {
+        let config = UniformBuffer::new(device, AmbientLightConfig::default());
+
         let outputs = Self::make_outputs(device, &inputs);
         let output_view = outputs.output.create_view(&Default::default());
 
@@ -69,11 +77,8 @@ impl AmbientLightPass {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("AmbientLight pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::FRAGMENT,
-                range: 0..(std::mem::size_of::<f32>() as _),
-            }],
+            bind_group_layouts: &[&config.bind_group_layout, &bind_group_layout],
+            push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -100,6 +105,7 @@ impl AmbientLightPass {
         });
 
         Self {
+            config,
             outputs,
             output_view,
 
@@ -116,7 +122,11 @@ impl AmbientLightPass {
         self.bind_group = Self::make_bind_group(device, &self.bind_group_layout, &inputs);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, config: &AmbientLightConfig) {
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        self.config.update(queue);
+    }
+
+    pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientLight"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -131,8 +141,8 @@ impl AmbientLightPass {
         });
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(config));
+        rpass.set_bind_group(0, &self.config.bind_group, &[]);
+        rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
     }

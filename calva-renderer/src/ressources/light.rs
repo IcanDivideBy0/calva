@@ -20,13 +20,22 @@ impl PointLight {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DirectionalLight {
     pub direction: glam::Vec3,
-    pub color: glam::Vec3,
+    pub color: [f32; 3],
     pub intensity: f32,
 }
 
-impl DirectionalLight {}
+impl Default for DirectionalLight {
+    fn default() -> Self {
+        Self {
+            direction: glam::vec3(0.5, -1.0, 0.5),
+            color: [1.0; 3],
+            intensity: 5.0,
+        }
+    }
+}
 
 pub struct LightsManager {
     point_light_index: AtomicU32,

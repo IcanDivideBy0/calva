@@ -16,21 +16,19 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 // Fragment shader
 //
 
-@group(0) @binding(0) var t_albedo_metallic: texture_2d<f32>;
-@group(0) @binding(1) var t_emissive: texture_2d<f32>;
-
 struct Config {
-    factor: f32,
+    color: vec3<f32>,
+    strength: f32,
 }
+@group(0) @binding(0) var<uniform> config: Config;
 
-var<push_constant> CONFIG: Config;
+@group(1) @binding(0) var t_albedo_metallic: texture_2d<f32>;
+@group(1) @binding(1) var t_emissive: texture_2d<f32>;
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     var ambient = textureLoad(t_albedo_metallic, vec2<i32>(position.xy), 0).rgb;
     var emissive = textureLoad(t_emissive, vec2<i32>(position.xy), 0).rgb;
 
-    let color = vec3<f32>(0.106535, 0.061572, 0.037324);
-
-    return vec4<f32>(CONFIG.factor * color * ambient + emissive, 1.0);
+    return vec4<f32>(config.color * config.strength * ambient + emissive, 1.0);
 }

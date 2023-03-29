@@ -1,18 +1,14 @@
 use crate::{
-    AmbientLightConfig, AmbientLightPass, AmbientLightPassInputs, AnimationsManager, CameraManager,
-    DirectionalLight, DirectionalLightPass, DirectionalLightPassInputs, FxaaPass, FxaaPassInputs,
-    GeometryPass, HierarchicalDepthPass, HierarchicalDepthPassInputs, InstancesManager,
-    LightsManager, MaterialsManager, MeshesManager, PointLightsPass, PointLightsPassInputs,
-    RenderContext, Renderer, SkinsManager, Skybox, SkyboxPass, SkyboxPassInputs, SsaoConfig,
-    SsaoPass, SsaoPassInputs, TexturesManager, ToneMappingConfig, ToneMappingPass,
-    ToneMappingPassInputs,
+    AmbientLightPass, AmbientLightPassInputs, AnimationsManager, CameraManager,
+    DirectionalLightPass, DirectionalLightPassInputs, FxaaPass, FxaaPassInputs, GeometryPass,
+    HierarchicalDepthPass, HierarchicalDepthPassInputs, InstancesManager, LightsManager,
+    MaterialsManager, MeshesManager, PointLightsPass, PointLightsPassInputs, RenderContext,
+    Renderer, SkinsManager, Skybox, SkyboxPass, SkyboxPassInputs, SsaoPass, SsaoPassInputs,
+    TexturesManager, ToneMappingPass, ToneMappingPassInputs,
 };
 
 #[derive(Default)]
 pub struct EngineConfig {
-    pub ambient: AmbientLightConfig,
-    pub ssao: SsaoConfig,
-    pub tone_mapping: ToneMappingConfig,
     pub skybox: Option<Skybox>,
 }
 
@@ -170,6 +166,7 @@ impl Engine {
         if self.size == renderer.size() {
             return;
         }
+        self.size = renderer.size();
 
         self.geometry
             .resize(&renderer.device, &renderer.surface_config);
@@ -237,23 +234,15 @@ impl Engine {
                 input: &self.fxaa.outputs.output,
             },
         );
-
-        self.size = renderer.size();
     }
 
-    pub fn update(
-        &mut self,
-        renderer: &Renderer,
-        view: glam::Mat4,
-        proj: glam::Mat4,
-        directional_light: &DirectionalLight,
-    ) {
-        self.ressources.camera.update(&renderer.queue, view, proj);
-
+    pub fn update(&mut self, renderer: &Renderer) {
+        self.ressources.camera.update(&renderer.queue);
         self.directional_light
-            .update(&renderer.queue, &self.ressources.camera, directional_light);
-
-        self.ssao.update(&renderer.queue, &self.config.ssao);
+            .update(&renderer.queue, &self.ressources.camera);
+        self.ambient_light.update(&renderer.queue);
+        self.ssao.update(&renderer.queue);
+        self.tone_mapping.update(&renderer.queue);
     }
 
     pub fn render(&self, ctx: &mut RenderContext, dt: std::time::Duration) {
@@ -272,16 +261,16 @@ impl Engine {
 
         self.hierarchical_depth.render(ctx);
 
-        self.ambient_light.render(ctx, &self.config.ambient);
+        self.ambient_light.render(ctx);
 
-        // self.directional_light.render(
-        //     ctx,
-        //     &self.camera,
-        //     &self.meshes,
-        //     &self.skins,
-        //     &self.animations,
-        //     &self.instances,
-        // );
+        self.directional_light.render(
+            ctx,
+            &self.ressources.camera,
+            &self.ressources.meshes,
+            &self.ressources.skins,
+            &self.ressources.animations,
+            &self.ressources.instances,
+        );
 
         self.point_lights
             .render(ctx, &self.ressources.camera, &self.ressources.lights);
@@ -294,8 +283,7 @@ impl Engine {
 
         self.ssao.render(ctx, &self.ressources.camera);
 
-        self.tone_mapping
-            .render(ctx, &self.config.tone_mapping, ctx.frame);
+        self.tone_mapping.render(ctx);
     }
 
     pub fn create_skybox(&self, renderer: &Renderer, pixels: &[u8]) -> Skybox {

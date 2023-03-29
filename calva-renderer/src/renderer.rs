@@ -3,6 +3,12 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 #[cfg(feature = "profiler")]
 use wgpu_profiler::{GpuProfiler, GpuTimerScopeResult};
 
+pub struct RendererConfig {
+    present_mode: wgpu::PresentMode,
+    width: u32,
+    height: u32,
+}
+
 pub struct Renderer {
     pub adapter: wgpu::Adapter,
     pub adapter_info: wgpu::AdapterInfo,
@@ -69,18 +75,13 @@ impl Renderer {
             )
             .await?;
 
-        let surface_capabilities = surface.get_capabilities(&adapter);
-        let format = surface_capabilities.formats[0].add_srgb_suffix();
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.0,
-            height: size.1,
-            // present_mode: wgpu::PresentMode::AutoNoVsync,
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
-        };
+        let mut surface_config = surface
+            .get_default_config(&adapter, size.0, size.1)
+            .ok_or_else(|| anyhow!("Surface not compatible with adapter"))?;
+        surface_config.format = surface_config.format.add_srgb_suffix();
+        // surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
+        surface_config.present_mode = wgpu::PresentMode::AutoVsync;
+
         surface.configure(&device, &surface_config);
 
         #[cfg(feature = "profiler")]
@@ -104,6 +105,28 @@ impl Renderer {
             #[cfg(feature = "profiler")]
             profiler,
         })
+    }
+
+    pub fn update(&mut self, config: &RendererConfig) {
+        let mut dirty = false;
+
+        if config.present_mode != self.surface_config.present_mode {
+            self.surface_config.present_mode = config.present_mode;
+
+            dirty = true;
+        }
+
+        let new_size = (config.width, config.height);
+        if new_size != (self.surface_config.width, self.surface_config.height) {
+            self.surface_config.width = config.width;
+            self.surface_config.height = config.height;
+
+            dirty = true;
+        }
+
+        if dirty {
+            self.surface.configure(&self.device, &self.surface_config);
+        }
     }
 
     pub fn size(&self) -> (u32, u32) {

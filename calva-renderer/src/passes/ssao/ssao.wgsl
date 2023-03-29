@@ -37,23 +37,23 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 // Fragment shader
 //
 
-struct SsaoConfig {
+struct Config {
     radius: f32,
     bias: f32,
     power: f32,
 }
+@group(1) @binding(0) var<uniform> config: Config;
 
 const SAMPLES_COUNT: u32 = 32u;
 struct RandomData {
     samples: array<vec4<f32>, SAMPLES_COUNT>,
     noise: array<array<vec4<f32>, 4>, 4>,
 }
+@group(2) @binding(0) var<uniform> random_data: RandomData;
 
-@group(1) @binding(0) var<uniform> config: SsaoConfig;
-@group(1) @binding(1) var<uniform> random_data: RandomData;
-@group(1) @binding(2) var t_sampler: sampler;
-@group(1) @binding(3) var t_normal: texture_2d<f32>;
-@group(1) @binding(4) var t_depth: texture_depth_2d;
+@group(3) @binding(0) var t_sampler: sampler;
+@group(3) @binding(1) var t_normal: texture_2d<f32>;
+@group(3) @binding(2) var t_depth: texture_depth_2d;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) f32 {

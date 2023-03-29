@@ -4,7 +4,7 @@ use anyhow::Result;
 use calva::{
     egui::{egui, EguiPass, EguiWinitPass},
     gltf::GltfModel,
-    renderer::{DirectionalLight, Engine, Renderer},
+    renderer::{Engine, Renderer},
 };
 use std::time::Instant;
 use winit::{
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
 
-    let mut camera = camera::MyCamera::new(&window);
+    let mut camera = camera::MyCamera::new(window.inner_size().into());
     camera.controller.transform = glam::Mat4::look_at_rh(
         glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
         glam::Vec3::Y - glam::Vec3::Z,        // target
@@ -34,6 +34,9 @@ async fn main() -> Result<()> {
 
     let mut renderer = Renderer::new(&window, window.inner_size().into()).await?;
     let mut engine = Engine::new(&renderer);
+
+    engine.ambient_light.config.color = [0.106535, 0.061572, 0.037324];
+    engine.ambient_light.config.strength = 0.1;
 
     engine.config.skybox = [
         "./demo/assets/sky/right.jpg",
@@ -159,12 +162,6 @@ async fn main() -> Result<()> {
     }
     engine.ressources.instances.add(&renderer.queue, instances);
 
-    let mut directional_light = DirectionalLight {
-        color: glam::vec3(1.0, 1.0, 1.0),
-        intensity: 100.0,
-        direction: glam::vec3(-1.0, -1.0, -1.0),
-    };
-
     // let fog = fog::FogPass::new(&renderer, &engine.camera);
 
     let mut kb_modifiers = ModifiersState::empty();
@@ -178,9 +175,9 @@ async fn main() -> Result<()> {
             }
 
             Event::RedrawRequested(_) => {
-                let size = window.inner_size().into();
+                let size = window.inner_size();
                 camera.resize(size);
-                renderer.resize(size);
+                renderer.resize(size.into());
                 engine.resize(&renderer);
 
                 navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
@@ -190,7 +187,7 @@ async fn main() -> Result<()> {
                 let dt = render_time.elapsed();
                 render_time = Instant::now();
 
-                camera.controller.update(dt);
+                camera.update(dt);
 
                 egui.update(&renderer, &window, |ctx| {
                     egui::SidePanel::right("engine_panel")
@@ -201,39 +198,63 @@ async fn main() -> Result<()> {
                             ..Default::default()
                         })
                         .show(ctx, |ui| {
+                            EguiPass::renderer_ui(&renderer)(ui);
                             EguiPass::engine_config_ui(&mut engine)(ui);
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)
                                 .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        egui::color_picker::color_edit_button_rgb(
+                                            ui,
+                                            &mut engine.directional_light.uniform.light.color,
+                                        );
+                                        ui.add(
+                                            egui::Label::new(egui::WidgetText::from("Color"))
+                                                .wrap(false),
+                                        );
+                                    });
+
+                                    ui.add(
+                                        egui::Slider::new(
+                                            &mut engine.directional_light.uniform.light.intensity,
+                                            0.0..=50.0,
+                                        )
+                                        .text("Intensity"),
+                                    );
+
                                     ui.columns(2, |columns| {
                                         columns[0].add(
                                             egui::Slider::new(
-                                                &mut directional_light.direction.x,
+                                                &mut engine
+                                                    .directional_light
+                                                    .uniform
+                                                    .light
+                                                    .direction
+                                                    .x,
                                                 -1.0..=1.0,
                                             )
                                             .text("X"),
                                         );
                                         columns[1].add(
                                             egui::Slider::new(
-                                                &mut directional_light.direction.z,
+                                                &mut engine
+                                                    .directional_light
+                                                    .uniform
+                                                    .light
+                                                    .direction
+                                                    .z,
                                                 -1.0..=1.0,
                                             )
                                             .text("Z"),
                                         );
                                     });
                                 });
-
-                            EguiPass::renderer_ui(&renderer)(ui);
                         });
                 });
 
-                engine.update(
-                    &renderer,
-                    camera.controller.transform.inverse(),
-                    camera.projection.into(),
-                    &directional_light,
-                );
+                **engine.ressources.camera = (&camera).into();
+                engine.update(&renderer);
 
                 let result = renderer.render(|ctx| {
                     engine.render(ctx, dt);

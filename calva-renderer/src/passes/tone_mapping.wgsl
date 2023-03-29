@@ -16,25 +16,25 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 // Fragment shader
 //
 
-@group(0) @binding(0) var t_hdr: texture_2d<f32>;
 
 struct Config {
     exposure: f32,
     gamma: f32,
 }
+@group(0) @binding(0) var<uniform> config: Config;
 
-var<push_constant> CONFIG: Config;
+@group(1) @binding(0) var t_hdr: texture_2d<f32>;
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let hdr = textureLoad(t_hdr, vec2<i32>(position.xy), 0).rgb;
 
     // https://docs.blender.org/manual/en/3.4/render/color_management.html?highlight=exposure
-    let color = hdr * exp2(CONFIG.exposure);
+    let color = hdr * exp2(config.exposure);
 
     // Gamma correction
     return vec4<f32>(
-        pow(color, vec3<f32>(1.0 / CONFIG.gamma)),
+        pow(color, vec3<f32>(1.0 / config.gamma)),
         1.0
     );
 }

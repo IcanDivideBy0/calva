@@ -178,17 +178,20 @@ impl EguiPass {
         move |ui| {
             egui::CollapsingHeader::new("Ambient")
                 .default_open(true)
-                .show(ui, EguiPass::ambient_config_ui(&mut engine.config.ambient));
+                .show(
+                    ui,
+                    EguiPass::ambient_config_ui(&mut engine.ambient_light.config),
+                );
 
             egui::CollapsingHeader::new("SSAO")
                 .default_open(true)
-                .show(ui, EguiPass::ssao_config_ui(&mut engine.config.ssao));
+                .show(ui, EguiPass::ssao_config_ui(&mut engine.ssao.config));
 
             egui::CollapsingHeader::new("Tone mapping")
                 .default_open(true)
                 .show(
                     ui,
-                    EguiPass::tone_mapping_config_ui(&mut engine.config.tone_mapping),
+                    EguiPass::tone_mapping_config_ui(&mut engine.tone_mapping.config),
                 );
         }
     }
@@ -197,7 +200,12 @@ impl EguiPass {
         config: &'cfg mut AmbientLightConfig,
     ) -> impl FnOnce(&mut egui::Ui) + 'ui {
         move |ui| {
-            ui.add(egui::Slider::new(&mut config.factor, 0.0..=1.0).text("Factor"));
+            ui.horizontal(|ui| {
+                egui::color_picker::color_edit_button_rgb(ui, &mut config.color);
+                ui.add(egui::Label::new(egui::WidgetText::from("Color")).wrap(false));
+            });
+
+            ui.add(egui::Slider::new(&mut config.strength, 0.0..=1.0).text("Strength"));
         }
     }
 

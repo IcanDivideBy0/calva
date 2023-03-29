@@ -1,6 +1,6 @@
 use crate::{
-    AnimationState, AnimationsManager, CameraManager, DirectionalLight, InstancesManager,
-    MaterialId, MeshesManager, RenderContext, SkinsManager,
+    AnimationState, AnimationsManager, Camera, CameraManager, DirectionalLight, InstancesManager,
+    MaterialId, MeshesManager, RenderContext, SkinsManager, UniformBuffer, UniformData,
 };
 
 #[repr(C)]
@@ -43,8 +43,9 @@ pub struct DirectionalLightPassInputs<'a> {
 }
 
 pub struct DirectionalLightPass {
+    pub uniform: UniformBuffer<DirectionalLightUniform>,
+
     output_view: wgpu::TextureView,
-    uniform: DirectionalLightUniform,
     cull: DirectionalLightCull,
 
     sampler: wgpu::Sampler,
@@ -76,7 +77,7 @@ impl DirectionalLightPass {
         instances: &InstancesManager,
         inputs: DirectionalLightPassInputs,
     ) -> Self {
-        let uniform = DirectionalLightUniform::new(device);
+        let uniform = UniformBuffer::new(device, DirectionalLightUniform::default());
 
         let cull = DirectionalLightCull::new(device, camera, meshes, instances, &uniform);
 
@@ -283,13 +284,9 @@ impl DirectionalLightPass {
         self.output_view = inputs.output.create_view(&Default::default());
     }
 
-    pub fn update(
-        &self,
-        queue: &wgpu::Queue,
-        camera: &CameraManager,
-        directional_light: &DirectionalLight,
-    ) {
-        self.uniform.update(queue, camera, directional_light);
+    pub fn update(&mut self, queue: &wgpu::Queue, camera: &CameraManager) {
+        self.uniform.camera = ***camera;
+        self.uniform.update(queue);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -427,136 +424,80 @@ impl DirectionalLightPass {
     }
 }
 
-use uniform::*;
-mod uniform {
-    use crate::{CameraManager, DirectionalLight, DirectionalLightPass};
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuDirectionalLightUniform {
+    color: glam::Vec4,
+    direction_world: glam::Vec4,
+    direction_view: glam::Vec4,
+    view_proj: glam::Mat4,
+}
 
-    #[repr(C)]
-    #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-    struct DirectionalLightUniformRaw {
-        color: glam::Vec4,
-        direction_world: glam::Vec4,
-        direction_view: glam::Vec4,
-        view_proj: glam::Mat4,
-    }
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
+pub struct DirectionalLightUniform {
+    pub light: DirectionalLight,
+    camera: Camera,
+}
 
-    pub struct DirectionalLightUniform {
-        buffer: wgpu::Buffer,
+impl UniformData for DirectionalLightUniform {
+    type GpuType = GpuDirectionalLightUniform;
 
-        pub(crate) bind_group_layout: wgpu::BindGroupLayout,
-        pub(crate) bind_group: wgpu::BindGroup,
-    }
+    fn as_gpu_type(&self) -> Self::GpuType {
+        let light_dir = self.light.direction.normalize();
+        let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
 
-    impl DirectionalLightUniform {
-        pub fn new(device: &wgpu::Device) -> Self {
-            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("DirectionalLight uniform"),
-                size: std::mem::size_of::<DirectionalLightUniformRaw>() as _,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        // Frustum bounding sphere in view space
+        // https://lxjk.github.io/2017/04/15/Calculate-Minimal-Bounding-Sphere-of-Frustum.html
+        // https://stackoverflow.com/questions/2194812/finding-a-minimum-bounding-sphere-for-a-frustum
+        // https://stackoverflow.com/questions/56428880/how-to-extract-camera-parameters-from-projection-matrix
+        let proj = self.camera.proj;
+        let znear = proj.w_axis.z / (proj.z_axis.z - 1.0);
+        let zfar = proj.w_axis.z / (proj.z_axis.z + 1.0);
 
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("DirectionalLight uniform bind group layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT
-                            | wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new({
-                                std::mem::size_of::<DirectionalLightUniformRaw>() as _
-                            }),
-                        },
-                        count: None,
-                    }],
-                });
+        let k = f32::sqrt(1.0 + (proj.x_axis.x / proj.y_axis.y).powi(2)) * proj.x_axis.x.recip();
+        let k2 = k.powi(2);
 
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("DirectionalLight bind group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-            });
+        let (mut center, mut radius) = if k2 >= (zfar - znear) / (zfar + znear) {
+            (glam::vec3(0.0, 0.0, -zfar), zfar * k)
+        } else {
+            (
+                glam::vec3(0.0, 0.0, -0.5 * (zfar + znear) * (1.0 + k2)),
+                0.5 * f32::sqrt(
+                    f32::powi(zfar - znear, 2)
+                        + 2.0 * (zfar.powi(2) + znear.powi(2)) * k2
+                        + f32::powi(zfar + znear, 2) * k.powi(4),
+                ),
+            )
+        };
 
-            Self {
-                buffer,
-                bind_group_layout,
-                bind_group,
-            }
-        }
+        // Move sphere to light view space
+        center = (light_view * self.camera.view.inverse() * center.extend(1.0)).truncate();
 
-        pub fn update(
-            &self,
-            queue: &wgpu::Queue,
-            camera: &CameraManager,
-            light: &DirectionalLight,
-        ) {
-            let light_dir = light.direction.normalize();
-            let light_view = glam::Mat4::look_at_rh(glam::Vec3::ZERO, light_dir, glam::Vec3::Y);
+        // Avoid shadow swimming:
+        // Prevent small radius changes due to float precision
+        radius = (radius * 16.0).ceil() / 16.0;
+        // Shadow texel size in light view space
+        let texel_size = radius * 2.0 / DirectionalLightPass::SIZE as f32;
+        // Allow center changes only in texel size increments
+        center = (center / texel_size).ceil() * texel_size;
 
-            // Frustum bounding sphere in view space
-            // https://lxjk.github.io/2017/04/15/Calculate-Minimal-Bounding-Sphere-of-Frustum.html
-            // https://stackoverflow.com/questions/2194812/finding-a-minimum-bounding-sphere-for-a-frustum
-            // https://stackoverflow.com/questions/56428880/how-to-extract-camera-parameters-from-projection-matrix
-            let proj = camera.proj;
-            let znear = proj.w_axis.z / (proj.z_axis.z - 1.0);
-            let zfar = proj.w_axis.z / (proj.z_axis.z + 1.0);
+        let min = center - glam::Vec3::splat(radius);
+        let max = center + glam::Vec3::splat(radius);
 
-            let k =
-                f32::sqrt(1.0 + (proj.x_axis.x / proj.y_axis.y).powi(2)) * proj.x_axis.x.recip();
-            let k2 = k.powi(2);
+        let light_proj = glam::Mat4::orthographic_rh(
+            min.x,  // left
+            max.x,  // right
+            min.y,  // bottom
+            max.y,  // top
+            -max.z, // near
+            -min.z, // far
+        );
 
-            let (mut center, mut radius) = if k2 >= (zfar - znear) / (zfar + znear) {
-                (glam::vec3(0.0, 0.0, -zfar), zfar * k)
-            } else {
-                (
-                    glam::vec3(0.0, 0.0, -0.5 * (zfar + znear) * (1.0 + k2)),
-                    0.5 * f32::sqrt(
-                        f32::powi(zfar - znear, 2)
-                            + 2.0 * (zfar.powi(2) + znear.powi(2)) * k2
-                            + f32::powi(zfar + znear, 2) * k.powi(4),
-                    ),
-                )
-            };
-
-            // Move sphere to light view space
-            center = (light_view * camera.view.inverse() * center.extend(1.0)).truncate();
-
-            // Avoid shadow swimming:
-            // Prevent small radius changes due to float precision
-            radius = (radius * 16.0).ceil() / 16.0;
-            // Shadow texel size in light view space
-            let texel_size = radius * 2.0 / DirectionalLightPass::SIZE as f32;
-            // Allow center changes only in texel size increments
-            center = (center / texel_size).ceil() * texel_size;
-
-            let min = center - glam::Vec3::splat(radius);
-            let max = center + glam::Vec3::splat(radius);
-
-            let light_proj = glam::Mat4::orthographic_rh(
-                min.x,  // left
-                max.x,  // right
-                min.y,  // bottom
-                max.y,  // top
-                -max.z, // near
-                -min.z, // far
-            );
-
-            queue.write_buffer(
-                &self.buffer,
-                0,
-                bytemuck::bytes_of(&DirectionalLightUniformRaw {
-                    color: (light.color * light.intensity).extend(1.0),
-                    direction_world: light_dir.extend(0.0),
-                    direction_view: (glam::Quat::from_mat4(&camera.view) * light_dir).extend(0.0),
-                    view_proj: (light_proj * light_view),
-                }),
-            );
+        GpuDirectionalLightUniform {
+            color: (glam::Vec3::from_array(self.light.color) * self.light.intensity).extend(1.0),
+            direction_world: light_dir.extend(0.0),
+            direction_view: (glam::Quat::from_mat4(&self.camera.view) * light_dir).extend(0.0),
+            view_proj: (light_proj * light_view),
         }
     }
 }
@@ -565,9 +506,10 @@ use cull::*;
 mod cull {
     use crate::{
         CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, RenderContext,
+        UniformBuffer,
     };
 
-    use super::{uniform::DirectionalLightUniform, DrawInstance};
+    use super::{DirectionalLightUniform, DrawInstance};
 
     pub struct DirectionalLightCull {
         pub(crate) draw_instances: wgpu::Buffer,
@@ -587,7 +529,7 @@ mod cull {
             camera: &CameraManager,
             meshes: &MeshesManager,
             instances: &InstancesManager,
-            uniform: &DirectionalLightUniform,
+            uniform: &UniformBuffer<DirectionalLightUniform>,
         ) -> Self {
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("DirectionalLight[cull] draw instances"),
@@ -761,7 +703,7 @@ mod cull {
             camera: &CameraManager,
             meshes: &MeshesManager,
             instances: &InstancesManager,
-            uniform: &DirectionalLightUniform,
+            uniform: &UniformBuffer<DirectionalLightUniform>,
         ) {
             let mut cpass = ctx
                 .encoder

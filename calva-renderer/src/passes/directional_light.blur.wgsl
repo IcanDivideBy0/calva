@@ -55,32 +55,3 @@ fn fs_main_horizontal(in: VertexOutput) -> @builtin(frag_depth) f32 {
 fn fs_main_vertical(in: VertexOutput) -> @builtin(frag_depth) f32 {
     return blur(in.position, vec2<i32>(0, 1));
 }
-
-// @fragment
-// fn fs_main_horizontal(in: VertexOutput) -> @builtin(frag_depth) f32 {
-//     return textureLoad(t_input, vec2<i32>(in.position.xy), 0);
-// }
-
-// const TAU: f32 = 6.28318530718; // 2π
-
-// const DIRECTIONS: f32 = 6.0;   // More is better but slower
-// const QUALITY: f32 = 3.0;       // More is better but slower
-// const SIZE: f32 = 4.0;          // Radius
-
-// @fragment
-// fn fs_main_vertical(in: VertexOutput) -> @builtin(frag_depth) f32 {
-//     let t_dim = vec2<f32>(textureDimensions(t_input));
-//     let radius = SIZE / t_dim;
-
-//     var color = textureSample(t_input, t_sampler, in.uv);
-//     var acc = 1.0;
-//     for (var d = 0.0; d < TAU; d += TAU / DIRECTIONS) {
-//         for(var i = 1.0 / QUALITY; i <= 1.0; i += 1.0 / QUALITY) {
-//             color += textureSample(t_input, t_sampler, in.uv + vec2<f32>(cos(d), sin(d)) * radius * i);
-//             acc += 1.0;
-//         }
-//     }
-
-//     color /= acc;
-//     return color;
-// }

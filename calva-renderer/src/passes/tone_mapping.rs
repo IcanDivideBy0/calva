@@ -1,7 +1,7 @@
-use crate::RenderContext;
+use crate::{RenderContext, UniformBuffer};
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ToneMappingConfig {
     pub exposure: f32,
     pub gamma: f32,
@@ -22,6 +22,8 @@ pub struct ToneMappingPassInputs<'a> {
 }
 
 pub struct ToneMappingPass {
+    pub config: UniformBuffer<ToneMappingConfig>,
+
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
@@ -29,6 +31,8 @@ pub struct ToneMappingPass {
 
 impl ToneMappingPass {
     pub fn new(device: &wgpu::Device, inputs: ToneMappingPassInputs) -> Self {
+        let config = UniformBuffer::new(device, ToneMappingConfig::default());
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ToneMapping bind group layout"),
             entries: &[
@@ -52,11 +56,8 @@ impl ToneMappingPass {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ToneMapping pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::FRAGMENT,
-                range: 0..(std::mem::size_of::<ToneMappingConfig>() as _),
-            }],
+            bind_group_layouts: &[&config.bind_group_layout, &bind_group_layout],
+            push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -83,6 +84,8 @@ impl ToneMappingPass {
         });
 
         Self {
+            config,
+
             bind_group_layout,
             bind_group,
             pipeline,
@@ -93,16 +96,15 @@ impl ToneMappingPass {
         self.bind_group = Self::make_bind_group(device, &self.bind_group_layout, &input);
     }
 
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        config: &ToneMappingConfig,
-        output: &wgpu::TextureView,
-    ) {
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        self.config.update(queue);
+    }
+
+    pub fn render(&self, ctx: &mut RenderContext) {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ToneMapping"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: output,
+                view: ctx.frame,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -113,8 +115,8 @@ impl ToneMappingPass {
         });
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(config));
+        rpass.set_bind_group(0, &self.config.bind_group, &[]);
+        rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
     }

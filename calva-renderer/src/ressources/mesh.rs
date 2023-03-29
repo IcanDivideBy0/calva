@@ -164,7 +164,11 @@ impl MeshesManager {
         let vertex_count = (indices.len() / Self::INDEX_SIZE as usize) as u32;
         let base_index = self.base_index.fetch_add(vertex_count, Ordering::Relaxed);
 
-        queue.write_buffer(&self.indices, base_index as u64 * Self::INDEX_SIZE, indices);
+        queue.write_buffer(
+            &self.indices,
+            base_index as wgpu::BufferAddress * Self::INDEX_SIZE,
+            indices,
+        );
 
         let skin_offset = skin
             .map(|skin_index| skin_index.as_offset(vertex_offset))
@@ -173,7 +177,7 @@ impl MeshesManager {
         let mesh_index = self.mesh_index.fetch_add(1, Ordering::Relaxed);
         queue.write_buffer(
             &self.meshes_info,
-            mesh_index as u64 * MeshInfo::SIZE,
+            mesh_index as wgpu::BufferAddress * MeshInfo::SIZE,
             bytemuck::bytes_of(&MeshInfo {
                 vertex_count,
                 base_index,

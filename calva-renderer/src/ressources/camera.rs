@@ -1,8 +1,8 @@
-use wgpu::util::DeviceExt;
+use crate::{UniformBuffer, UniformData};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct Camera {
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuCamera {
     view: glam::Mat4,
     proj: glam::Mat4,
     view_proj: glam::Mat4,
@@ -11,9 +11,18 @@ struct Camera {
     frustum: [glam::Vec4; 6],
 }
 
-impl Camera {
-    fn new(view: glam::Mat4, proj: glam::Mat4) -> Self {
-        let view_proj = proj * view;
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
+pub struct Camera {
+    pub view: glam::Mat4,
+    pub proj: glam::Mat4,
+}
+
+impl UniformData for Camera {
+    type GpuType = GpuCamera;
+
+    fn as_gpu_type(&self) -> Self::GpuType {
+        let view_proj = self.proj * self.view;
 
         let frustum = {
             use glam::Vec4Swizzles;
@@ -35,78 +44,35 @@ impl Camera {
             ]
         };
 
-        Self {
-            view,
-            proj,
+        GpuCamera {
+            view: self.view,
+            proj: self.proj,
             view_proj,
-            inv_view: view.inverse(),
-            inv_proj: proj.inverse(),
+            inv_view: self.view.inverse(),
+            inv_proj: self.proj.inverse(),
             frustum,
         }
     }
 }
 
-pub struct CameraManager {
-    pub view: glam::Mat4,
-    pub proj: glam::Mat4,
-
-    buffer: wgpu::Buffer,
-    pub bind_group_layout: wgpu::BindGroupLayout,
-    pub bind_group: wgpu::BindGroup,
-}
+pub struct CameraManager(UniformBuffer<Camera>);
 
 impl CameraManager {
     pub fn new(device: &wgpu::Device) -> Self {
-        let view = glam::Mat4::default();
-        let proj = glam::Mat4::default();
-
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("CameraManager buffer"),
-            contents: bytemuck::bytes_of(&Camera::new(view, proj)),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("CameraManager bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::all(),
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Camera>() as _),
-                },
-                count: None,
-            }],
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("CameraManager bind group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-        });
-
-        Self {
-            view,
-            proj,
-
-            buffer,
-            bind_group_layout,
-            bind_group,
-        }
+        Self(UniformBuffer::new(device, Camera::default()))
     }
+}
 
-    pub fn update(&mut self, queue: &wgpu::Queue, view: glam::Mat4, proj: glam::Mat4) {
-        self.view = view;
-        self.proj = proj;
+impl std::ops::Deref for CameraManager {
+    type Target = UniformBuffer<Camera>;
 
-        queue.write_buffer(
-            &self.buffer,
-            0,
-            bytemuck::bytes_of(&Camera::new(self.view, self.proj)),
-        );
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for CameraManager {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
