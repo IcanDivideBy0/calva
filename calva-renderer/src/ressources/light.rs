@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::Ressource;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PointLightId(u32);
@@ -81,5 +83,11 @@ impl LightsManager {
         (0_u32..point_lights.len() as _)
             .map(|i| PointLightId(point_light_index + i))
             .collect()
+    }
+}
+
+impl Ressource for LightsManager {
+    fn instanciate(device: &wgpu::Device) -> Self {
+        Self::new(device)
     }
 }

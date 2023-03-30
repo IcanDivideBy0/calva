@@ -1,6 +1,6 @@
 use crate::{
-    AnimationState, AnimationsManager, CameraManager, InstancesManager, MaterialId,
-    MaterialsManager, MeshesManager, RenderContext, SkinsManager, TexturesManager,
+    AnimationState, AnimationsManager, CameraManager, MaterialId, MaterialsManager, MeshesManager,
+    RenderContext, RessourceRef, RessourcesManager, SkinsManager, TexturesManager,
 };
 
 #[repr(C)]
@@ -48,12 +48,19 @@ pub struct GeometryPassOutputs {
 pub struct GeometryPass {
     pub outputs: GeometryPassOutputs,
 
+    camera: RessourceRef<CameraManager>,
+    textures: RessourceRef<TexturesManager>,
+    materials: RessourceRef<MaterialsManager>,
+    meshes: RessourceRef<MeshesManager>,
+    skins: RessourceRef<SkinsManager>,
+    animations: RessourceRef<AnimationsManager>,
+
+    cull: GeometryCull,
+
     albedo_metallic_view: wgpu::TextureView,
     normal_roughness_view: wgpu::TextureView,
     emissive_view: wgpu::TextureView,
     depth_view: wgpu::TextureView,
-
-    cull: GeometryCull,
 
     pipeline: wgpu::RenderPipeline,
 }
@@ -70,34 +77,34 @@ impl GeometryPass {
     pub fn new(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
-
-        camera: &CameraManager,
-        textures: &TexturesManager,
-        materials: &MaterialsManager,
-        meshes: &MeshesManager,
-        skins: &SkinsManager,
-        animations: &AnimationsManager,
-        instances: &InstancesManager,
+        ressources: &RessourcesManager,
     ) -> Self {
         let outputs = Self::make_outputs(device, surface_config);
+
+        let camera = ressources.get::<CameraManager>();
+        let textures = ressources.get::<TexturesManager>();
+        let materials = ressources.get::<MaterialsManager>();
+        let meshes = ressources.get::<MeshesManager>();
+        let skins = ressources.get::<SkinsManager>();
+        let animations = ressources.get::<AnimationsManager>();
 
         let albedo_metallic_view = outputs.albedo_metallic.create_view(&Default::default());
         let normal_roughness_view = outputs.normal_roughness.create_view(&Default::default());
         let emissive_view = outputs.emissive.create_view(&Default::default());
         let depth_view = outputs.depth.create_view(&Default::default());
 
-        let cull = GeometryCull::new(device, camera, meshes, instances);
+        let cull = GeometryCull::new(device, ressources);
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("geometry.wgsl"));
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Geometry[render] pipeline layout"),
             bind_group_layouts: &[
-                &camera.bind_group_layout,
-                &textures.bind_group_layout,
-                &materials.bind_group_layout,
-                &skins.bind_group_layout,
-                &animations.bind_group_layout,
+                &camera.get().bind_group_layout,
+                &textures.get().bind_group_layout,
+                &materials.get().bind_group_layout,
+                &skins.get().bind_group_layout,
+                &animations.get().bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -175,6 +182,13 @@ impl GeometryPass {
         GeometryPass {
             outputs,
 
+            camera,
+            textures,
+            materials,
+            meshes,
+            skins,
+            animations,
+
             cull,
 
             albedo_metallic_view,
@@ -202,20 +216,17 @@ impl GeometryPass {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        camera: &CameraManager,
-        textures: &TexturesManager,
-        materials: &MaterialsManager,
-        meshes: &MeshesManager,
-        skins: &SkinsManager,
-        animations: &AnimationsManager,
-        instances: &InstancesManager,
-    ) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         ctx.encoder.profile_start("Geometry");
 
-        self.cull.cull(ctx, camera, meshes, instances);
+        self.cull.cull(ctx);
+
+        let camera = self.camera.get();
+        let textures = self.textures.get();
+        let materials = self.materials.get();
+        let skins = self.skins.get();
+        let animations = self.animations.get();
+        let meshes = self.meshes.get();
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),
@@ -340,11 +351,16 @@ use cull::*;
 mod cull {
     use crate::{
         CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, RenderContext,
+        RessourceRef, RessourcesManager,
     };
 
     use super::DrawInstance;
 
     pub struct GeometryCull {
+        camera: RessourceRef<CameraManager>,
+        meshes: RessourceRef<MeshesManager>,
+        instances: RessourceRef<InstancesManager>,
+
         pub(crate) draw_instances: wgpu::Buffer,
         pub(crate) draw_indirects: wgpu::Buffer,
 
@@ -357,12 +373,11 @@ mod cull {
     }
 
     impl GeometryCull {
-        pub fn new(
-            device: &wgpu::Device,
-            camera: &CameraManager,
-            meshes: &MeshesManager,
-            instances: &InstancesManager,
-        ) -> Self {
+        pub fn new(device: &wgpu::Device, ressources: &RessourcesManager) -> Self {
+            let camera = ressources.get::<CameraManager>();
+            let meshes = ressources.get::<MeshesManager>();
+            let instances = ressources.get::<InstancesManager>();
+
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Geometry[cull] draw instances"),
                 size: (std::mem::size_of::<[DrawInstance; InstancesManager::MAX_INSTANCES]>()) as _,
@@ -465,15 +480,15 @@ mod cull {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: meshes.meshes_info.as_entire_binding(),
+                        resource: meshes.get().meshes_info.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: instances.base_instances.as_entire_binding(),
+                        resource: instances.get().base_instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: instances.instances.as_entire_binding(),
+                        resource: instances.get().instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -490,7 +505,7 @@ mod cull {
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Geometry[cull] pipeline layout"),
-                bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
+                bind_group_layouts: &[&camera.get().bind_group_layout, &bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -516,6 +531,10 @@ mod cull {
             );
 
             Self {
+                camera,
+                meshes,
+                instances,
+
                 draw_instances,
                 draw_indirects,
 
@@ -524,13 +543,9 @@ mod cull {
             }
         }
 
-        pub fn cull(
-            &self,
-            ctx: &mut RenderContext,
-            camera: &CameraManager,
-            meshes: &MeshesManager,
-            instances: &InstancesManager,
-        ) {
+        pub fn cull(&self, ctx: &mut RenderContext) {
+            let camera = self.camera.get();
+
             let mut cpass = ctx
                 .encoder
                 .begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -539,11 +554,11 @@ mod cull {
 
             const WORKGROUP_SIZE: u32 = 32;
 
-            let meshes_count: u32 = meshes.count();
+            let meshes_count: u32 = self.meshes.get().count();
             let meshes_workgroups_count =
                 (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-            let instances_count: u32 = instances.count();
+            let instances_count: u32 = self.instances.get().count();
             let instances_workgroups_count =
                 (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 

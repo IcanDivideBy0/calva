@@ -61,7 +61,6 @@ impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
         });
 
         Self {
-            // phantom: Default::default(),
             cpu: value,
             gpu: value,
 
@@ -73,7 +72,7 @@ impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
 
     pub fn update(&mut self, queue: &wgpu::Queue) {
         if self.gpu != self.cpu {
-            self.gpu = self.cpu.into();
+            self.gpu = self.cpu;
             queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(&self.gpu.as_gpu_type()));
         }
     }

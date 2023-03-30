@@ -1,6 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::RwLock;
+
+use crate::Ressource;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -134,6 +136,12 @@ impl TexturesManager {
     }
 }
 
+impl Ressource for TexturesManager {
+    fn instanciate(device: &wgpu::Device) -> Self {
+        Self::new(device)
+    }
+}
+
 struct MipmapGenerator {
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -262,7 +270,7 @@ impl MipmapGenerator {
         texture: &wgpu::Texture,
         desc: &wgpu::TextureDescriptor,
     ) -> Result<()> {
-        let pipelines_read = self.pipelines.read().map_err(|err| anyhow!("{}", err))?;
+        let pipelines_read = self.pipelines.read();
 
         let pipeline = match pipelines_read.get(&desc.format) {
             Some(pipeline) => pipeline,
@@ -271,7 +279,6 @@ impl MipmapGenerator {
 
                 self.pipelines
                     .write()
-                    .map_err(|err| anyhow!("{}", err))?
                     .insert(desc.format, self.create_pipeline(device, desc.format));
 
                 return self.generate_mipmaps(device, queue, texture, desc);

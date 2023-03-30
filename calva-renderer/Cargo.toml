@@ -3,15 +3,30 @@ name = "calva-renderer"
 version = "0.1.0"
 edition = "2021"
 
+
 [features]
-default = []
+default = ["profiler", "egui", "winit", "egui-winit"]
 profiler = ["dep:wgpu-profiler"]
+egui = ["dep:egui", "dep:egui-wgpu"]
+egui-winit = ["dep:egui-winit"]
 
 [dependencies]
 anyhow = "1.0"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 glam = { version = "0.23", features = ["bytemuck"] }
 wgpu = "0.15"
-wgpu-profiler = { version = "0.11", optional = true }
+parking_lot = "0.12"
 raw-window-handle = "0.5"
 rand = "0.8"
+
+# Profiler
+wgpu-profiler = { version = "0.11", optional = true }
+
+# Egui
+egui = { version = "0.21", optional = true }
+egui-winit = { version = "0.21", optional = true }
+egui-wgpu = { version = "0.21", optional = true }
+
+# Winit
+winit = { version = "0.28", optional = true }
+

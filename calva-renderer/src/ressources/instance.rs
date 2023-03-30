@@ -1,4 +1,4 @@
-use crate::{AnimationId, AnimationState, MaterialId, MeshId, MeshesManager, RenderContext};
+use crate::{AnimationId, AnimationState, MaterialId, MeshId, MeshesManager, Ressource};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -29,9 +29,6 @@ pub struct InstancesManager {
 
     instances_data: Vec<Instance>,
     pub(crate) instances: wgpu::Buffer,
-
-    anim_bind_group: wgpu::BindGroup,
-    anim_pipeline: wgpu::ComputePipeline,
 }
 
 impl InstancesManager {
@@ -57,67 +54,12 @@ impl InstancesManager {
             mapped_at_creation: false,
         });
 
-        let (anim_bind_group, anim_pipeline) = {
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("InstancesManager[anim] bind group layout"),
-                    entries: &[
-                        // Cull instances
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                                has_dynamic_offset: false,
-                                min_binding_size: wgpu::BufferSize::new(
-                                    std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                        + Instance::SIZE,
-                                ),
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("InstancesManager[anim] bind group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: instances.as_entire_binding(),
-                }],
-            });
-
-            let shader = device.create_shader_module(wgpu::include_wgsl!("instance.anim.wgsl"));
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("InstancesManager[anim] pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[wgpu::PushConstantRange {
-                    stages: wgpu::ShaderStages::COMPUTE,
-                    range: 0..(std::mem::size_of::<f32>() as _),
-                }],
-            });
-
-            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("InstancesManager[anim] pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "main",
-            });
-
-            (bind_group, pipeline)
-        };
-
         Self {
             base_instances_data,
             base_instances,
 
             instances_data,
             instances,
-
-            anim_bind_group,
-            anim_pipeline,
         }
     }
 
@@ -157,20 +99,10 @@ impl InstancesManager {
     pub fn count(&self) -> u32 {
         self.instances_data.len() as _
     }
+}
 
-    pub fn anim(&self, ctx: &mut RenderContext, dt: &std::time::Duration) {
-        let mut cpass = ctx
-            .encoder
-            .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("InstancesManager[anim]"),
-            });
-
-        cpass.set_pipeline(&self.anim_pipeline);
-        cpass.set_bind_group(0, &self.anim_bind_group, &[]);
-        cpass.set_push_constants(0, bytemuck::bytes_of(&dt.as_secs_f32()));
-
-        const WORKGROUP_SIZE: usize = 256;
-        let workgroups_count = (self.count() as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
-        cpass.dispatch_workgroups(workgroups_count, 1, 1);
+impl Ressource for InstancesManager {
+    fn instanciate(device: &wgpu::Device) -> Self {
+        Self::new(device)
     }
 }

@@ -1,4 +1,4 @@
-use crate::{UniformBuffer, UniformData};
+use crate::{Ressource, UniformBuffer, UniformData};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -74,5 +74,11 @@ impl std::ops::Deref for CameraManager {
 impl std::ops::DerefMut for CameraManager {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl Ressource for CameraManager {
+    fn instanciate(device: &wgpu::Device) -> Self {
+        Self::new(device)
     }
 }

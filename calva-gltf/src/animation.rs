@@ -2,15 +2,6 @@ use gltf::animation::util::ReadOutputs;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
-macro_rules! secs {
-    () => {
-        Duration::from_secs_f32(0.0)
-    };
-    ($f: expr) => {
-        Duration::from_secs_f32($f)
-    };
-}
-
 trait Interpolate {
     fn interpolate(a: Self, b: Self, alpha: f32) -> Self;
 }
@@ -83,9 +74,9 @@ impl NodeSampler {
         let scale = glam::Vec3::from(scale);
 
         Self {
-            translations: ChannelSampler([(secs!(), translation)].into()),
-            rotations: ChannelSampler([(secs!(), rotation)].into()),
-            scales: ChannelSampler([(secs!(), scale)].into()),
+            translations: ChannelSampler([(Duration::default(), translation)].into()),
+            rotations: ChannelSampler([(Duration::default(), rotation)].into()),
+            scales: ChannelSampler([(Duration::default(), scale)].into()),
         }
     }
 
@@ -104,9 +95,10 @@ impl NodeSampler {
             self.scales.get_time_range(),
         ]
         .drain(..)
-        .fold((secs!(), secs!()), |acc, (start, end)| {
-            (acc.0.min(start), acc.1.max(end))
-        })
+        .fold(
+            (Duration::default(), Duration::default()),
+            |acc, (start, end)| (acc.0.min(start), acc.1.max(end)),
+        )
     }
 }
 
@@ -218,9 +210,10 @@ impl AnimationSampler {
         self.samplers
             .values()
             .map(NodeSampler::get_time_range)
-            .fold((secs!(), secs!()), |acc, (start, end)| {
-                (acc.0.min(start), acc.1.max(end))
-            })
+            .fold(
+                (Duration::default(), Duration::default()),
+                |acc, (start, end)| (acc.0.min(start), acc.1.max(end)),
+            )
     }
 }
 
@@ -234,27 +227,27 @@ mod tests {
         let sampler = NodeSampler {
             translations: ChannelSampler(
                 [
-                    (secs!(1.0), glam::Vec3::X * 10.0),
-                    (secs!(2.0), glam::Vec3::X * 20.0),
+                    (Duration::from_secs_f32(1.0), glam::Vec3::X * 10.0),
+                    (Duration::from_secs_f32(2.0), glam::Vec3::X * 20.0),
                 ]
                 .into(),
             ),
-            rotations: ChannelSampler([(secs!(), glam::Quat::IDENTITY)].into()),
-            scales: ChannelSampler([(secs!(), glam::Vec3::ONE)].into()),
+            rotations: ChannelSampler([(Duration::default(), glam::Quat::IDENTITY)].into()),
+            scales: ChannelSampler([(Duration::default(), glam::Vec3::ONE)].into()),
         };
 
         assert_eq!(
-            sampler.get_transform(&secs!(1.3)),
+            sampler.get_transform(&Duration::from_secs_f32(1.3)),
             glam::Mat4::from_translation(glam::Vec3::X * 13.0)
         );
 
         assert_eq!(
-            sampler.get_transform(&secs!()),
+            sampler.get_transform(&Duration::default()),
             glam::Mat4::from_translation(glam::Vec3::X * 10.0)
         );
 
         assert_eq!(
-            sampler.get_transform(&secs!(3.0)),
+            sampler.get_transform(&Duration::from_secs_f32(3.0)),
             glam::Mat4::from_translation(glam::Vec3::X * 20.0)
         );
     }

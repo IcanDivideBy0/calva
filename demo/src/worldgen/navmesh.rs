@@ -2,34 +2,148 @@ use calva::renderer::{
     wgpu::{self, util::DeviceExt},
     CameraManager, RenderContext,
 };
+use glam::Vec3Swizzles;
 
 use super::tile::Tile;
 
 pub struct NavMesh {
-    points: Vec<glam::Vec3>,
+    triangles: Vec<[glam::Vec3; 3]>,
 }
 
 impl NavMesh {
     pub fn new(tile: &Tile) -> Self {
-        let points = (0..Tile::TEXTURE_SIZE)
-            .flat_map(|y| {
-                (0..Tile::TEXTURE_SIZE).filter_map(move |x| {
-                    let height = tile.height_map[y][x];
+        let get_height = |x: i32, y: i32| {
+            let y = y.max(0).min(Tile::TEXTURE_SIZE as i32 - 1) as usize;
+            let x = x.max(0).min(Tile::TEXTURE_SIZE as i32 - 1) as usize;
 
-                    if height < 0.0 {
-                        None
-                    } else {
-                        Some(glam::vec3(
-                            (x as f32 + 0.5) * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0,
-                            height,
-                            (y as f32 + 0.5) * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0,
-                        ))
-                    }
-                })
+            tile.height_map[y][x]
+        };
+
+        let triangles = (0..Tile::TEXTURE_SIZE as i32)
+            .flat_map(|y| {
+                (0..Tile::TEXTURE_SIZE as i32)
+                    .filter_map(move |x| {
+                        const MAX_STEP: f32 = 0.5;
+
+                        let height = get_height(x, y);
+
+                        if height < 0.0 {
+                            return None;
+                        }
+
+                        let mut accept = 0;
+                        let r: i32 = 3;
+                        for yy in -r..=r {
+                            for xx in -r..=r {
+                                if (get_height(x + xx, y + yy) - height).abs() > MAX_STEP {
+                                    continue;
+                                }
+
+                                accept += 1;
+                            }
+                        }
+
+                        let threshold = (2 * r + 1) * (r + 1);
+                        if accept < threshold {
+                            return None;
+                        }
+
+                        let mut c = 0;
+                        for xx in -r..=r {
+                            let a = get_height(x + xx, y);
+                            let b = height; // get_height(x + xx - xx.signum(), y);
+                            if (a - b).abs() < MAX_STEP {
+                                c += 1;
+                            }
+                        }
+                        if c < 2 * r - 1 {
+                            return None;
+                        }
+
+                        let mut c = 0;
+                        for yy in -r..=r {
+                            let a = get_height(x, y + yy);
+                            let b = height; // get_height(x, y + yy - yy.signum());
+                            if (a - b).abs() < MAX_STEP {
+                                c += 1;
+                            }
+                        }
+                        if c < 2 * r - 1 {
+                            return None;
+                        }
+
+                        let mut tl = glam::vec2(x as f32, y as f32);
+                        let mut tr = tl + glam::Vec2::X;
+                        let mut bl = tl + glam::Vec2::Y;
+                        let mut br = bl + glam::Vec2::X;
+
+                        tl = tl * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
+                        tr = tr * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
+                        bl = bl * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
+                        br = br * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
+
+                        let tlh = height
+                            .max(get_height(x - 1, y - 1))
+                            .max(get_height(x, y - 1))
+                            .max(get_height(x - 1, y));
+                        let trh = height
+                            .max(get_height(x + 1, y - 1))
+                            .max(get_height(x, y - 1))
+                            .max(get_height(x + 1, y));
+                        let blh = height
+                            .max(get_height(x - 1, y + 1))
+                            .max(get_height(x, y + 1))
+                            .max(get_height(x - 1, y));
+                        let brh = height
+                            .max(get_height(x + 1, y + 1))
+                            .max(get_height(x, y + 1))
+                            .max(get_height(x + 1, y));
+
+                        let tlh = ((tlh - height).abs() < MAX_STEP).then_some(tlh);
+                        let trh = ((trh - height).abs() < MAX_STEP).then_some(trh);
+                        let blh = ((blh - height).abs() < MAX_STEP).then_some(blh);
+                        let brh = ((brh - height).abs() < MAX_STEP).then_some(brh);
+                        // let tlh = Some(tlh);
+                        // let trh = Some(trh);
+                        // let blh = Some(blh);
+                        // let brh = Some(brh);
+
+                        let tl = tlh.map(|tlh| tl.extend(tlh).xzy());
+                        let tr = trh.map(|trh| tr.extend(trh).xzy());
+                        let bl = blh.map(|blh| bl.extend(blh).xzy());
+                        let br = brh.map(|brh| br.extend(brh).xzy());
+
+                        let corners = [tl, tr, bl, br]
+                            .iter()
+                            .filter_map(|v| *v)
+                            .collect::<Vec<_>>();
+
+                        match corners.len() {
+                            4 => {
+                                let diag1 = corners[1] - corners[2];
+                                let diag2 = corners[3] - corners[0];
+
+                                if diag1.dot(glam::Vec3::Y).abs() > diag2.dot(glam::Vec3::Y).abs() {
+                                    Some(vec![
+                                        [corners[3], corners[1], corners[0]],
+                                        [corners[0], corners[2], corners[3]],
+                                    ])
+                                } else {
+                                    Some(vec![
+                                        [corners[1], corners[2], corners[3]],
+                                        [corners[2], corners[1], corners[0]],
+                                    ])
+                                }
+                            }
+                            3 => Some(vec![[corners[0], corners[1], corners[2]]]),
+                            _ => None,
+                        }
+                    })
+                    .flatten()
             })
             .collect::<Vec<_>>();
 
-        Self { points }
+        Self { triangles }
     }
 }
 
@@ -40,30 +154,12 @@ pub struct NavMeshDebugInput<'a> {
 pub struct NavMeshDebug {
     depth_view: wgpu::TextureView,
 
-    instances_count: u32,
-    instances: wgpu::Buffer,
     vertices: wgpu::Buffer,
-    indices: wgpu::Buffer,
+    vertices_count: u32,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl NavMeshDebug {
-    #[rustfmt::skip]
-    const POSITIONS: [glam::Vec3; 4] = [
-        glam::vec3(-1.0, 0.0, -1.0),
-        glam::vec3( 1.0, 0.0, -1.0),
-        glam::vec3( 1.0, 0.0,  1.0),
-        glam::vec3(-1.0, 0.0,  1.0),
-    ];
-
-    #[rustfmt::skip]
-    const INDICES: [u16; 6] = [
-        0, 1, 2,
-        2, 3, 0,
-    ];
-
-    const VERTICES_COUNT: u32 = Self::INDICES.len() as _;
-
     pub fn new(
         device: &wgpu::Device,
         camera: &CameraManager,
@@ -71,22 +167,13 @@ impl NavMeshDebug {
         format: wgpu::TextureFormat,
         input: NavMeshDebugInput,
     ) -> Self {
-        let instances = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("NavMeshDebug instances"),
-            contents: bytemuck::cast_slice(&navmesh.points),
+        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("NavMeshDebug vertices"),
+            contents: bytemuck::cast_slice(&navmesh.triangles),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("NavMeshDebug vertices"),
-            contents: bytemuck::cast_slice(&Self::POSITIONS),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("NavMeshDebug indices"),
-            contents: bytemuck::cast_slice(&Self::INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let vertices_count = navmesh.triangles.len() as u32 * 3;
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("NavMeshDebug pipeline layout"),
@@ -97,54 +184,43 @@ impl NavMeshDebug {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("NavMeshDebug shader"),
             source: wgpu::ShaderSource::Wgsl(
-                format!(
-                    r#"
-                        struct Camera {{
-                            view: mat4x4<f32>,
-                            proj: mat4x4<f32>,
-                            view_proj: mat4x4<f32>,
-                            inv_view: mat4x4<f32>,
-                            inv_proj: mat4x4<f32>,
-                            frustum: array<vec4<f32>, 6>,
-                        }}
-                        @group(0) @binding(0) var<uniform> camera: Camera;
+                r#"
+                    struct Camera {
+                        view: mat4x4<f32>,
+                        proj: mat4x4<f32>,
+                        view_proj: mat4x4<f32>,
+                        inv_view: mat4x4<f32>,
+                        inv_proj: mat4x4<f32>,
+                        frustum: array<vec4<f32>, 6>,
+                    }
+                    @group(0) @binding(0) var<uniform> camera: Camera;
 
-                        struct VertexInput {{
-                            @location(0) instance_position: vec3<f32>,
-                            @location(1) vertex_position: vec3<f32>
-                        }}
+                    struct VertexOutput {
+                        @builtin(position) position: vec4<f32>,
+                        @location(0) color: vec4<f32>,
+                    }
 
-                        struct VertexOutput {{
-                            @builtin(position) position: vec4<f32>,
-                            @location(0) color: vec4<f32>,
-                        }}
+                    @vertex
+                    fn vs_main(@location(0) pos: vec3<f32>) -> VertexOutput {
+                        var out: VertexOutput;
 
-                        @vertex
-                        fn vs_main(in: VertexInput) -> VertexOutput {{
-                            var out: VertexOutput;
+                        out.position = camera.view_proj * vec4<f32>(pos, 1.0);
 
-                            out.position = camera.view_proj * vec4<f32>(
-                                {scale:.8} * in.vertex_position + in.instance_position,
-                                1.0,
-                            );
+                        out.color = vec4<f32>(
+                            (pos.x / 15.0) * 0.5 + 0.5,
+                            (pos.z / 15.0) * 0.5 + 0.5,
+                            0.0,
+                            0.3,
+                        );
 
-                            out.color = vec4<f32>(
-                                (in.instance_position.x / 15.0) * 0.5 + 0.5,
-                                (in.instance_position.z / 15.0) * 0.5 + 0.5,
-                                0.0,
-                                1.0,
-                            );
+                        return out;
+                    }
 
-                            return out;
-                        }}
-
-                        @fragment
-                        fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {{
-                            return in.color;
-                        }}
-                    "#,
-                    scale = Tile::PIXEL_SIZE / 2.0 / 2.0
-                )
+                    @fragment
+                    fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+                        return in.color;
+                    }
+                "#
                 .into(),
             ),
         });
@@ -156,29 +232,26 @@ impl NavMeshDebug {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 3]>() as _,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 3]>() as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![1 => Float32x3],
-                    },
-                ],
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 3]>() as _,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                }],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: None,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: Default::default(),
+            primitive: wgpu::PrimitiveState {
+                polygon_mode: wgpu::PolygonMode::Line,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: input.depth.format(),
                 depth_write_enabled: false,
@@ -195,10 +268,8 @@ impl NavMeshDebug {
         Self {
             depth_view: input.depth.create_view(&Default::default()),
 
-            instances_count: navmesh.points.len() as _,
-            instances,
             vertices,
-            indices,
+            vertices_count,
             pipeline,
         }
     }
@@ -211,7 +282,7 @@ impl NavMeshDebug {
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("NavMeshDebug"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &ctx.frame,
+                view: ctx.frame,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -228,10 +299,8 @@ impl NavMeshDebug {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &camera.bind_group, &[]);
 
-        rpass.set_vertex_buffer(0, self.instances.slice(..));
-        rpass.set_vertex_buffer(1, self.vertices.slice(..));
-        rpass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
+        rpass.set_vertex_buffer(0, self.vertices.slice(..));
 
-        rpass.draw_indexed(0..Self::VERTICES_COUNT, 0, 0..self.instances_count);
+        rpass.draw(0..self.vertices_count, 0..1);
     }
 }

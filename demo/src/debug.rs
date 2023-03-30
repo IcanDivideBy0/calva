@@ -1,4 +1,4 @@
-use calva::renderer::{
+use calva::{
     wgpu::{self, util::DeviceExt},
     RenderContext, Renderer,
 };
@@ -55,7 +55,7 @@ impl DebugShape {
                 (vertices, indices, INDICES.len() as _)
             }
             Self::Sphere => {
-                let icosphere = calva::renderer::util::icosphere::Icosphere::new(2);
+                let icosphere = calva::util::icosphere::Icosphere::new(2);
 
                 let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Debug[Sphere] vertices"),

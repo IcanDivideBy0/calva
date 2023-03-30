@@ -2,15 +2,16 @@
 
 pub use wgpu;
 
+#[cfg(feature = "egui")]
+pub use egui;
+
 mod engine;
-mod graph;
 mod passes;
 mod renderer;
 mod ressources;
 mod uniform_buffer;
 
 pub use engine::*;
-pub use graph::*;
 pub use passes::*;
 pub use renderer::*;
 pub use ressources::*;

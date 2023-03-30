@@ -1,5 +1,7 @@
 use wgpu::util::DeviceExt;
 
+use crate::Ressource;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct AnimationId(u32);
@@ -166,5 +168,11 @@ impl AnimationsManager {
                 },
             ],
         })
+    }
+}
+
+impl Ressource for AnimationsManager {
+    fn instanciate(device: &wgpu::Device) -> Self {
+        Self::new(device)
     }
 }

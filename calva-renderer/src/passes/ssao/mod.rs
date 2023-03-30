@@ -1,4 +1,4 @@
-use crate::{CameraManager, RenderContext, UniformBuffer};
+use crate::{CameraManager, RenderContext, RessourceRef, RessourcesManager, UniformBuffer};
 
 mod blit;
 mod blur;
@@ -18,6 +18,20 @@ impl Default for SsaoConfig {
             bias: 0.025,
             power: 1.0,
         }
+    }
+}
+
+#[cfg(feature = "egui")]
+impl egui::Widget for &mut SsaoConfig {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        egui::CollapsingHeader::new("SSAO")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.add(egui::Slider::new(&mut self.radius, 0.0..=4.0).text("Radius"));
+                ui.add(egui::Slider::new(&mut self.bias, 0.0..=0.1).text("Bias"));
+                ui.add(egui::Slider::new(&mut self.power, 0.0..=8.0).text("Power"));
+            })
+            .header_response
     }
 }
 
@@ -81,6 +95,8 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
     pub config: UniformBuffer<SsaoConfig>,
     random: UniformBuffer<SsaoRandom>,
 
+    camera: RessourceRef<CameraManager>,
+
     output_view: wgpu::TextureView,
 
     sampler: wgpu::Sampler,
@@ -93,9 +109,15 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 }
 
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
-    pub fn new(device: &wgpu::Device, camera: &CameraManager, inputs: SsaoPassInputs) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        ressources: &RessourcesManager,
+        inputs: SsaoPassInputs,
+    ) -> Self {
         let config = UniformBuffer::new(device, SsaoConfig::default());
         let random = UniformBuffer::new(device, SsaoRandom::new());
+
+        let camera = ressources.get::<CameraManager>();
 
         let output = Self::make_texture(device, Some("Ssao output"));
         let output_view = output.create_view(&Default::default());
@@ -149,7 +171,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Ssao pipeline layout"),
             bind_group_layouts: &[
-                &camera.bind_group_layout,
+                &camera.get().bind_group_layout,
                 &config.bind_group_layout,
                 &random.bind_group_layout,
                 &bind_group_layout,
@@ -189,6 +211,8 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             config,
             random,
 
+            camera,
+
             sampler,
 
             bind_group_layout,
@@ -212,8 +236,10 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         self.config.update(queue);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         ctx.encoder.profile_start("Ssao");
+
+        let camera = self.camera.get();
 
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ssao[render]"),

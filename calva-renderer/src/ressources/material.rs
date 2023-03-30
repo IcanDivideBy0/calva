@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use super::TextureId;
+use crate::{Ressource, TextureId};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -74,5 +74,11 @@ impl MaterialsManager {
         queue.write_buffer(&self.buffer, offset, bytemuck::bytes_of(&material));
 
         MaterialId(index)
+    }
+}
+
+impl Ressource for MaterialsManager {
+    fn instanciate(device: &wgpu::Device) -> Self {
+        Self::new(device)
     }
 }

@@ -17,6 +17,23 @@ impl Default for AmbientLightConfig {
     }
 }
 
+#[cfg(feature = "egui")]
+impl egui::Widget for &mut AmbientLightConfig {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        egui::CollapsingHeader::new("Ambient light")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    egui::color_picker::color_edit_button_rgb(ui, &mut self.color);
+                    ui.add(egui::Label::new(egui::WidgetText::from("Color")).wrap(false));
+                });
+
+                ui.add(egui::Slider::new(&mut self.strength, 0.0..=1.0).text("Strength"));
+            })
+            .header_response
+    }
+}
+
 pub struct AmbientLightPassInputs<'a> {
     pub albedo: &'a wgpu::Texture,
     pub emissive: &'a wgpu::Texture,

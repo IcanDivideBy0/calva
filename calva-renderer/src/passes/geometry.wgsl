@@ -22,7 +22,6 @@ struct Material {
 @group(3) @binding(0) var<storage, read> skinning_joints: array<u32>;
 @group(3) @binding(1) var<storage, read> skinning_weights: array<vec4<f32>>;
 
-// TODO: should it be a texture_storage_2d_array?
 @group(4) @binding(0) var animations: binding_array<texture_2d_array<f32>>;
 @group(4) @binding(1) var animations_sampler: sampler;
 
@@ -64,13 +63,13 @@ fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
     return mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
 }
 
+const ANIMATIONS_SAMPLES_PER_SEC: f32 = 15.0;
 fn get_joint_matrix(animation_id: u32, time: f32, joint_index: u32) -> mat4x4<f32> {
     let texture = animations[animation_id];
     let dim = textureDimensions(texture);
 
     let pixel_size = 1.0 / vec2<f32>(f32(dim.x), f32(dim.y));
 
-    let ANIMATIONS_SAMPLES_PER_SEC = 15.0;
     let frame = time * ANIMATIONS_SAMPLES_PER_SEC;
     let uv = (vec2<f32>(f32(joint_index), frame) + 0.5) * pixel_size;
 
@@ -230,9 +229,7 @@ fn get_normal(in: VertexOutput, material: Material) -> vec3<f32> {
 }
 
 @fragment
-fn fs_main(
-    in: VertexOutput
-) -> FragmentOutput {
+fn fs_main(in: VertexOutput) -> FragmentOutput {
     let material = materials[in.material_id];
 
     let albedo = textureSample(textures[material.albedo], textures_sampler, in.uv);

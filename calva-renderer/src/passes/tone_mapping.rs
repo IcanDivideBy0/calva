@@ -7,6 +7,19 @@ pub struct ToneMappingConfig {
     pub gamma: f32,
 }
 
+#[cfg(feature = "egui")]
+impl egui::Widget for &mut ToneMappingConfig {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        egui::CollapsingHeader::new("Tone mapping")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.add(egui::Slider::new(&mut self.exposure, -10.0..=10.0).text("Exposure"));
+                ui.add(egui::Slider::new(&mut self.gamma, 0.0..=5.0).text("Gamma"));
+            })
+            .header_response
+    }
+}
+
 impl Default for ToneMappingConfig {
     fn default() -> Self {
         Self {

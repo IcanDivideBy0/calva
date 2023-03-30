@@ -5,10 +5,10 @@ edition = "2018"
 
 [features]
 default = ["egui", "winit", "gltf", "profiler"]
-winit = ["egui?/winit"]
-profiler = ["renderer/profiler", "egui?/profiler"]
+winit = ["renderer/winit"]
+profiler = ["renderer/profiler"]
+egui = ["renderer/egui"]
 
 [dependencies]
-egui = { package = "calva-egui", path = "../calva-egui", optional = true }
 gltf = { package = "calva-gltf", path = "../calva-gltf", optional = true }
 renderer = { package = "calva-renderer", path = "../calva-renderer" }

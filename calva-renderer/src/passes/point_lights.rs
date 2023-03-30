@@ -1,6 +1,9 @@
 use wgpu::util::DeviceExt;
 
-use crate::{util::icosphere::Icosphere, CameraManager, LightsManager, PointLight, RenderContext};
+use crate::{
+    util::icosphere::Icosphere, CameraManager, LightsManager, PointLight, RenderContext,
+    RessourceRef, RessourcesManager,
+};
 
 pub struct PointLightsPassInputs<'a> {
     pub albedo_metallic: &'a wgpu::Texture,
@@ -10,6 +13,9 @@ pub struct PointLightsPassInputs<'a> {
 }
 
 pub struct PointLightsPass {
+    camera: RessourceRef<CameraManager>,
+    lights: RessourceRef<LightsManager>,
+
     vertex_count: u32,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -27,9 +33,12 @@ pub struct PointLightsPass {
 impl PointLightsPass {
     pub fn new(
         device: &wgpu::Device,
-        camera: &CameraManager,
+        ressources: &RessourcesManager,
         inputs: PointLightsPassInputs,
     ) -> Self {
+        let camera = ressources.get::<CameraManager>();
+        let lights = ressources.get::<LightsManager>();
+
         let icosphere = Icosphere::new(1);
 
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -68,7 +77,7 @@ impl PointLightsPass {
         let stencil_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights[stencil] pipeline layout"),
-                bind_group_layouts: &[&camera.bind_group_layout],
+                bind_group_layouts: &[&camera.get().bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -173,7 +182,7 @@ impl PointLightsPass {
         let lighting_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights[lighting] pipeline layout"),
-                bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
+                bind_group_layouts: &[&camera.get().bind_group_layout, &bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -234,6 +243,9 @@ impl PointLightsPass {
         };
 
         Self {
+            camera,
+            lights,
+
             vertex_count: icosphere.count,
             vertices,
             indices,
@@ -257,8 +269,11 @@ impl PointLightsPass {
         self.depth_view = inputs.depth.create_view(&Default::default());
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager, lights: &LightsManager) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         ctx.encoder.profile_start("PointLights");
+
+        let camera = self.camera.get();
+        let lights = self.lights.get();
 
         let mut stencil_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PointLights[stencil]"),

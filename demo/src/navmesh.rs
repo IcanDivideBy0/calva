@@ -2,7 +2,7 @@
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct Triangle(glam::Vec3, glam::Vec3, glam::Vec3);
 
-use calva::renderer::{
+use calva::{
     wgpu::{self, util::DeviceExt},
     RenderContext,
 };

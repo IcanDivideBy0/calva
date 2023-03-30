@@ -30,13 +30,13 @@ struct VertexInput {
     @location(10) position: vec3<f32>,
 }
 
+const ANIMATIONS_SAMPLES_PER_SEC: f32 = 15.0;
 fn get_joint_matrix(animation_id: u32, time: f32, joint_index: u32) -> mat4x4<f32> {
     let texture = animations[animation_id];
     let dim = textureDimensions(texture);
 
     let pixel_size = 1.0 / vec2<f32>(f32(dim.x), f32(dim.y));
 
-    let ANIMATIONS_SAMPLES_PER_SEC = 15.0;
     let frame = time * ANIMATIONS_SAMPLES_PER_SEC;
     let uv = (vec2<f32>(f32(joint_index), frame) + 0.5) * pixel_size;
 

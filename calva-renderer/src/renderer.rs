@@ -1,37 +1,35 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 #[cfg(feature = "profiler")]
 use wgpu_profiler::{GpuProfiler, GpuTimerScopeResult};
 
-pub struct RendererConfig {
-    present_mode: wgpu::PresentMode,
-    width: u32,
-    height: u32,
-}
-
 pub struct Renderer {
-    pub adapter: wgpu::Adapter,
-    pub adapter_info: wgpu::AdapterInfo,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
     pub surface: wgpu::Surface,
     pub surface_config: wgpu::SurfaceConfiguration,
 
+    pub adapter: wgpu::Adapter,
+    pub adapter_info: wgpu::AdapterInfo,
+
+    pub device: Arc<wgpu::Device>,
+    pub queue: wgpu::Queue,
+
     #[cfg(feature = "profiler")]
-    profiler: std::cell::RefCell<RendererProfiler>,
+    pub profiler: std::cell::RefCell<RendererProfiler>,
 }
 
 impl Renderer {
     const FEATURES: wgpu::Features = wgpu::Features::empty()
         .union(wgpu::Features::DEPTH_CLIP_CONTROL) // all platforms
-        .union(wgpu::Features::TEXTURE_BINDING_ARRAY) // Vulkan, DX12, metal
-        .union(wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY) // Vulkan, metal
-        .union(wgpu::Features::MULTI_DRAW_INDIRECT) // Vulkan, DX12, metal
+        .union(wgpu::Features::MULTI_DRAW_INDIRECT) // Vulkan, DX12, Metal
         .union(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) // Vulkan, DX12
-        .union(wgpu::Features::INDIRECT_FIRST_INSTANCE) // Vulkan, DX12, metal
-        .union(wgpu::Features::PUSH_CONSTANTS) // All except WebGL (DX11 & OpenGL emulated w/ uniforms)
-        .union(wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING) // Vulkan, DX12, metal
+        .union(wgpu::Features::INDIRECT_FIRST_INSTANCE) // Vulkan, DX12, Metal
+        .union(wgpu::Features::TEXTURE_BINDING_ARRAY) // Vulkan, DX12, Metal
+        .union(wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY) // Vulkan, Metal
+        .union(wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING) // Vulkan, DX12, Metal
         .union(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) // All except WebGL
+        .union(wgpu::Features::POLYGON_MODE_LINE) // Vulkan, DX12, Metal
         .union(
             #[cfg(feature = "profiler")]
             GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
@@ -97,7 +95,7 @@ impl Renderer {
         Ok(Self {
             adapter,
             adapter_info,
-            device,
+            device: Arc::new(device),
             queue,
             surface,
             surface_config,
@@ -107,39 +105,17 @@ impl Renderer {
         })
     }
 
-    pub fn update(&mut self, config: &RendererConfig) {
-        let mut dirty = false;
+    // pub fn size(&self) -> (u32, u32) {
+    //     (self.surface_config.width, self.surface_config.height)
+    // }
 
-        if config.present_mode != self.surface_config.present_mode {
-            self.surface_config.present_mode = config.present_mode;
-
-            dirty = true;
-        }
-
-        let new_size = (config.width, config.height);
-        if new_size != (self.surface_config.width, self.surface_config.height) {
-            self.surface_config.width = config.width;
-            self.surface_config.height = config.height;
-
-            dirty = true;
-        }
-
-        if dirty {
-            self.surface.configure(&self.device, &self.surface_config);
-        }
-    }
-
-    pub fn size(&self) -> (u32, u32) {
-        (self.surface_config.width, self.surface_config.height)
-    }
-
-    pub fn resize(&mut self, size: (u32, u32)) {
-        if size == self.size() {
+    pub fn resize(&mut self, (width, height): (u32, u32)) {
+        if (width, height) == (self.surface_config.width, self.surface_config.height) {
             return;
         }
 
-        self.surface_config.width = size.0;
-        self.surface_config.height = size.1;
+        self.surface_config.width = width;
+        self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
     }
 
@@ -191,10 +167,35 @@ impl Renderer {
 
         Ok(())
     }
+}
 
-    #[cfg(feature = "profiler")]
-    pub fn profiler_results(&self) -> impl std::ops::Deref<Target = Vec<ProfilerResult>> + '_ {
-        std::cell::Ref::map(self.profiler.borrow(), |p| &p.results)
+#[cfg(feature = "egui")]
+impl egui::Widget for &Renderer {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        egui::CollapsingHeader::new("Adapter")
+            .default_open(true)
+            .show(ui, |ui| {
+                let wgpu::AdapterInfo {
+                    name,
+                    driver,
+                    driver_info,
+                    ..
+                } = &self.adapter_info;
+
+                egui::Grid::new("EguiPass::AdapterInfo")
+                    .num_columns(2)
+                    .spacing([40.0, 0.0])
+                    .show(ui, |ui| {
+                        ui.label("Device");
+                        ui.label(name);
+
+                        ui.end_row();
+
+                        ui.label("Driver");
+                        ui.label(format!("{driver} ({driver_info})"));
+                    });
+            })
+            .header_response
     }
 }
 
@@ -204,11 +205,50 @@ pub struct RenderContext<'a> {
 }
 
 #[cfg(feature = "profiler")]
-pub type ProfilerResult = GpuTimerScopeResult;
-#[cfg(feature = "profiler")]
-struct RendererProfiler {
+pub struct RendererProfiler {
     inner: GpuProfiler,
-    pub results: Vec<ProfilerResult>,
+    results: Vec<GpuTimerScopeResult>,
+}
+
+#[cfg(all(feature = "profiler", feature = "egui"))]
+impl egui::Widget for &RendererProfiler {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        fn profiler_ui(results: &[GpuTimerScopeResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
+            move |ui| {
+                let frame = egui::Frame {
+                    inner_margin: egui::style::Margin {
+                        left: 10.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+
+                for result in results {
+                    ui.vertical(|ui| {
+                        ui.columns(2, |columns| {
+                            columns[0].label(&result.label);
+                            columns[1].with_layout(
+                                egui::Layout::right_to_left(egui::Align::TOP),
+                                |ui| {
+                                    let time =
+                                        (result.time.end - result.time.start) * 1000.0 * 1000.0;
+                                    let time_str = format!("{time:.3}");
+                                    ui.monospace(format!("{time_str} µs"));
+                                },
+                            )
+                        });
+
+                        frame.show(ui, profiler_ui(&result.nested_scopes));
+                    });
+                }
+            }
+        }
+
+        egui::CollapsingHeader::new("Profiler")
+            .default_open(true)
+            .show(ui, profiler_ui(&self.results))
+            .header_response
+    }
 }
 
 pub struct ProfilerCommandEncoder<'a> {

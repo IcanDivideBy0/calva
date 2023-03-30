@@ -1,4 +1,4 @@
-use calva::renderer::{
+use calva::{
     wgpu::{self, util::DeviceExt},
     CameraManager, RenderContext, Renderer,
 };

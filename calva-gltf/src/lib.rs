@@ -2,12 +2,14 @@
 
 use anyhow::{anyhow, Result};
 use renderer::{
-    wgpu, AnimationId, AnimationsManager, Engine, Instance, Material, MaterialId, MeshId,
-    PointLight, Renderer, TextureId,
+    wgpu, AnimationId, AnimationsManager, Engine, Instance, Material, MaterialId, MaterialsManager,
+    MeshId, MeshesManager, PointLight, Renderer, SkinsManager, TextureId, TexturesManager,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::Read;
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    io::Read,
+    time::Duration,
+};
 
 mod animation;
 use animation::*;
@@ -147,16 +149,16 @@ impl GltfModel {
                     size,
                 );
 
-                engine.ressources.textures.generate_mipmaps(
-                    &renderer.device,
-                    &renderer.queue,
-                    &texture,
-                    &desc,
-                )?;
+                engine
+                    .ressources
+                    .get::<TexturesManager>()
+                    .get()
+                    .generate_mipmaps(&renderer.device, &renderer.queue, &texture, &desc)?;
 
                 Ok(engine
                     .ressources
-                    .textures
+                    .get::<TexturesManager>()
+                    .get_mut()
                     .add(&renderer.device, texture.create_view(&Default::default())))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -201,7 +203,7 @@ impl GltfModel {
                     .and_then(|t| textures.get(t.texture().index()).copied())
                     .unwrap_or_default();
 
-                Ok(engine.ressources.materials.add(
+                Ok(engine.ressources.get::<MaterialsManager>().get().add(
                     &renderer.queue,
                     Material {
                         albedo,
@@ -285,13 +287,14 @@ impl GltfModel {
                             get_data(&gltf::Semantic::Weights(0)),
                         )
                         .map(|(joints, weights)| {
-                            engine
-                                .ressources
-                                .skins
-                                .add(&renderer.queue, joints, weights)
+                            engine.ressources.get::<SkinsManager>().get_mut().add(
+                                &renderer.queue,
+                                joints,
+                                weights,
+                            )
                         });
 
-                        let mesh = engine.ressources.meshes.add(
+                        let mesh = engine.ressources.get::<MeshesManager>().get().add(
                             &renderer.queue,
                             bounding_sphere,
                             get_data_res(&gltf::Semantic::Positions)?,
@@ -395,10 +398,11 @@ impl GltfModel {
                         time += Duration::from_secs_f32(1.0 / AnimationsManager::SAMPLES_PER_SEC);
                     }
 
-                    engine
-                        .ressources
-                        .animations
-                        .add(&renderer.device, &renderer.queue, animation)
+                    engine.ressources.get::<AnimationsManager>().get_mut().add(
+                        &renderer.device,
+                        &renderer.queue,
+                        animation,
+                    )
                 });
 
                 doc.animations()

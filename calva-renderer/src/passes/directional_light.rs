@@ -1,6 +1,7 @@
 use crate::{
-    AnimationState, AnimationsManager, Camera, CameraManager, DirectionalLight, InstancesManager,
-    MaterialId, MeshesManager, RenderContext, SkinsManager, UniformBuffer, UniformData,
+    AnimationState, AnimationsManager, Camera, CameraManager, DirectionalLight, MaterialId,
+    MeshesManager, RenderContext, RessourceRef, RessourcesManager, SkinsManager, UniformBuffer,
+    UniformData,
 };
 
 #[repr(C)]
@@ -45,6 +46,11 @@ pub struct DirectionalLightPassInputs<'a> {
 pub struct DirectionalLightPass {
     pub uniform: UniformBuffer<DirectionalLightUniform>,
 
+    camera: RessourceRef<CameraManager>,
+    meshes: RessourceRef<MeshesManager>,
+    skins: RessourceRef<SkinsManager>,
+    animations: RessourceRef<AnimationsManager>,
+
     output_view: wgpu::TextureView,
     cull: DirectionalLightCull,
 
@@ -70,16 +76,17 @@ impl DirectionalLightPass {
 
     pub fn new(
         device: &wgpu::Device,
-        camera: &CameraManager,
-        meshes: &MeshesManager,
-        skins: &SkinsManager,
-        animations: &AnimationsManager,
-        instances: &InstancesManager,
+        ressources: &RessourcesManager,
         inputs: DirectionalLightPassInputs,
     ) -> Self {
         let uniform = UniformBuffer::new(device, DirectionalLightUniform::default());
 
-        let cull = DirectionalLightCull::new(device, camera, meshes, instances, &uniform);
+        let camera = ressources.get::<CameraManager>();
+        let meshes = ressources.get::<MeshesManager>();
+        let skins = ressources.get::<SkinsManager>();
+        let animations = ressources.get::<AnimationsManager>();
+
+        let cull = DirectionalLightCull::new(device, ressources, &uniform);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("DirectionalLight sampler"),
@@ -101,8 +108,8 @@ impl DirectionalLightPass {
                 label: Some("DirectionalLight[depth] render pipeline layout"),
                 bind_group_layouts: &[
                     &uniform.bind_group_layout,
-                    &skins.bind_group_layout,
-                    &animations.bind_group_layout,
+                    &skins.get().bind_group_layout,
+                    &animations.get().bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -215,7 +222,7 @@ impl DirectionalLightPass {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[lighting] pipeline layout"),
                 bind_group_layouts: &[
-                    &camera.bind_group_layout,
+                    &camera.get().bind_group_layout,
                     &uniform.bind_group_layout,
                     &bind_group_layout,
                 ],
@@ -257,6 +264,12 @@ impl DirectionalLightPass {
 
         Self {
             uniform,
+
+            camera,
+            meshes,
+            skins,
+            animations,
+
             cull,
 
             output_view,
@@ -284,25 +297,21 @@ impl DirectionalLightPass {
         self.output_view = inputs.output.create_view(&Default::default());
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue, camera: &CameraManager) {
-        self.uniform.camera = ***camera;
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        self.uniform.camera = ***self.camera.get();
         self.uniform.update(queue);
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        camera: &CameraManager,
-        meshes: &MeshesManager,
-        skins: &SkinsManager,
-        animations: &AnimationsManager,
-        instances: &InstancesManager,
-    ) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         ctx.encoder.profile_start("DirectionalLight");
 
-        self.cull
-            .cull(ctx, camera, meshes, instances, &self.uniform);
+        let camera = self.camera.get();
+        let meshes = self.meshes.get();
+        let skins = self.skins.get();
+        let animations = self.animations.get();
+
+        self.cull.cull(ctx, &self.uniform);
 
         let mut depth_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("DirectionalLight[depth]"),
@@ -474,11 +483,11 @@ impl UniformData for DirectionalLightUniform {
         center = (light_view * self.camera.view.inverse() * center.extend(1.0)).truncate();
 
         // Avoid shadow swimming:
-        // Prevent small radius changes due to float precision
+        // 1. prevent small radius changes due to float precision
         radius = (radius * 16.0).ceil() / 16.0;
-        // Shadow texel size in light view space
+        // 2. shadow texel size in light view space
         let texel_size = radius * 2.0 / DirectionalLightPass::SIZE as f32;
-        // Allow center changes only in texel size increments
+        // 3. allow center changes only in texel size increments
         center = (center / texel_size).ceil() * texel_size;
 
         let min = center - glam::Vec3::splat(radius);
@@ -506,12 +515,16 @@ use cull::*;
 mod cull {
     use crate::{
         CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, RenderContext,
-        UniformBuffer,
+        RessourceRef, RessourcesManager, UniformBuffer,
     };
 
     use super::{DirectionalLightUniform, DrawInstance};
 
     pub struct DirectionalLightCull {
+        camera: RessourceRef<CameraManager>,
+        meshes: RessourceRef<MeshesManager>,
+        instances: RessourceRef<InstancesManager>,
+
         pub(crate) draw_instances: wgpu::Buffer,
         pub(crate) draw_indirects: wgpu::Buffer,
 
@@ -526,11 +539,13 @@ mod cull {
     impl DirectionalLightCull {
         pub fn new(
             device: &wgpu::Device,
-            camera: &CameraManager,
-            meshes: &MeshesManager,
-            instances: &InstancesManager,
+            ressources: &RessourcesManager,
             uniform: &UniformBuffer<DirectionalLightUniform>,
         ) -> Self {
+            let camera = ressources.get::<CameraManager>();
+            let meshes = ressources.get::<MeshesManager>();
+            let instances = ressources.get::<InstancesManager>();
+
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("DirectionalLight[cull] draw instances"),
                 size: (std::mem::size_of::<[DrawInstance; InstancesManager::MAX_INSTANCES]>()) as _,
@@ -633,15 +648,15 @@ mod cull {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: meshes.meshes_info.as_entire_binding(),
+                        resource: meshes.get().meshes_info.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: instances.base_instances.as_entire_binding(),
+                        resource: instances.get().base_instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: instances.instances.as_entire_binding(),
+                        resource: instances.get().instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -660,7 +675,7 @@ mod cull {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[cull] pipeline layout"),
                 bind_group_layouts: &[
-                    &camera.bind_group_layout,
+                    &camera.get().bind_group_layout,
                     &uniform.bind_group_layout,
                     &bind_group_layout,
                 ],
@@ -689,6 +704,10 @@ mod cull {
             );
 
             Self {
+                camera,
+                meshes,
+                instances,
+
                 draw_instances,
                 draw_indirects,
 
@@ -700,11 +719,10 @@ mod cull {
         pub fn cull(
             &self,
             ctx: &mut RenderContext,
-            camera: &CameraManager,
-            meshes: &MeshesManager,
-            instances: &InstancesManager,
             uniform: &UniformBuffer<DirectionalLightUniform>,
         ) {
+            let camera = self.camera.get();
+
             let mut cpass = ctx
                 .encoder
                 .begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -713,11 +731,11 @@ mod cull {
 
             const WORKGROUP_SIZE: u32 = 32;
 
-            let meshes_count: u32 = meshes.count();
+            let meshes_count: u32 = self.meshes.get().count();
             let meshes_workgroups_count =
                 (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-            let instances_count: u32 = instances.count();
+            let instances_count: u32 = self.instances.get().count();
             let instances_workgroups_count =
                 (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 

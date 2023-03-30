@@ -2,9 +2,12 @@
 
 use anyhow::Result;
 use calva::{
-    egui::{egui, EguiPass, EguiWinitPass},
     gltf::GltfModel,
-    renderer::{Engine, Renderer},
+    renderer::{
+        egui::{self},
+        CameraManager, EguiWinitPass, Engine, InstancesManager, LightsManager, Renderer,
+        SkyboxManager,
+    },
 };
 use std::time::Instant;
 use winit::{
@@ -14,8 +17,8 @@ use winit::{
 };
 
 mod camera;
-// mod navmesh;
 mod worldgen;
+// mod navmesh;
 // mod fog;
 
 #[async_std::main]
@@ -24,7 +27,7 @@ async fn main() -> Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop)?;
 
-    let mut camera = camera::MyCamera::new(window.inner_size().into());
+    let mut camera = camera::MyCamera::new(window.inner_size());
     camera.controller.transform = glam::Mat4::look_at_rh(
         glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
         glam::Vec3::Y - glam::Vec3::Z,        // target
@@ -32,30 +35,36 @@ async fn main() -> Result<()> {
     )
     .inverse();
 
-    let mut renderer = Renderer::new(&window, window.inner_size().into()).await?;
+    let mut renderer: Renderer = Renderer::new(&window, window.inner_size().into()).await?;
     let mut engine = Engine::new(&renderer);
 
     engine.ambient_light.config.color = [0.106535, 0.061572, 0.037324];
     engine.ambient_light.config.strength = 0.1;
 
-    engine.config.skybox = [
-        "./demo/assets/sky/right.jpg",
-        "./demo/assets/sky/left.jpg",
-        "./demo/assets/sky/top.jpg",
-        "./demo/assets/sky/bottom.jpg",
-        "./demo/assets/sky/front.jpg",
-        "./demo/assets/sky/back.jpg",
-    ]
-    .iter()
-    .try_fold(vec![], |mut bytes, filepath| {
-        let image = image::open(filepath)?;
-        bytes.append(&mut image.to_rgba8().to_vec());
-        Ok::<_, image::ImageError>(bytes)
-    })
-    .ok()
-    .map(|pixels| engine.create_skybox(&renderer, &pixels));
+    engine
+        .ressources
+        .get::<SkyboxManager>()
+        .get_mut()
+        .set_skybox(
+            &renderer.device,
+            &renderer.queue,
+            &[
+                "./demo/assets/sky/right.jpg",
+                "./demo/assets/sky/left.jpg",
+                "./demo/assets/sky/top.jpg",
+                "./demo/assets/sky/bottom.jpg",
+                "./demo/assets/sky/front.jpg",
+                "./demo/assets/sky/back.jpg",
+            ]
+            .iter()
+            .try_fold(vec![], |mut bytes, filepath| {
+                let image = image::open(filepath)?;
+                bytes.append(&mut image.to_rgba8().to_vec());
+                Ok::<_, image::ImageError>(bytes)
+            })?,
+        );
 
-    let mut egui = EguiWinitPass::new(&renderer, &event_loop);
+    let mut egui = EguiWinitPass::new(&renderer.device, &renderer.surface_config, &event_loop);
 
     use std::io::Read;
     let mut dungeon_buffer = Vec::new();
@@ -81,20 +90,11 @@ async fn main() -> Result<()> {
     })
     .collect::<Vec<_>>();
 
-    {
-        let (instances, point_lights) =
-            dungeon.node_instances(dungeon.get_node("module01").unwrap(), None, None);
-        engine.ressources.instances.add(&renderer.queue, instances);
-        engine
-            .ressources
-            .lights
-            .add_point_lights(&renderer.queue, &point_lights);
-    }
-
-    let navmesh = worldgen::navmesh::NavMesh::new(&tiles[0]);
+    let tile = &tiles[7];
+    let navmesh = worldgen::navmesh::NavMesh::new(tile);
     let mut navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
         &renderer.device,
-        &engine.ressources.camera,
+        &engine.ressources.get::<CameraManager>().get(),
         &navmesh,
         renderer.surface_config.format,
         worldgen::navmesh::NavMeshDebugInput {
@@ -102,22 +102,42 @@ async fn main() -> Result<()> {
         },
     );
 
-    let worldgen = worldgen::WorldGenerator::new(
-        "Calva!533d", // rand::random::<u32>(),
-        &tiles,
-    );
-
-    const DIM: i32 = 3;
-    for x in -DIM..=DIM {
-        for y in -DIM..=DIM {
-            let res = worldgen.chunk(&dungeon, glam::ivec2(x, y));
-            engine.ressources.instances.add(&renderer.queue, res.0);
-            engine
-                .ressources
-                .lights
-                .add_point_lights(&renderer.queue, &res.1);
-        }
+    {
+        let (instances, point_lights) =
+            dungeon.node_instances(dungeon.doc.nodes().nth(tile.node_id).unwrap(), None, None);
+        engine
+            .ressources
+            .get::<InstancesManager>()
+            .get_mut()
+            .add(&renderer.queue, instances);
+        engine
+            .ressources
+            .get::<LightsManager>()
+            .get_mut()
+            .add_point_lights(&renderer.queue, &point_lights);
     }
+
+    // let worldgen = worldgen::WorldGenerator::new(
+    //     "Calva!533d", // rand::random::<u32>(),
+    //     &tiles,
+    // );
+
+    // const DIM: i32 = 3;
+    // for x in -DIM..=DIM {
+    //     for y in -DIM..=DIM {
+    //         let res = worldgen.chunk(&dungeon, glam::ivec2(x, y));
+    //         engine
+    //             .ressources
+    //             .get::<InstancesManager>()
+    //             .get_mut()
+    //             .add(&renderer.queue, res.0);
+    //         engine
+    //             .ressources
+    //             .get::<LightsManager>()
+    //             .get_mut()
+    //             .add_point_lights(&renderer.queue, &res.1);
+    //     }
+    // }
 
     let ennemies = [
         "./demo/assets/zombies/zombie-boss.glb",
@@ -160,7 +180,11 @@ async fn main() -> Result<()> {
             }
         }
     }
-    engine.ressources.instances.add(&renderer.queue, instances);
+    engine
+        .ressources
+        .get::<InstancesManager>()
+        .get_mut()
+        .add(&renderer.queue, instances);
 
     // let fog = fog::FogPass::new(&renderer, &engine.camera);
 
@@ -198,8 +222,12 @@ async fn main() -> Result<()> {
                             ..Default::default()
                         })
                         .show(ctx, |ui| {
-                            EguiPass::renderer_ui(&renderer)(ui);
-                            EguiPass::engine_config_ui(&mut engine)(ui);
+                            ui.add(&renderer);
+                            ui.add(&*renderer.profiler.try_borrow().unwrap());
+
+                            ui.add(&mut *engine.ambient_light.config);
+                            ui.add(&mut *engine.ssao.config);
+                            ui.add(&mut *engine.tone_mapping.config);
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)
@@ -253,13 +281,14 @@ async fn main() -> Result<()> {
                         });
                 });
 
-                **engine.ressources.camera = (&camera).into();
+                ***engine.ressources.get::<CameraManager>().get_mut() = (&camera).into();
+                **engine.animate.uniform = dt;
                 engine.update(&renderer);
 
                 let result = renderer.render(|ctx| {
-                    engine.render(ctx, dt);
+                    engine.render(ctx);
                     // fog.render(ctx, &engine.ressources.camera, &time);
-                    navmesh_debug.render(ctx, &engine.ressources.camera);
+                    navmesh_debug.render(ctx, &engine.ressources.get::<CameraManager>().get());
                     egui.render(ctx);
                 });
 
