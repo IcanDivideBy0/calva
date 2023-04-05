@@ -11,12 +11,16 @@ pub struct EguiPass {
 }
 
 impl EguiPass {
-    pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        scale_factor: f32,
+    ) -> Self {
         let egui_renderer = egui_wgpu::Renderer::new(device, surface_config.format, None, 1);
 
         let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
-            pixels_per_point: 1.0,
+            pixels_per_point: scale_factor,
         };
 
         Self {
@@ -31,20 +35,19 @@ impl EguiPass {
         self.context.run(input, ui)
     }
 
+    pub fn resize(&mut self, surface_config: &wgpu::SurfaceConfiguration, scale_factor: f32) {
+        self.screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [surface_config.width, surface_config.height],
+            pixels_per_point: scale_factor,
+        };
+    }
+
     pub fn update(
         &mut self,
         renderer: &Renderer,
         shapes: Vec<egui::epaint::ClippedShape>,
         textures_delta: egui::TexturesDelta,
     ) {
-        self.screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: [
-                renderer.surface_config.width,
-                renderer.surface_config.height,
-            ],
-            pixels_per_point: 1.0,
-        };
-
         self.paint_jobs = self.context.tessellate(shapes);
 
         for (texture_id, image_delta) in &textures_delta.set {
@@ -108,10 +111,11 @@ mod winit {
         pub fn new(
             device: &wgpu::Device,
             surface_config: &wgpu::SurfaceConfiguration,
+            scale_factor: f32,
             event_loop: &EventLoop<()>,
         ) -> Self {
             Self {
-                pass: EguiPass::new(device, surface_config),
+                pass: EguiPass::new(device, surface_config, scale_factor),
                 state: egui_winit::State::new(event_loop),
             }
         }
@@ -140,6 +144,12 @@ mod winit {
 
         fn deref(&self) -> &Self::Target {
             &self.pass
+        }
+    }
+
+    impl std::ops::DerefMut for EguiWinitPass {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.pass
         }
     }
 }

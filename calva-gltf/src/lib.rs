@@ -6,7 +6,7 @@ use renderer::{
     MeshId, MeshesManager, PointLight, Renderer, SkinsManager, TextureId, TexturesManager,
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     io::Read,
     time::Duration,
 };
@@ -18,7 +18,7 @@ pub struct GltfModel {
     pub doc: gltf::Document,
 
     meshes_instances: Vec<Vec<Instance>>,
-    pub animations: HashMap<String, AnimationId>,
+    pub animations: BTreeMap<String, AnimationId>,
 }
 
 impl GltfModel {
@@ -317,7 +317,7 @@ impl GltfModel {
         engine: &mut Engine,
         doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
-    ) -> Vec<HashMap<String, AnimationId>> {
+    ) -> Vec<BTreeMap<String, AnimationId>> {
         let nodes_transforms = {
             let children_nodes = doc
                 .nodes()
@@ -408,7 +408,7 @@ impl GltfModel {
                 doc.animations()
                     .map(|animation| animation.name().unwrap_or_default().to_owned())
                     .zip(animation_ids)
-                    .collect::<HashMap<_, _>>()
+                    .collect::<BTreeMap<_, _>>()
             })
             .collect()
     }

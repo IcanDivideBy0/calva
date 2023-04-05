@@ -64,7 +64,12 @@ async fn main() -> Result<()> {
             })?,
         );
 
-    let mut egui = EguiWinitPass::new(&renderer.device, &renderer.surface_config, &event_loop);
+    let mut egui = EguiWinitPass::new(
+        &renderer.device,
+        &renderer.surface_config,
+        window.scale_factor() as _,
+        &event_loop,
+    );
 
     use std::io::Read;
     let mut dungeon_buffer = Vec::new();
@@ -203,6 +208,7 @@ async fn main() -> Result<()> {
                 camera.resize(size);
                 renderer.resize(size.into());
                 engine.resize(&renderer);
+                egui.resize(&renderer.surface_config, window.scale_factor() as f32);
 
                 navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
                     depth: &engine.geometry.outputs.depth,

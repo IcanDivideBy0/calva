@@ -11,6 +11,9 @@ pub struct TileBuilder {
 }
 
 impl TileBuilder {
+    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    // const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth16Unorm;
+
     pub fn new(device: &wgpu::Device) -> Self {
         let depth = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("TileBuilder depth"),
@@ -22,7 +25,7 @@ impl TileBuilder {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth16Unorm,
+            format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -229,12 +232,13 @@ impl TileBuilder {
         let buffer_view = buffer_slice.get_mapped_range();
 
         let height_map = {
-            let mut it = bytemuck::cast_slice::<u8, u16>(&buffer_view)
+            let mut it = bytemuck::cast_slice::<u8, f32>(&buffer_view)
                 .chunks_exact(Tile::TEXTURE_SIZE)
                 .map(|slice| {
-                    let mut it = slice.iter().map(|&depth| {
-                        ((depth as f32 / u16::MAX as f32) - 0.5) * -2.0 * Tile::MAX_HEIGHT
-                    });
+                    let mut it = slice
+                        .iter()
+                        // .map(|&depth| (depth as f32 / u16::MAX as f32))
+                        .map(|depth| (depth - 0.5) * -2.0 * Tile::MAX_HEIGHT);
 
                     std::array::from_fn(|_| it.next().unwrap())
                 });
@@ -259,8 +263,13 @@ impl Tile {
 
     pub const MAX_HEIGHT: f32 = 40.0;
 
-    pub const TEXTURE_SIZE: usize =
-        wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize / std::mem::size_of::<u16>();
+    pub const TEXTURE_SIZE: usize = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize
+        / match TileBuilder::DEPTH_FORMAT {
+            wgpu::TextureFormat::Depth32Float => std::mem::size_of::<f32>(),
+            wgpu::TextureFormat::Depth16Unorm => std::mem::size_of::<u16>(),
+            _ => unreachable!(),
+        };
+
     pub const PIXEL_SIZE: f32 = Self::WORLD_SIZE / Self::TEXTURE_SIZE as f32;
 
     pub fn get_height(&self, pos: glam::Vec2) -> f32 {
