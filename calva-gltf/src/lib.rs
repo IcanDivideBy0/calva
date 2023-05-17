@@ -143,7 +143,7 @@ impl GltfModel {
                     &buf.to_rgba8(),
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: std::num::NonZeroU32::new(4 * size.width),
+                        bytes_per_row: Some(4 * size.width),
                         rows_per_image: None,
                     },
                     size,

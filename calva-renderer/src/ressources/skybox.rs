@@ -72,7 +72,7 @@ impl SkyboxManager {
             .create_view(&wgpu::TextureViewDescriptor {
                 label: Some("Skybox texture view"),
                 dimension: Some(wgpu::TextureViewDimension::Cube),
-                array_layer_count: std::num::NonZeroU32::new(6),
+                array_layer_count: Some(6),
                 ..Default::default()
             });
 

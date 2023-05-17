@@ -16,22 +16,20 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 // Fragment shader
 //
 
-@group(0) @binding(0) var input: texture_2d<f32>;
+@group(0) @binding(0) var t_input: texture_2d<f32>;
 
 fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
     let c = vec2<i32>(floor(position.xy));
 
-    let texSize = textureDimensions(input);
-
     var result: f32 = 0.0;
 
-    result = result + textureLoad(input, max(vec2<i32>(0), c + vec2<i32>(-3) * direction), 0).r * ( 1.0 / 64.0);
-    result = result + textureLoad(input, max(vec2<i32>(0), c + vec2<i32>(-2) * direction), 0).r * ( 6.0 / 64.0);
-    result = result + textureLoad(input, max(vec2<i32>(0), c + vec2<i32>(-1) * direction), 0).r * (15.0 / 64.0);
-    result = result + textureLoad(input, c + vec2<i32>( 0) * direction, 0).r * (20.0 / 64.0);
-    result = result + textureLoad(input, min(texSize, c + vec2<i32>( 1) * direction), 0).r * (15.0 / 64.0);
-    result = result + textureLoad(input, min(texSize, c + vec2<i32>( 2) * direction), 0).r * ( 6.0 / 64.0);
-    result = result + textureLoad(input, min(texSize, c + vec2<i32>( 3) * direction), 0).r * ( 1.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>(-3) * direction, 0).r * ( 1.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>(-2) * direction, 0).r * ( 6.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>(-1) * direction, 0).r * (15.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 0) * direction, 0).r * (20.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 1) * direction, 0).r * (15.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 2) * direction, 0).r * ( 6.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 3) * direction, 0).r * ( 1.0 / 64.0);
 
     return result;
 }

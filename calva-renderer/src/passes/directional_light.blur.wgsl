@@ -35,13 +35,13 @@ fn blur(position: vec4<f32>, direction: vec2<i32>) -> f32 {
 
     var result: f32 = 0.0;
 
-    result = result + textureLoad(t_input, c + vec2<i32>(-3) * direction, 0) * ( 1.0 / 64.0);
-    result = result + textureLoad(t_input, c + vec2<i32>(-2) * direction, 0) * ( 6.0 / 64.0);
-    result = result + textureLoad(t_input, c + vec2<i32>(-1) * direction, 0) * (15.0 / 64.0);
-    result = result + textureLoad(t_input, c + vec2<i32>( 0) * direction, 0) * (20.0 / 64.0);
-    result = result + textureLoad(t_input, c + vec2<i32>( 1) * direction, 0) * (15.0 / 64.0);
-    result = result + textureLoad(t_input, c + vec2<i32>( 2) * direction, 0) * ( 6.0 / 64.0);
-    result = result + textureLoad(t_input, c + vec2<i32>( 3) * direction, 0) * ( 1.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>(-3) * direction, 0) * ( 1.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>(-2) * direction, 0) * ( 6.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>(-1) * direction, 0) * (15.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 0) * direction, 0) * (20.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 1) * direction, 0) * (15.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 2) * direction, 0) * ( 6.0 / 64.0);
+    result += textureLoad(t_input, c + vec2<i32>( 3) * direction, 0) * ( 1.0 / 64.0);
 
     return result;
 }

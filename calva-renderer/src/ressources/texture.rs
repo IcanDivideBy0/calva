@@ -293,7 +293,7 @@ impl MipmapGenerator {
             .map(|mip_level| {
                 texture.create_view(&wgpu::TextureViewDescriptor {
                     base_mip_level: mip_level,
-                    mip_level_count: core::num::NonZeroU32::new(1),
+                    mip_level_count: Some(1),
                     ..Default::default()
                 })
             })

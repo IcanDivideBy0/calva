@@ -171,7 +171,11 @@ impl TileBuilder {
             label: node.name(),
             size: (self.depth.width()
                 * self.depth.height()
-                * self.depth.format().describe().block_size as u32) as _,
+                * self
+                    .depth
+                    .format()
+                    .block_size(Some(wgpu::TextureAspect::DepthOnly))
+                    .unwrap()) as _,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -210,8 +214,13 @@ impl TileBuilder {
                 buffer: &buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: std::num::NonZeroU32::new(
-                        self.depth.width() * self.depth.format().describe().block_size as u32,
+                    bytes_per_row: Some(
+                        self.depth.width()
+                            * self
+                                .depth
+                                .format()
+                                .block_size(Some(wgpu::TextureAspect::DepthOnly))
+                                .unwrap(),
                     ),
                     rows_per_image: None,
                 },

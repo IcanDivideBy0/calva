@@ -18,9 +18,9 @@ opt-level = 3
 # egui-wgpu = { path = "../egui/crates/egui-wgpu" }
 # egui-winit = { path = "../egui/crates/egui-winit" }
 # egui = { path = "../egui/crates/egui" }
-# egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "master" }
-# egui-winit = { git = "https://github.com/emilk/egui.git", branch = "master" }
-# egui = { git = "https://github.com/emilk/egui.git", branch = "master" }
+egui = { git = "https://github.com/emilk/egui.git", branch = "master" }
+egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "master" }
+egui-winit = { git = "https://github.com/emilk/egui.git", branch = "master" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }
