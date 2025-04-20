@@ -1,10 +1,16 @@
-use calva::{
+use calva::renderer::{
     wgpu::{self, util::DeviceExt},
     CameraManager, RenderContext, Renderer,
 };
 use noise::NoiseFn;
 
+pub struct FogPassInput<'a> {
+    pub depth: &'a wgpu::Texture,
+}
+
 pub struct FogPass {
+    depth_view: wgpu::TextureView,
+
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
@@ -13,7 +19,7 @@ impl FogPass {
     const NOISE_SIZE: u32 = 128;
     const NOISE_SCALE: f64 = 1.0 / Self::NOISE_SIZE as f64;
 
-    pub fn new(renderer: &Renderer, camera: &CameraManager) -> Self {
+    pub fn new(renderer: &Renderer, camera: &CameraManager, input: FogPassInput) -> Self {
         let fbm = noise::Fbm::<noise::Perlin>::new(rand::random());
         let perlin = noise::Perlin::new(rand::random());
 
@@ -40,26 +46,26 @@ impl FogPass {
                                 //     f64::from(z) * Self::NOISE_SCALE,
                                 // ]);
 
-                                let mut nx = perlin.get([
+                                let nx = perlin.get([
                                     cx.0 + 3.0 * xx.cos(),
                                     cx.1 + 3.0 * yy.sin(), //
                                     3.0 * yy.cos() * xx.sin(),
                                 ]);
-                                let mut ny = perlin.get([
+                                let ny = perlin.get([
                                     cy.0 + 3.0 * yy.cos(),
                                     cy.1 + 3.0 * zz.sin(), //
                                     3.0 * zz.cos() * yy.sin(),
                                 ]);
-                                let mut nz = perlin.get([
+                                let nz = perlin.get([
                                     cz.0 + 3.0 * zz.cos(),
                                     cz.1 + 3.0 * xx.sin(), //
                                     3.0 * xx.cos() * zz.sin(),
                                 ]);
 
                                 // let n = (nx + ny + nz) / 3.0;
-                                let n1 = (nx + ny) / 2.0;
-                                let n2 = (nx + nz) / 2.0;
-                                let n3 = (nz + ny) / 2.0;
+                                // let n1 = (nx + ny) / 2.0;
+                                // let n2 = (nx + nz) / 2.0;
+                                // let n3 = (nz + ny) / 2.0;
 
                                 let n = fbm.get([nx, ny, nz]);
                                 // let n = nx;
@@ -400,7 +406,7 @@ impl FogPass {
                 }),
                 primitive: Default::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Renderer::DEPTH_FORMAT,
+                    format: input.depth.format(),
                     depth_write_enabled: false,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: Default::default(),
@@ -411,6 +417,8 @@ impl FogPass {
             });
 
         Self {
+            depth_view: input.depth.create_view(&Default::default()),
+
             bind_group,
             pipeline,
         }
@@ -433,7 +441,7 @@ impl FogPass {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.depth_stencil,
+                view: &self.depth_view,
                 depth_ops: None,
                 stencil_ops: None,
             }),

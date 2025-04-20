@@ -121,7 +121,7 @@ impl AnimationSampler {
                 .collect::<Vec<_>>();
 
             let target_node = channel.target().node();
-            let mut sampler = samplers
+            let sampler = samplers
                 .entry(target_node.index())
                 .or_insert_with(|| NodeSampler::from_node_default(target_node));
 

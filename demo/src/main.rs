@@ -16,10 +16,9 @@ use winit::{
     window::{Fullscreen, WindowBuilder},
 };
 
-mod camera;
-mod worldgen;
-// mod navmesh;
-// mod fog;
+pub mod camera;
+pub mod fog;
+pub mod worldgen;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -117,27 +116,27 @@ async fn main() -> Result<()> {
             .add_point_lights(&renderer.queue, &point_lights);
     }
 
-    // let worldgen = worldgen::WorldGenerator::new(
-    //     "Calva!533d", // rand::random::<u32>(),
-    //     &tiles,
-    // );
+    let worldgen = worldgen::WorldGenerator::new(
+        "Calva!533d", // rand::random::<u32>(),
+        &tiles,
+    );
 
-    // const DIM: i32 = 3;
-    // for x in -DIM..=DIM {
-    //     for y in -DIM..=DIM {
-    //         let res = worldgen.chunk(&dungeon, glam::ivec2(x, y));
-    //         engine
-    //             .ressources
-    //             .get::<InstancesManager>()
-    //             .get_mut()
-    //             .add(&renderer.queue, res.0);
-    //         engine
-    //             .ressources
-    //             .get::<LightsManager>()
-    //             .get_mut()
-    //             .add_point_lights(&renderer.queue, &res.1);
-    //     }
-    // }
+    const DIM: i32 = 3;
+    for x in -DIM..=DIM {
+        for y in -DIM..=DIM {
+            let res = worldgen.chunk(&dungeon, glam::ivec2(x, y));
+            engine
+                .ressources
+                .get::<InstancesManager>()
+                .get_mut()
+                .add(&renderer.queue, res.0);
+            engine
+                .ressources
+                .get::<LightsManager>()
+                .get_mut()
+                .add_point_lights(&renderer.queue, &res.1);
+        }
+    }
 
     let ennemies = [
         "./demo/assets/zombies/zombie-boss.glb",
@@ -157,7 +156,7 @@ async fn main() -> Result<()> {
         "./demo/assets/demons/demon-imp.glb",
     ]
     .iter()
-    .take(0)
+    .take(1)
     .map(|s| GltfModel::from_path(&renderer, &mut engine, s))
     .collect::<Result<Vec<_>>>()?;
 
@@ -288,7 +287,7 @@ async fn main() -> Result<()> {
                 let result = renderer.render(|ctx| {
                     engine.render(ctx);
                     // fog.render(ctx, &engine.ressources.camera, &time);
-                    navmesh_debug.render(ctx, &engine.ressources.get::<CameraManager>().get());
+                    // navmesh_debug.render(ctx, &engine.ressources.get::<CameraManager>().get());
                     egui.render(ctx);
                 });
 

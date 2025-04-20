@@ -14,13 +14,13 @@ opt-level = 3
 # wgpu = { git = "https://github.com/gfx-rs/wgpu.git", branch = "master" }
 # wgpu = { path = "../wgpu/wgpu" }
 # naga = { git = "https://github.com/gfx-rs/naga.git", branch = "master" }
-# wgpu-profiler = { git = "https://github.com/IcanDivideBy0/wgpu-profiler.git", branch = "wgpu-0.15" }
+wgpu-profiler = { git = "https://github.com/waywardmonkeys/wgpu-profiler.git", branch = "update-to-wgpu-0.17" }
 # egui-wgpu = { path = "../egui/crates/egui-wgpu" }
 # egui-winit = { path = "../egui/crates/egui-winit" }
 # egui = { path = "../egui/crates/egui" }
-egui = { git = "https://github.com/emilk/egui.git", branch = "master" }
-egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "master" }
-egui-winit = { git = "https://github.com/emilk/egui.git", branch = "master" }
+egui = { git = "https://github.com/Aaron1011/egui.git", branch = "wgpu-0.17" }
+egui-wgpu = { git = "https://github.com/Aaron1011/egui.git", branch = "wgpu-0.17" }
+egui-winit = { git = "https://github.com/Aaron1011/egui.git", branch = "wgpu-0.17" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

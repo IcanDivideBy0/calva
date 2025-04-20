@@ -48,9 +48,8 @@ impl Renderer {
         let surface = unsafe { instance.create_surface(window) }?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
             .ok_or_else(|| anyhow!("Cannot request WebGPU adapter"))?;
@@ -77,8 +76,8 @@ impl Renderer {
             .get_default_config(&adapter, size.0, size.1)
             .ok_or_else(|| anyhow!("Surface not compatible with adapter"))?;
         surface_config.format = surface_config.format.add_srgb_suffix();
-        // surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
-        surface_config.present_mode = wgpu::PresentMode::AutoVsync;
+        surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
+        // surface_config.present_mode = wgpu::PresentMode::AutoVsync;
 
         surface.configure(&device, &surface_config);
 
@@ -292,7 +291,7 @@ impl<'a> ProfilerCommandEncoder<'a> {
     pub fn begin_render_pass<'pass>(
         &'pass mut self,
         desc: &wgpu::RenderPassDescriptor<'pass, '_>,
-    ) -> wgpu_profiler::scope::OwningScope<wgpu::RenderPass<'pass>> {
+    ) -> wgpu_profiler::scope::OwningScope<'pass, wgpu::RenderPass<'pass>> {
         wgpu_profiler::scope::OwningScope::start(
             desc.label.unwrap_or("???"),
             self.profiler,

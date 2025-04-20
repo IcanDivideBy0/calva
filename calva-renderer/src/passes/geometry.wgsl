@@ -101,17 +101,11 @@ fn get_skinning_matrix(animation_id: u32, time: f32, skin_index: u32) -> mat4x4<
         (packed_joints >> 24u) & 0xFFu,
     );
 
-    let m1 = get_joint_matrix(animation_id, time, joints.x) * weights.x;
-    let m2 = get_joint_matrix(animation_id, time, joints.y) * weights.y;
-    let m3 = get_joint_matrix(animation_id, time, joints.z) * weights.z;
-    let m4 = get_joint_matrix(animation_id, time, joints.w) * weights.w;
-
-    return mat4x4<f32>(
-        m1[0] + m2[0] + m3[0] + m4[0],
-        m1[1] + m2[1] + m3[1] + m4[1],
-        m1[2] + m2[2] + m3[2] + m4[2],
-        m1[3] + m2[3] + m3[3] + m4[3],
-    );
+    return
+        get_joint_matrix(animation_id, time, joints.x) * weights.x +
+        get_joint_matrix(animation_id, time, joints.y) * weights.y +
+        get_joint_matrix(animation_id, time, joints.z) * weights.z +
+        get_joint_matrix(animation_id, time, joints.w) * weights.w;
 }
 
 @vertex
@@ -157,7 +151,7 @@ fn vs_main(
 
     let normal_matrix = mat4_to_mat3(camera.view);
     out.normal = normal_matrix * rotate(instance.normal_quat, normal);
-    out.tangent = normal_matrix * rotate(instance.normal_quat, tangent.xyz);
+    out.tangent = normal_matrix * rotate(instance.normal_quat, tangent);
     out.bitangent = cross(out.normal, out.tangent) * in.tangent.w;
 
     out.uv = in.uv;
