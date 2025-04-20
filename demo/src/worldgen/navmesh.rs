@@ -231,7 +231,8 @@ impl NavMeshDebug {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<[f32; 3]>() as _,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -240,7 +241,8 @@ impl NavMeshDebug {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -263,6 +265,7 @@ impl NavMeshDebug {
                 },
             }),
             multisample: Default::default(),
+            cache: None,
         });
 
         Self {
@@ -279,21 +282,24 @@ impl NavMeshDebug {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: ctx.frame,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("NavMeshDebug"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.frame,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: None,
                 stencil_ops: None,
             }),
+            ..Default::default()
         });
 
         rpass.set_pipeline(&self.pipeline);

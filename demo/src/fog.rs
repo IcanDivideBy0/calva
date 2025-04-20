@@ -312,6 +312,7 @@ impl FogPass {
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[wgpu::TextureFormat::R32Float],
             },
+            wgpu::util::TextureDataOrder::LayerMajor,
             bytemuck::cast_slice(&noise_data),
         );
 
@@ -392,12 +393,14 @@ impl FogPass {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: renderer.surface_config.format,
                         blend: None,
@@ -414,6 +417,7 @@ impl FogPass {
                 }),
                 multisample: Default::default(),
                 multiview: None,
+                cache: None,
             });
 
         Self {
@@ -430,21 +434,24 @@ impl FogPass {
         camera: &CameraManager,
         time: &std::time::Instant,
     ) {
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: ctx.frame,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Fog"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.frame,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: None,
                 stencil_ops: None,
             }),
+            ..Default::default()
         });
 
         rpass.set_pipeline(&self.pipeline);

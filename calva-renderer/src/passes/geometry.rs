@@ -115,7 +115,8 @@ impl GeometryPass {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[
                     DrawInstance::LAYOUT,
                     // Positions
@@ -146,7 +147,8 @@ impl GeometryPass {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[
                     Some(wgpu::ColorTargetState {
                         format: outputs.albedo_metallic.format(),
@@ -177,9 +179,10 @@ impl GeometryPass {
                 bias: Default::default(),
             }),
             multisample: Default::default(),
+            cache: None,
         });
 
-        GeometryPass {
+        Self {
             outputs,
 
             camera,
@@ -228,31 +231,34 @@ impl GeometryPass {
         let animations = self.animations.get();
         let meshes = self.meshes.get();
 
+        let color_attachments = [
+            &self.albedo_metallic_view,
+            &self.normal_roughness_view,
+            &self.emissive_view,
+        ]
+        .map(|view| {
+            Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })
+        });
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Geometry[render]"),
-            color_attachments: &[
-                &self.albedo_metallic_view,
-                &self.normal_roughness_view,
-                &self.emissive_view,
-            ]
-            .map(|view| {
-                Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
-                    },
-                })
-            }),
+            color_attachments: &color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
             }),
+            ..Default::default()
         });
 
         rpass.set_pipeline(&self.pipeline);
@@ -392,7 +398,7 @@ mod cull {
                 size: {
                     let count_size = std::mem::size_of::<u32>();
                     let indirects_size = std::mem::size_of::<
-                        [wgpu::util::DrawIndexedIndirect; MeshesManager::MAX_MESHES],
+                        [wgpu::util::DrawIndexedIndirectArgs; MeshesManager::MAX_MESHES],
                     >();
 
                     count_size + indirects_size
@@ -465,7 +471,7 @@ mod cull {
                                 has_dynamic_offset: false,
                                 min_binding_size: wgpu::BufferSize::new(
                                     std::mem::size_of::<u32>() as u64
-                                        + std::mem::size_of::<wgpu::util::DrawIndexedIndirect>()
+                                        + std::mem::size_of::<wgpu::util::DrawIndexedIndirectArgs>()
                                             as u64,
                                 ),
                             },
@@ -514,19 +520,25 @@ mod cull {
                     label: Some("Geometry[cull] reset pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader,
-                    entry_point: "reset",
+                    entry_point: Some("reset"),
+                    compilation_options: Default::default(),
+                    cache: None,
                 }),
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some("Geometry[cull] cull pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader,
-                    entry_point: "cull",
+                    entry_point: Some("cull"),
+                    compilation_options: Default::default(),
+                    cache: None,
                 }),
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some("Geometry[cull] count pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader,
-                    entry_point: "count",
+                    entry_point: Some("count"),
+                    compilation_options: Default::default(),
+                    cache: None,
                 }),
             );
 
@@ -550,6 +562,7 @@ mod cull {
                 .encoder
                 .begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("Geometry[cull]"),
+                    ..Default::default()
                 });
 
             const WORKGROUP_SIZE: u32 = 32;

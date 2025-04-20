@@ -1,4 +1,4 @@
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt, wgt::TextureViewDescriptor};
 
 use crate::Ressource;
 
@@ -55,7 +55,10 @@ impl AnimationsManager {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[wgpu::TextureFormat::Rgba32Float],
                 })
-                .create_view(&Default::default()),
+                .create_view(&TextureViewDescriptor {
+                    // format: Some(wgpu::TextureFormat::Rg),
+                    ..Default::default()
+                }),
         );
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -131,6 +134,7 @@ impl AnimationsManager {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[wgpu::TextureFormat::Rgba32Float],
                 },
+                wgpu::util::TextureDataOrder::LayerMajor,
                 bytemuck::cast_slice(&pixels),
             )
             .create_view(&Default::default());

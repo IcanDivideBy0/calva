@@ -44,12 +44,14 @@ impl SkyboxPass {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: inputs.output.format(),
                     blend: None,
@@ -65,6 +67,7 @@ impl SkyboxPass {
                 bias: Default::default(),
             }),
             multisample: Default::default(),
+            cache: None,
         });
 
         Self {
@@ -87,21 +90,24 @@ impl SkyboxPass {
         if let Some(skybox_bind_group) = self.skybox.get().bind_group.as_ref() {
             let camera = self.camera.get();
 
+            let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+                view: &self.output_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })];
+
             let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Skybox"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
+                color_attachments: &color_attachments,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
                     depth_ops: None,
                     stencil_ops: None,
                 }),
+                ..Default::default()
             });
 
             rpass.set_pipeline(&self.pipeline);

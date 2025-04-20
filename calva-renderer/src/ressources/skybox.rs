@@ -67,6 +67,7 @@ impl SkyboxManager {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
                 },
+                wgpu::util::TextureDataOrder::LayerMajor,
                 pixels,
             )
             .create_view(&wgpu::TextureViewDescriptor {

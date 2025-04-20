@@ -73,12 +73,14 @@ impl FxaaPass {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: inputs.input.format(),
                     blend: None,
@@ -88,6 +90,7 @@ impl FxaaPass {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
+            cache: None,
         });
 
         Self {
@@ -112,17 +115,20 @@ impl FxaaPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: &self.output_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Fxaa"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.output_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: None,
+            ..Default::default()
         });
 
         rpass.set_pipeline(&self.pipeline);

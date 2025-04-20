@@ -1,11 +1,6 @@
 [workspace]
 resolver = "2"
-members = [
-    "calva",
-    "calva-gltf",
-    "calva-renderer",
-    "demo",
-]
+members = ["calva", "calva-gltf", "calva-renderer", "demo"]
 
 [profile.dev.package."*"]
 opt-level = 3
@@ -14,13 +9,13 @@ opt-level = 3
 # wgpu = { git = "https://github.com/gfx-rs/wgpu.git", branch = "master" }
 # wgpu = { path = "../wgpu/wgpu" }
 # naga = { git = "https://github.com/gfx-rs/naga.git", branch = "master" }
-wgpu-profiler = { git = "https://github.com/waywardmonkeys/wgpu-profiler.git", branch = "update-to-wgpu-0.17" }
+# wgpu-profiler = { git = "https://github.com/waywardmonkeys/wgpu-profiler.git", branch = "update-to-wgpu-0.17" }
 # egui-wgpu = { path = "../egui/crates/egui-wgpu" }
 # egui-winit = { path = "../egui/crates/egui-winit" }
 # egui = { path = "../egui/crates/egui" }
-egui = { git = "https://github.com/Aaron1011/egui.git", branch = "wgpu-0.17" }
-egui-wgpu = { git = "https://github.com/Aaron1011/egui.git", branch = "wgpu-0.17" }
-egui-winit = { git = "https://github.com/Aaron1011/egui.git", branch = "wgpu-0.17" }
+egui = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
+egui-wgpu = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
+egui-winit = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

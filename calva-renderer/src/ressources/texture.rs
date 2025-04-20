@@ -244,12 +244,14 @@ impl MipmapGenerator {
             layout: Some(&self.pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &self.shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &self.shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: None,
@@ -260,6 +262,7 @@ impl MipmapGenerator {
             depth_stencil: None,
             multisample: Default::default(),
             multiview: None,
+            cache: None,
         })
     }
 
@@ -324,10 +327,11 @@ impl MipmapGenerator {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                ..Default::default()
             });
 
             rpass.set_pipeline(pipeline);

@@ -25,7 +25,10 @@ impl egui::Widget for &mut AmbientLightConfig {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     egui::color_picker::color_edit_button_rgb(ui, &mut self.color);
-                    ui.add(egui::Label::new(egui::WidgetText::from("Color")).wrap(false));
+                    ui.add(
+                        egui::Label::new(egui::WidgetText::from("Color"))
+                            .wrap_mode(egui::TextWrapMode::Truncate),
+                    );
                 });
 
                 ui.add(egui::Slider::new(&mut self.strength, 0.0..=1.0).text("Strength"));
@@ -103,12 +106,14 @@ impl AmbientLightPass {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: outputs.output.format(),
                     blend: None,
@@ -119,6 +124,7 @@ impl AmbientLightPass {
             depth_stencil: None,
             multisample: Default::default(),
             multiview: None,
+            cache: None,
         });
 
         Self {
@@ -144,17 +150,20 @@ impl AmbientLightPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: &self.output_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AmbientLight"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.output_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: None,
+            ..Default::default()
         });
 
         rpass.set_pipeline(&self.pipeline);

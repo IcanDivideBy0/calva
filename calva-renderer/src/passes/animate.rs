@@ -82,7 +82,9 @@ impl AnimatePass {
             label: Some("AnimatePass pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "main",
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
         });
 
         Self {
@@ -104,6 +106,7 @@ impl AnimatePass {
             .encoder
             .begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("AnimatePass"),
+                ..Default::default()
             });
 
         cpass.set_pipeline(&self.pipeline);

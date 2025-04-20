@@ -186,12 +186,14 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: output.format(),
                     blend: None,
@@ -202,6 +204,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             depth_stencil: None,
             multiview: None,
             multisample: Default::default(),
+            cache: None,
         });
 
         let blur = blur::SsaoBlurPass::new(device, &output);
@@ -241,17 +244,20 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
 
         let camera = self.camera.get();
 
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: &self.output_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Ssao[render]"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.output_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: None,
+            ..Default::default()
         });
 
         rpass.set_pipeline(&self.pipeline);

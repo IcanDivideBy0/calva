@@ -141,7 +141,7 @@ impl GltfModel {
                 renderer.queue.write_texture(
                     texture.as_image_copy(),
                     &buf.to_rgba8(),
-                    wgpu::ImageDataLayout {
+                    wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(4 * size.width),
                         rows_per_image: None,

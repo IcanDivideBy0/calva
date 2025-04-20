@@ -84,7 +84,9 @@ impl HierarchicalDepthPass {
             label: Some("HierarchicalDepth pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "main",
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
         });
 
         Self {
@@ -120,6 +122,7 @@ impl HierarchicalDepthPass {
             .encoder
             .begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("HierarchicalDepth"),
+                ..Default::default()
             });
 
         cpass.set_pipeline(&self.pipeline);

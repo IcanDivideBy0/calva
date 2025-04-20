@@ -30,9 +30,7 @@ pub trait Ressource: Sized {
 }
 
 #[derive(Clone)]
-pub struct RessourceRef<T>(Arc<RwLock<T>>)
-where
-    T: ?Sized;
+pub struct RessourceRef<T>(Arc<RwLock<T>>);
 
 impl<T: Ressource> RessourceRef<T> {
     pub fn get(&self) -> impl std::ops::Deref<Target = T> + '_ {

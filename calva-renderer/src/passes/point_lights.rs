@@ -87,7 +87,8 @@ impl PointLightsPass {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main_stencil",
+                    entry_point: Some("vs_main_stencil"),
+                    compilation_options: Default::default(),
                     buffers: &vertex_buffers_layout,
                 },
                 fragment: None,
@@ -118,6 +119,7 @@ impl PointLightsPass {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: Default::default(),
+                cache: None,
             })
         };
 
@@ -191,12 +193,14 @@ impl PointLightsPass {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main_lighting",
+                    entry_point: Some("vs_main_lighting"),
+                    compilation_options: Default::default(),
                     buffers: &vertex_buffers_layout,
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main_lighting",
+                    entry_point: Some("fs_main_lighting"),
+                    compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: inputs.output.format(),
                         blend: Some(wgpu::BlendState {
@@ -239,6 +243,7 @@ impl PointLightsPass {
                 }),
                 multisample: Default::default(),
                 multiview: None,
+                cache: None,
             })
         };
 
@@ -283,9 +288,10 @@ impl PointLightsPass {
                 depth_ops: None,
                 stencil_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(0),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
             }),
+            ..Default::default()
         });
 
         stencil_pass.set_pipeline(&self.stencil_pipeline);
@@ -299,21 +305,24 @@ impl PointLightsPass {
 
         drop(stencil_pass);
 
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: &self.output_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PointLights[lighting]"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.output_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: None,
                 stencil_ops: None,
             }),
+            ..Default::default()
         });
 
         lighting_pass.set_pipeline(&self.lighting_pipeline);

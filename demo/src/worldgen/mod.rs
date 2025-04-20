@@ -23,7 +23,7 @@ pub struct WorldGenerator {
 impl WorldGenerator {
     #[allow(unused)]
     pub fn new(seed: impl Hash, tiles: &[Tile]) -> Self {
-        let seed = SipHasher::from(seed).into_rng().gen();
+        let seed = SipHasher::from(seed).into_rng().random();
 
         let noise = Box::new(
             noise::ScalePoint::new(

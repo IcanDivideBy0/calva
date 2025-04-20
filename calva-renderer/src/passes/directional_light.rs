@@ -120,7 +120,8 @@ impl DirectionalLightPass {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
                     buffers: &[
                         DrawInstance::LAYOUT,
                         // Positions
@@ -144,6 +145,7 @@ impl DirectionalLightPass {
                     bias: Default::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
+                cache: None,
             })
         };
 
@@ -235,12 +237,14 @@ impl DirectionalLightPass {
                 multiview: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: inputs.output.format(),
                         blend: Some(wgpu::BlendState {
@@ -257,6 +261,7 @@ impl DirectionalLightPass {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
+                cache: None,
             });
 
             (bind_group_layout, bind_group, pipeline)
@@ -320,10 +325,11 @@ impl DirectionalLightPass {
                 view: &self.light_depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
             }),
+            ..Default::default()
         });
 
         depth_pass.set_pipeline(&self.light_depth_pipeline);
@@ -349,17 +355,20 @@ impl DirectionalLightPass {
 
         self.blur_pass.render(ctx);
 
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: &self.output_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
         let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("DirectionalLight[lighting]"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.output_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
+            color_attachments: &color_attachments,
             depth_stencil_attachment: None,
+            ..Default::default()
         });
 
         lighting_pass.set_pipeline(&self.lighting_pipeline);
@@ -560,7 +569,7 @@ mod cull {
                 size: {
                     let count_size = std::mem::size_of::<u32>();
                     let indirects_size = std::mem::size_of::<
-                        [wgpu::util::DrawIndexedIndirect; MeshesManager::MAX_MESHES],
+                        [wgpu::util::DrawIndexedIndirectArgs; MeshesManager::MAX_MESHES],
                     >();
 
                     count_size + indirects_size
@@ -633,7 +642,7 @@ mod cull {
                                 has_dynamic_offset: false,
                                 min_binding_size: wgpu::BufferSize::new(
                                     std::mem::size_of::<u32>() as u64
-                                        + std::mem::size_of::<wgpu::util::DrawIndexedIndirect>()
+                                        + std::mem::size_of::<wgpu::util::DrawIndexedIndirectArgs>()
                                             as u64,
                                 ),
                             },
@@ -687,19 +696,25 @@ mod cull {
                     label: Some("DirectionalLight[cull] reset pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader,
-                    entry_point: "reset",
+                    entry_point: Some("reset"),
+                    compilation_options: Default::default(),
+                    cache: None,
                 }),
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some("DirectionalLight[cull] cull pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader,
-                    entry_point: "cull",
+                    entry_point: Some("cull"),
+                    compilation_options: Default::default(),
+                    cache: None,
                 }),
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some("DirectionalLight[cull] count pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader,
-                    entry_point: "count",
+                    entry_point: Some("count"),
+                    compilation_options: Default::default(),
+                    cache: None,
                 }),
             );
 
@@ -727,6 +742,7 @@ mod cull {
                 .encoder
                 .begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("DirectionalLight[cull]"),
+                    ..Default::default()
                 });
 
             const WORKGROUP_SIZE: u32 = 32;
@@ -862,12 +878,14 @@ mod blur {
                     layout: Some(&pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader,
-                        entry_point: "vs_main",
+                        entry_point: Some("vs_main"),
+                        compilation_options: Default::default(),
                         buffers: &[],
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &shader,
-                        entry_point: format!("fs_main_{direction}").as_str(),
+                        entry_point: Some(format!("fs_main_{direction}").as_str()),
+                        compilation_options: Default::default(),
                         targets: &[],
                     }),
                     primitive: Default::default(),
@@ -880,6 +898,7 @@ mod blur {
                     }),
                     multisample: Default::default(),
                     multiview: None,
+                    cache: None,
                 });
 
                 let mut encoder =
@@ -928,10 +947,11 @@ mod blur {
                         view: &self.temp_view,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Clear(1.0),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
                     }),
+                    ..Default::default()
                 })
                 .execute_bundles(std::iter::once(&self.h_pass));
 
@@ -943,10 +963,11 @@ mod blur {
                         view: &self.output_view,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Clear(1.0),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
                     }),
+                    ..Default::default()
                 })
                 .execute_bundles(std::iter::once(&self.v_pass));
 

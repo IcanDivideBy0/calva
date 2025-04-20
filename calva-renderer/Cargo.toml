@@ -12,21 +12,20 @@ egui-winit = ["dep:egui-winit"]
 
 [dependencies]
 anyhow = "1.0"
-bytemuck = { version = "1.12", features = [ "derive" ] }
-glam = { version = "0.24", features = ["bytemuck"] }
-wgpu = "0.17"
+bytemuck = { version = "1.22", features = ["derive"] }
+glam = { version = "0.30", features = ["bytemuck"] }
+wgpu = { version = "25.0" }
 parking_lot = "0.12"
-raw-window-handle = "0.5"
-rand = "0.8"
+raw-window-handle = "0.6"
+rand = "0.9"
 
 # Profiler
-wgpu-profiler = { version = "0.12", optional = true }
+wgpu-profiler = { version = "0.23", optional = true }
 
 # Egui
-egui = { version = "0.22", optional = true }
-egui-winit = { version = "0.22", optional = true }
-egui-wgpu = { version = "0.22", optional = true }
+egui = { version = "0.31", optional = true }
+egui-winit = { version = "0.31", optional = true }
+egui-wgpu = { version = "0.31", optional = true }
 
 # Winit
-winit = { version = "0.28", optional = true }
-
+winit = { version = "0.30", optional = true }

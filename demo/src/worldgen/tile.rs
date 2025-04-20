@@ -58,7 +58,8 @@ impl TileBuilder {
             multiview: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<[f32; 3]>() as _,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -75,6 +76,7 @@ impl TileBuilder {
                 bias: Default::default(),
             }),
             multisample: Default::default(),
+            cache: None,
         });
 
         Self {
@@ -156,6 +158,13 @@ impl TileBuilder {
             glam::Mat4::IDENTITY,
         );
 
+        if triangles.is_empty() {
+            return Tile {
+                node_id: node.index(),
+                height_map: [[-Tile::MAX_HEIGHT; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
+            };
+        }
+
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("TileBuilder verts buffer"),
             contents: bytemuck::cast_slice(&triangles),
@@ -170,7 +179,7 @@ impl TileBuilder {
                 * self
                     .depth
                     .format()
-                    .block_size(Some(wgpu::TextureAspect::DepthOnly))
+                    .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))
                     .unwrap()) as _,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
@@ -188,10 +197,11 @@ impl TileBuilder {
                     view: &self.depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                ..Default::default()
             });
 
             rpass.set_pipeline(&self.pipeline);
@@ -200,22 +210,22 @@ impl TileBuilder {
         }
 
         encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &self.depth,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::DepthOnly,
             },
-            wgpu::ImageCopyBuffer {
+            wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
-                layout: wgpu::ImageDataLayout {
+                layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(
                         self.depth.width()
                             * self
                                 .depth
                                 .format()
-                                .block_size(Some(wgpu::TextureAspect::DepthOnly))
+                                .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))
                                 .unwrap(),
                     ),
                     rows_per_image: None,
@@ -229,7 +239,9 @@ impl TileBuilder {
         let buffer_slice = buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, Result::unwrap);
 
-        device.poll(wgpu::Maintain::WaitForSubmissionIndex(submission_index));
+        device
+            .poll(wgpu::MaintainBase::WaitForSubmissionIndex(submission_index))
+            .unwrap();
 
         let buffer_view = buffer_slice.get_mapped_range();
 

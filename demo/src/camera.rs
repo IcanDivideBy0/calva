@@ -50,7 +50,11 @@ use controller::*;
 mod controller {
     use std::f32::consts::FRAC_PI_2;
     use std::time::Duration;
-    use winit::{dpi::PhysicalPosition, event::*};
+    use winit::{
+        dpi::PhysicalPosition,
+        event::*,
+        keyboard::{KeyCode, PhysicalKey},
+    };
 
     pub struct FlyingCamera {
         pub transform: glam::Mat4,
@@ -100,9 +104,11 @@ mod controller {
         pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
             match event {
                 WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            state, scancode, ..
+                    event:
+                        KeyEvent {
+                            state,
+                            physical_key: PhysicalKey::Code(keycode),
+                            ..
                         },
                     ..
                 } => {
@@ -112,28 +118,28 @@ mod controller {
                         0.0
                     };
 
-                    match scancode {
-                        17 | 103 => {
+                    match keycode {
+                        KeyCode::KeyW | KeyCode::ArrowUp => {
                             self.amount_forward = amount;
                             true
                         }
-                        30 | 105 => {
+                        KeyCode::KeyA | KeyCode::ArrowLeft => {
                             self.amount_left = amount;
                             true
                         }
-                        31 | 108 => {
+                        KeyCode::KeyS | KeyCode::ArrowDown => {
                             self.amount_backward = amount;
                             true
                         }
-                        32 | 106 => {
+                        KeyCode::KeyD | KeyCode::ArrowRight => {
                             self.amount_right = amount;
                             true
                         }
-                        18 => {
+                        KeyCode::KeyE => {
                             self.amount_up = amount;
                             true
                         }
-                        16 => {
+                        KeyCode::KeyQ => {
                             self.amount_down = amount;
                             true
                         }
