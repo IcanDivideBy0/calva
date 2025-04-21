@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 
-#[cfg(feature = "profiler")]
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult};
 
 pub struct Renderer<'window> {
@@ -13,7 +12,6 @@ pub struct Renderer<'window> {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
 
-    #[cfg(feature = "profiler")]
     pub profiler: std::cell::RefCell<RendererProfiler>,
 }
 
@@ -29,12 +27,8 @@ impl<'window> Renderer<'window> {
         .union(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) // All except WebGL
         .union(wgpu::Features::POLYGON_MODE_LINE) // Vulkan, DX12, Metal
         .union(wgpu::Features::FLOAT32_FILTERABLE) // Vulkan, DX12, Metal
-        .union(
-            #[cfg(feature = "profiler")]
-            GpuProfiler::ALL_WGPU_TIMER_FEATURES, // Vulkan, DX12
-            #[cfg(not(feature = "profiler"))]
-            wgpu::Features::empty(),
-        );
+        .union(GpuProfiler::ALL_WGPU_TIMER_FEATURES) // Vulkan, DX12
+        ;
 
     pub async fn new(
         window: impl Into<wgpu::SurfaceTarget<'window>>,
@@ -74,16 +68,16 @@ impl<'window> Renderer<'window> {
             .ok_or_else(|| anyhow!("Surface not compatible with adapter"))?;
         surface_config.format = surface_config.format.add_srgb_suffix();
         surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
-        // surface_config.present_mode = wgpu::PresentMode::AutoVsync;
+        surface_config.present_mode = wgpu::PresentMode::AutoVsync;
 
         surface.configure(&device, &surface_config);
 
-        #[cfg(feature = "profiler")]
         let profiler = std::cell::RefCell::new(RendererProfiler {
             inner: GpuProfiler::new(
                 &device,
                 GpuProfilerSettings {
                     // enable_debug_groups: false,
+                    enable_timer_queries: false,
                     ..Default::default()
                 },
             )?,
@@ -98,7 +92,6 @@ impl<'window> Renderer<'window> {
             surface,
             surface_config,
 
-            #[cfg(feature = "profiler")]
             profiler,
         })
     }
@@ -119,22 +112,12 @@ impl<'window> Renderer<'window> {
         let frame = self.surface.get_current_texture()?;
         let frame_view = frame.texture.create_view(&Default::default());
 
-        #[cfg(feature = "profiler")]
         let mut renderer_profiler = self.profiler.try_borrow_mut()?;
-        #[cfg(feature = "profiler")]
         let profiler = &mut renderer_profiler.inner;
 
-        #[cfg(feature = "profiler")]
         let scope = profiler.scope("RenderPass", &mut encoder);
 
         let mut context = RenderContext {
-            #[cfg(not(feature = "profiler"))]
-            encoder: ProfilerCommandEncoder {
-                encoder: &mut encoder,
-                #[cfg(feature = "profiler")]
-                profiler: &profiler,
-            },
-            #[cfg(feature = "profiler")]
             encoder: scope,
             frame: &frame_view,
         };
@@ -142,21 +125,16 @@ impl<'window> Renderer<'window> {
         cb(&mut context);
         drop(context);
 
-        #[cfg(feature = "profiler")]
         profiler.resolve_queries(&mut encoder);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        #[cfg(feature = "profiler")]
-        {
-            profiler.end_frame().unwrap();
+        self.device.poll(wgpu::MaintainBase::Wait)?;
 
-            if let Some(results) =
-                profiler.process_finished_frame(self.queue.get_timestamp_period())
-            {
-                renderer_profiler.results = results
-            }
+        profiler.end_frame().unwrap();
+        if let Some(results) = profiler.process_finished_frame(self.queue.get_timestamp_period()) {
+            renderer_profiler.results = results
         }
 
         Ok(())
@@ -190,40 +168,17 @@ impl egui::Widget for &Renderer<'_> {
                     });
             });
 
-        #[cfg(feature = "profiler")]
         ui.add(&*self.profiler.try_borrow().unwrap())
     }
 }
 
 pub type ProfilerCommandEncoder<'a> = wgpu_profiler::Scope<'a, wgpu::CommandEncoder>;
 
-// pub struct ProfilerCommandEncoder<'a>(wgpu_profiler::Scope<'a, wgpu::CommandEncoder>);
-
-// impl<'a> ProfilerCommandEncoder<'a> {
-//     pub fn scope<'b>(&mut self, label: impl Into<String>) -> ProfilerCommandEncoder<'a> {
-//         Self(self.0.scope(label))
-//     }
-// }
-
-// impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
-//     type Target = wgpu_profiler::Scope<'a, wgpu::CommandEncoder>;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-// impl<'a> std::ops::DerefMut for ProfilerCommandEncoder<'a> {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.0
-//     }
-// }
-
 pub struct RenderContext<'a> {
     pub encoder: ProfilerCommandEncoder<'a>,
     pub frame: &'a wgpu::TextureView,
 }
 
-#[cfg(feature = "profiler")]
 pub struct RendererProfiler {
     inner: GpuProfiler,
     results: Vec<GpuTimerQueryResult>,

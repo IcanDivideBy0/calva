@@ -25,14 +25,13 @@ use std::{
     sync::Arc,
 };
 
-pub trait Ressource {
-    fn instanciate(device: &wgpu::Device) -> Self;
-}
-
 #[derive(Clone)]
 pub struct RessourceRef<T>(Arc<RwLock<T>>);
 
-impl<T: Ressource> RessourceRef<T> {
+impl<T> RessourceRef<T>
+where
+    T: for<'a> From<&'a wgpu::Device>,
+{
     pub fn get(&self) -> impl std::ops::Deref<Target = T> + '_ {
         self.0.as_ref().read()
     }
@@ -57,7 +56,7 @@ impl RessourcesManager {
 
     pub fn get<T>(&self) -> RessourceRef<T>
     where
-        T: Ressource + Send + Sync + 'static,
+        T: for<'a> From<&'a wgpu::Device> + Send + Sync + 'static,
     {
         let read = self.ressources.read();
 
@@ -70,7 +69,7 @@ impl RessourcesManager {
                     .write()
                     .entry(TypeId::of::<T>())
                     .or_insert_with(|| {
-                        let ressource = <T as Ressource>::instanciate(&self.device);
+                        let ressource = <T as From<&wgpu::Device>>::from(&self.device);
                         Arc::new(RwLock::new(ressource))
                     })
                     .clone()

@@ -1,4 +1,4 @@
-use crate::{AnimationId, AnimationState, MaterialId, MeshId, MeshesManager, Ressource};
+use crate::{AnimationId, AnimationState, MaterialId, MeshId, MeshesManager};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -101,8 +101,8 @@ impl InstancesManager {
     }
 }
 
-impl Ressource for InstancesManager {
-    fn instanciate(device: &wgpu::Device) -> Self {
+impl From<&wgpu::Device> for InstancesManager {
+    fn from(device: &wgpu::Device) -> Self {
         Self::new(device)
     }
 }

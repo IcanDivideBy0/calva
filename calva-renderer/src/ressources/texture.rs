@@ -2,8 +2,6 @@ use anyhow::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 
-use crate::Ressource;
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TextureId(u32);
@@ -136,8 +134,8 @@ impl TexturesManager {
     }
 }
 
-impl Ressource for TexturesManager {
-    fn instanciate(device: &wgpu::Device) -> Self {
+impl From<&wgpu::Device> for TexturesManager {
+    fn from(device: &wgpu::Device) -> Self {
         Self::new(device)
     }
 }

@@ -1,7 +1,5 @@
 use wgpu::util::DeviceExt;
 
-use crate::Ressource;
-
 pub struct SkyboxManager {
     sampler: wgpu::Sampler,
 
@@ -94,8 +92,8 @@ impl SkyboxManager {
     }
 }
 
-impl Ressource for SkyboxManager {
-    fn instanciate(device: &wgpu::Device) -> Self {
+impl From<&wgpu::Device> for SkyboxManager {
+    fn from(device: &wgpu::Device) -> Self {
         Self::new(device)
     }
 }

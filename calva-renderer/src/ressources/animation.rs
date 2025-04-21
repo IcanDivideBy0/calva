@@ -1,7 +1,5 @@
 use wgpu::{util::DeviceExt, wgt::TextureViewDescriptor};
 
-use crate::Ressource;
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct AnimationId(u32);
@@ -175,8 +173,8 @@ impl AnimationsManager {
     }
 }
 
-impl Ressource for AnimationsManager {
-    fn instanciate(device: &wgpu::Device) -> Self {
+impl From<&wgpu::Device> for AnimationsManager {
+    fn from(device: &wgpu::Device) -> Self {
         Self::new(device)
     }
 }

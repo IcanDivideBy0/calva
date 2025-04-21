@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{MeshesManager, Ressource};
+use crate::MeshesManager;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -115,8 +115,8 @@ impl SkinsManager {
     }
 }
 
-impl Ressource for SkinsManager {
-    fn instanciate(device: &wgpu::Device) -> Self {
+impl From<&wgpu::Device> for SkinsManager {
+    fn from(device: &wgpu::Device) -> Self {
         Self::new(device)
     }
 }

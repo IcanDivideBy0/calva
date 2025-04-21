@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
-use crate::{Ressource, SkinIndex};
+use crate::SkinIndex;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -194,8 +194,8 @@ impl MeshesManager {
     }
 }
 
-impl Ressource for MeshesManager {
-    fn instanciate(device: &wgpu::Device) -> Self {
+impl From<&wgpu::Device> for MeshesManager {
+    fn from(device: &wgpu::Device) -> Self {
         Self::new(device)
     }
 }
