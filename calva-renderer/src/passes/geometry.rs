@@ -73,7 +73,6 @@ impl GeometryPass {
         wgpu::Features::MULTI_DRAW_INDIRECT,
     ];
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
@@ -218,11 +217,10 @@ impl GeometryPass {
         self.depth_view = self.outputs.depth.create_view(&Default::default());
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn render(&self, ctx: &mut RenderContext) {
-        ctx.encoder.profile_start("Geometry");
+        let mut encoder = ctx.encoder.scope("Geometry");
 
-        self.cull.cull(ctx);
+        self.cull.cull(&mut encoder);
 
         let camera = self.camera.get();
         let textures = self.textures.get();
@@ -247,19 +245,22 @@ impl GeometryPass {
             })
         });
 
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Geometry[render]"),
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+        let mut rpass = encoder.scoped_render_pass(
+            "Geometry[render]",
+            wgpu::RenderPassDescriptor {
+                label: Some("Geometry[render]"),
+                color_attachments: &color_attachments,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
+                ..Default::default()
+            },
+        );
 
         rpass.set_pipeline(&self.pipeline);
 
@@ -286,8 +287,6 @@ impl GeometryPass {
         );
 
         drop(rpass);
-
-        ctx.encoder.profile_end();
     }
 
     fn make_outputs(
@@ -356,7 +355,7 @@ impl GeometryPass {
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, RenderContext,
+        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, ProfilerCommandEncoder,
         RessourceRef, RessourcesManager,
     };
 
@@ -555,15 +554,10 @@ mod cull {
             }
         }
 
-        pub fn cull(&self, ctx: &mut RenderContext) {
+        pub fn cull(&self, encoder: &mut ProfilerCommandEncoder) {
             let camera = self.camera.get();
 
-            let mut cpass = ctx
-                .encoder
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Geometry[cull]"),
-                    ..Default::default()
-                });
+            let mut cpass = encoder.scoped_compute_pass("Geometry[cull]");
 
             const WORKGROUP_SIZE: u32 = 32;
 

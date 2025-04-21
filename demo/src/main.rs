@@ -264,7 +264,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 let size = window.inner_size();
                 camera.resize(size);
                 renderer.resize(size.into());
-                engine.resize(&renderer);
+                engine.resize(renderer);
 
                 // navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
                 //     depth: &engine.geometry.outputs.depth,
@@ -275,7 +275,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                 camera.update(dt);
 
-                egui.update(&renderer, &window, |ctx| {
+                egui.update(renderer, window, |ctx| {
                     egui::SidePanel::right("engine_panel")
                         .min_width(320.0)
                         .frame(egui::containers::Frame {
@@ -285,7 +285,6 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         })
                         .show(ctx, |ui| {
                             ui.add(&*renderer);
-                            ui.add(&*renderer.profiler.try_borrow().unwrap());
 
                             ui.add(&mut *engine.ambient_light.config);
                             ui.add(&mut *engine.ssao.config);
@@ -345,7 +344,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                 ***engine.ressources.get::<CameraManager>().get_mut() = (&*camera).into();
                 **engine.animate.uniform = dt;
-                engine.update(&renderer);
+                engine.update(renderer);
 
                 let result = renderer.render(|ctx| {
                     engine.render(ctx);

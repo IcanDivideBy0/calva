@@ -25,7 +25,7 @@ use std::{
     sync::Arc,
 };
 
-pub trait Ressource: Sized {
+pub trait Ressource {
     fn instanciate(device: &wgpu::Device) -> Self;
 }
 
@@ -43,14 +43,14 @@ impl<T: Ressource> RessourceRef<T> {
 }
 
 pub struct RessourcesManager {
-    device: Arc<wgpu::Device>,
+    device: wgpu::Device,
     ressources: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
 }
 
 impl RessourcesManager {
-    pub fn new(device: Arc<wgpu::Device>) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
         Self {
-            device,
+            device: device.clone(),
             ressources: Default::default(),
         }
     }

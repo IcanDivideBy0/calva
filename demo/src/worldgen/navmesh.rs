@@ -282,25 +282,26 @@ impl NavMeshDebug {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
-        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
-            view: ctx.frame,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
+        let mut rpass = ctx.encoder.scoped_render_pass(
+            "NavMeshDebug",
+            wgpu::RenderPassDescriptor {
+                label: Some("NavMeshDebug"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: ctx.frame,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: None,
+                    stencil_ops: None,
+                }),
+                ..Default::default()
             },
-        })];
-
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("NavMeshDebug"),
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
-                depth_ops: None,
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
+        );
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &camera.bind_group, &[]);

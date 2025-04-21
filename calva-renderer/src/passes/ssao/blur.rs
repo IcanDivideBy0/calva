@@ -1,4 +1,4 @@
-use crate::RenderContext;
+use crate::ProfilerCommandEncoder;
 
 use super::SsaoPass;
 
@@ -121,41 +121,47 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
-        ctx.encoder.profile_start("Ssao[blur]");
+    pub fn render(&self, encoder: &mut ProfilerCommandEncoder) {
+        let mut encoder = encoder.scope("Ssao[blur]");
 
-        ctx.encoder
-            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Ssao[blur][horizontal]"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.temp_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                ..Default::default()
-            })
+        encoder
+            .scoped_render_pass(
+                "Ssao[blur][horizontal]",
+                wgpu::RenderPassDescriptor {
+                    label: Some("Ssao[blur][horizontal]"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.temp_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    ..Default::default()
+                },
+            )
             .execute_bundles(std::iter::once(&self.h_pass));
 
-        ctx.encoder
-            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Ssao[blur][vertical]"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                ..Default::default()
-            })
+        encoder
+            .scoped_render_pass(
+                "Ssao[blur][vertical]",
+                wgpu::RenderPassDescriptor {
+                    label: Some("Ssao[blur][vertical]"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.output_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    ..Default::default()
+                },
+            )
             .execute_bundles(std::iter::once(&self.v_pass));
 
-        ctx.encoder.profile_end();
+        encoder.pop_debug_group();
     }
 }

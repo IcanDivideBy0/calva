@@ -240,25 +240,26 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        ctx.encoder.profile_start("Ssao");
+        let mut encoder = ctx.encoder.scope("Ssao");
 
         let camera = self.camera.get();
 
-        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
-            view: &self.output_view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
+        let mut rpass = encoder.scoped_render_pass(
+            "Ssao[render]",
+            wgpu::RenderPassDescriptor {
+                label: Some("Ssao[render]"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
             },
-        })];
-
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Ssao[render]"),
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: None,
-            ..Default::default()
-        });
+        );
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &camera.bind_group, &[]);
@@ -270,10 +271,8 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
 
         drop(rpass);
 
-        self.blur.render(ctx);
-        self.blit.render(ctx);
-
-        ctx.encoder.profile_end();
+        self.blur.render(&mut encoder);
+        self.blit.render(&mut encoder);
     }
 
     fn make_texture(device: &wgpu::Device, label: wgpu::Label<'static>) -> wgpu::Texture {

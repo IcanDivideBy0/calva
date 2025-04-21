@@ -275,24 +275,27 @@ impl PointLightsPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        ctx.encoder.profile_start("PointLights");
+        let mut encoder = ctx.encoder.scope("PointLights");
 
         let camera = self.camera.get();
         let lights = self.lights.get();
 
-        let mut stencil_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("PointLights[stencil]"),
-            color_attachments: &[],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
-                depth_ops: None,
-                stencil_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0),
-                    store: wgpu::StoreOp::Store,
+        let mut stencil_pass = encoder.scoped_render_pass(
+            "PointLights[stencil]",
+            wgpu::RenderPassDescriptor {
+                label: Some("PointLights[stencil]"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                 }),
-            }),
-            ..Default::default()
-        });
+                ..Default::default()
+            },
+        );
 
         stencil_pass.set_pipeline(&self.stencil_pipeline);
         stencil_pass.set_bind_group(0, &camera.bind_group, &[]);
@@ -305,25 +308,26 @@ impl PointLightsPass {
 
         drop(stencil_pass);
 
-        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
-            view: &self.output_view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
+        let mut lighting_pass = encoder.scoped_render_pass(
+            "PointLights[lighting]",
+            wgpu::RenderPassDescriptor {
+                label: Some("PointLights[lighting]"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: None,
+                    stencil_ops: None,
+                }),
+                ..Default::default()
             },
-        })];
-
-        let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("PointLights[lighting]"),
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
-                depth_ops: None,
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
+        );
 
         lighting_pass.set_pipeline(&self.lighting_pipeline);
         lighting_pass.set_bind_group(0, &camera.bind_group, &[]);
@@ -336,8 +340,6 @@ impl PointLightsPass {
         lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
 
         drop(lighting_pass);
-
-        ctx.encoder.profile_end();
     }
 
     fn make_bind_group(

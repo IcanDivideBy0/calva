@@ -18,7 +18,7 @@ impl MyCamera {
             aspect: size.width as f32 / size.height as f32,
             fovy: 45.0_f32.to_radians(),
             znear: 0.1,
-            zfar: 380.0,
+            zfar: 80.0,
 
             controller: FlyingCamera::default(),
         }

@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
 use anyhow::{anyhow, Result};
 
 #[cfg(feature = "profiler")]
-use wgpu_profiler::{
-    GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult, ManualOwningScope, OwningScope,
-};
+use wgpu_profiler::{GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult};
 
 pub struct Renderer<'window> {
     pub surface: wgpu::Surface<'window>,
@@ -14,7 +10,7 @@ pub struct Renderer<'window> {
     pub adapter: wgpu::Adapter,
     pub adapter_info: wgpu::AdapterInfo,
 
-    pub device: Arc<wgpu::Device>,
+    pub device: wgpu::Device,
     pub queue: wgpu::Queue,
 
     #[cfg(feature = "profiler")]
@@ -87,7 +83,7 @@ impl<'window> Renderer<'window> {
             inner: GpuProfiler::new(
                 &device,
                 GpuProfilerSettings {
-                    enable_debug_groups: false,
+                    // enable_debug_groups: false,
                     ..Default::default()
                 },
             )?,
@@ -97,7 +93,7 @@ impl<'window> Renderer<'window> {
         Ok(Self {
             adapter,
             adapter_info,
-            device: Arc::new(device),
+            device,
             queue,
             surface,
             surface_config,
@@ -129,21 +125,22 @@ impl<'window> Renderer<'window> {
         let profiler = &mut renderer_profiler.inner;
 
         #[cfg(feature = "profiler")]
-        let query = profiler.begin_query("RenderFrame", &mut encoder);
+        let scope = profiler.scope("RenderPass", &mut encoder);
 
         let mut context = RenderContext {
+            #[cfg(not(feature = "profiler"))]
             encoder: ProfilerCommandEncoder {
                 encoder: &mut encoder,
                 #[cfg(feature = "profiler")]
                 profiler: &profiler,
             },
+            #[cfg(feature = "profiler")]
+            encoder: scope,
             frame: &frame_view,
         };
 
         cb(&mut context);
-
-        #[cfg(feature = "profiler")]
-        profiler.end_query(&mut encoder, query);
+        drop(context);
 
         #[cfg(feature = "profiler")]
         profiler.resolve_queries(&mut encoder);
@@ -167,7 +164,7 @@ impl<'window> Renderer<'window> {
 }
 
 #[cfg(feature = "egui")]
-impl<'window> egui::Widget for &Renderer<'window> {
+impl egui::Widget for &Renderer<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         egui::CollapsingHeader::new("Adapter")
             .default_open(true)
@@ -191,10 +188,35 @@ impl<'window> egui::Widget for &Renderer<'window> {
                         ui.label("Driver");
                         ui.label(format!("{driver} ({driver_info})"));
                     });
-            })
-            .header_response
+            });
+
+        #[cfg(feature = "profiler")]
+        ui.add(&*self.profiler.try_borrow().unwrap())
     }
 }
+
+pub type ProfilerCommandEncoder<'a> = wgpu_profiler::Scope<'a, wgpu::CommandEncoder>;
+
+// pub struct ProfilerCommandEncoder<'a>(wgpu_profiler::Scope<'a, wgpu::CommandEncoder>);
+
+// impl<'a> ProfilerCommandEncoder<'a> {
+//     pub fn scope<'b>(&mut self, label: impl Into<String>) -> ProfilerCommandEncoder<'a> {
+//         Self(self.0.scope(label))
+//     }
+// }
+
+// impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
+//     type Target = wgpu_profiler::Scope<'a, wgpu::CommandEncoder>;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
+// impl<'a> std::ops::DerefMut for ProfilerCommandEncoder<'a> {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
 
 pub struct RenderContext<'a> {
     pub encoder: ProfilerCommandEncoder<'a>,
@@ -251,69 +273,5 @@ impl egui::Widget for &RendererProfiler {
             .default_open(true)
             .show(ui, profiler_ui(&self.results))
             .header_response
-    }
-}
-
-pub struct ProfilerCommandEncoder<'a> {
-    encoder: &'a mut wgpu::CommandEncoder,
-    #[cfg(feature = "profiler")]
-    profiler: &'a GpuProfiler,
-}
-
-impl<'a> ProfilerCommandEncoder<'a> {
-    pub fn profile_start(&mut self, label: &str) {
-        #[cfg(debug_assertions)]
-        self.encoder.push_debug_group(label);
-    }
-
-    pub fn profile_end(&mut self) {
-        #[cfg(debug_assertions)]
-        self.encoder.pop_debug_group();
-    }
-
-    #[cfg(feature = "profiler")]
-    pub fn begin_compute_pass<'pass>(
-        &'pass mut self,
-        desc: &wgpu::ComputePassDescriptor<'pass>,
-    ) -> OwningScope<'pass, wgpu::ComputePass<'pass>> {
-        self.profiler.owning_scope(
-            desc.label.unwrap_or("Unnamed compute pass"),
-            self.encoder.begin_compute_pass(desc),
-        )
-    }
-
-    #[cfg(feature = "profiler")]
-    pub fn begin_render_pass<'pass>(
-        &'pass mut self,
-        desc: &wgpu::RenderPassDescriptor<'pass>,
-    ) -> OwningScope<'pass, wgpu::RenderPass<'pass>> {
-        self.profiler.owning_scope(
-            desc.label.unwrap_or("Unnamed render pass"),
-            self.encoder.begin_render_pass(desc).forget_lifetime(),
-        )
-    }
-
-    #[cfg(feature = "profiler")]
-    pub fn begin_manual_render_pass<'pass>(
-        &'pass mut self,
-        desc: &wgpu::RenderPassDescriptor<'pass>,
-    ) -> ManualOwningScope<'pass, wgpu::RenderPass<'pass>> {
-        self.profiler.manual_owning_scope(
-            desc.label.unwrap_or("Unnamed render pass"),
-            self.encoder.begin_render_pass(desc).forget_lifetime(),
-        )
-    }
-}
-
-impl<'a> std::ops::Deref for ProfilerCommandEncoder<'a> {
-    type Target = wgpu::CommandEncoder;
-
-    fn deref(&self) -> &Self::Target {
-        self.encoder
-    }
-}
-impl<'a> std::ops::DerefMut for ProfilerCommandEncoder<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.encoder
     }
 }

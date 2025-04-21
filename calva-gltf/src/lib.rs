@@ -80,7 +80,7 @@ impl GltfModel {
         Ok(Self {
             doc,
             meshes_instances,
-            animations: skins_animations.get(0).cloned().unwrap_or_default(),
+            animations: skins_animations.first().cloned().unwrap_or_default(),
         })
     }
 

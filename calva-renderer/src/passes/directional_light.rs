@@ -307,30 +307,32 @@ impl DirectionalLightPass {
         self.uniform.update(queue);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn render(&self, ctx: &mut RenderContext) {
-        ctx.encoder.profile_start("DirectionalLight");
+        let mut encoder = ctx.encoder.scope("DirectionalLight");
 
         let camera = self.camera.get();
         let meshes = self.meshes.get();
         let skins = self.skins.get();
         let animations = self.animations.get();
 
-        self.cull.cull(ctx, &self.uniform);
+        self.cull.cull(&mut encoder, &self.uniform);
 
-        let mut depth_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("DirectionalLight[depth]"),
-            color_attachments: &[],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.light_depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+        let mut depth_pass = encoder.scoped_render_pass(
+            "DirectionalLight[depth]",
+            wgpu::RenderPassDescriptor {
+                label: Some("DirectionalLight[depth]"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.light_depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
+                ..Default::default()
+            },
+        );
 
         depth_pass.set_pipeline(&self.light_depth_pipeline);
 
@@ -353,23 +355,24 @@ impl DirectionalLightPass {
 
         drop(depth_pass);
 
-        self.blur_pass.render(ctx);
+        self.blur_pass.render(&mut encoder);
 
-        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
-            view: &self.output_view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
+        let mut lighting_pass = encoder.scoped_render_pass(
+            "DirectionalLight[lighting]",
+            wgpu::RenderPassDescriptor {
+                label: Some("DirectionalLight[lighting]"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
             },
-        })];
-
-        let mut lighting_pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("DirectionalLight[lighting]"),
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: None,
-            ..Default::default()
-        });
+        );
 
         lighting_pass.set_pipeline(&self.lighting_pipeline);
 
@@ -380,8 +383,6 @@ impl DirectionalLightPass {
         lighting_pass.draw(0..3, 0..1);
 
         drop(lighting_pass);
-
-        ctx.encoder.profile_end();
     }
 
     fn make_lighting_bind_group(
@@ -523,7 +524,7 @@ impl UniformData for DirectionalLightUniform {
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, RenderContext,
+        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, ProfilerCommandEncoder,
         RessourceRef, RessourcesManager, UniformBuffer,
     };
 
@@ -733,17 +734,12 @@ mod cull {
 
         pub fn cull(
             &self,
-            ctx: &mut RenderContext,
+            encoder: &mut ProfilerCommandEncoder,
             uniform: &UniformBuffer<DirectionalLightUniform>,
         ) {
             let camera = self.camera.get();
 
-            let mut cpass = ctx
-                .encoder
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("DirectionalLight[cull]"),
-                    ..Default::default()
-                });
+            let mut cpass = encoder.scoped_compute_pass("DirectionalLight[cull]");
 
             const WORKGROUP_SIZE: u32 = 32;
 
@@ -778,7 +774,7 @@ mod cull {
 
 use blur::*;
 mod blur {
-    use crate::RenderContext;
+    use crate::ProfilerCommandEncoder;
 
     use super::DirectionalLightPass;
 
@@ -936,42 +932,46 @@ mod blur {
             }
         }
 
-        pub fn render(&self, ctx: &mut RenderContext) {
-            ctx.encoder.profile_start("DirectionalLight[blur]");
+        pub fn render(&self, encoder: &mut ProfilerCommandEncoder) {
+            let mut encoder = encoder.scope("DirectionalLight[blur]");
 
-            ctx.encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("DirectionalLight[blur][horizontal]"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.temp_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
+            encoder
+                .scoped_render_pass(
+                    "DirectionalLight[blur][horizontal]",
+                    wgpu::RenderPassDescriptor {
+                        label: Some("DirectionalLight[blur][horizontal]"),
+                        color_attachments: &[],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.temp_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
                         }),
-                        stencil_ops: None,
-                    }),
-                    ..Default::default()
-                })
+                        ..Default::default()
+                    },
+                )
                 .execute_bundles(std::iter::once(&self.h_pass));
 
-            ctx.encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("DirectionalLight[blur][vertical]"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.output_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
+            encoder
+                .scoped_render_pass(
+                    "DirectionalLight[blur][vertical]",
+                    wgpu::RenderPassDescriptor {
+                        label: Some("DirectionalLight[blur][vertical]"),
+                        color_attachments: &[],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.output_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
                         }),
-                        stencil_ops: None,
-                    }),
-                    ..Default::default()
-                })
+                        ..Default::default()
+                    },
+                )
                 .execute_bundles(std::iter::once(&self.v_pass));
-
-            ctx.encoder.profile_end();
         }
     }
 }

@@ -25,7 +25,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(renderer: &Renderer) -> Self {
-        let ressources = RessourcesManager::new(renderer.device.clone());
+        let ressources = RessourcesManager::new(&renderer.device);
 
         let size = (
             renderer.surface_config.width,
@@ -222,7 +222,7 @@ impl Engine {
         self.geometry.render(ctx);
         self.hierarchical_depth.render(ctx);
         self.ambient_light.render(ctx);
-        // self.directional_light.render(ctx);
+        self.directional_light.render(ctx);
         self.point_lights.render(ctx);
         self.skybox.render(ctx);
         self.fxaa.render(ctx);

@@ -8,8 +8,7 @@ pub struct EguiPass {
 
 impl EguiPass {
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let egui_renderer =
-            egui_wgpu::Renderer::new(device, surface_config.format.clone(), None, 1, false);
+        let egui_renderer = egui_wgpu::Renderer::new(device, surface_config.format, None, 1, false);
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
@@ -65,30 +64,24 @@ impl EguiPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
-            view: ctx.frame,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-        })];
-
-        let pass_desc = wgpu::RenderPassDescriptor {
-            label: Some("Egui"),
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: None,
-            ..Default::default()
-        };
-
-        #[cfg(feature = "profiler")]
-        let pass = ctx.encoder.begin_manual_render_pass(&pass_desc).end_query();
-
-        #[cfg(not(feature = "profiler"))]
-        let pass = ctx.encoder.begin_render_pass(&pass_desc);
-
         self.egui_renderer.render(
-            &mut pass.forget_lifetime(),
+            &mut ctx
+                .encoder
+                .scope("Egui")
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Egui"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: ctx.frame,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    ..Default::default()
+                })
+                .forget_lifetime(),
             &self.paint_jobs,
             &self.screen_descriptor,
         );

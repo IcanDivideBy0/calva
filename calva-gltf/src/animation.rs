@@ -26,7 +26,7 @@ impl<T: Interpolate + Copy> ChannelSampler<T> {
     }
 
     fn last(&self) -> (&Duration, &T) {
-        self.0.range(..).rev().next().unwrap()
+        self.0.range(..).next_back().unwrap()
     }
 
     fn closest_before(&self, time: &Duration) -> (&Duration, &T) {

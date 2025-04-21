@@ -102,12 +102,7 @@ impl AnimatePass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        let mut cpass = ctx
-            .encoder
-            .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("AnimatePass"),
-                ..Default::default()
-            });
+        let mut cpass = ctx.encoder.scoped_compute_pass("AnimatePass");
 
         cpass.set_pipeline(&self.pipeline);
         cpass.set_bind_group(0, &self.bind_group, &[]);
