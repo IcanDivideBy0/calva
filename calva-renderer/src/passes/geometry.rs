@@ -1,16 +1,19 @@
 use crate::{
-    AnimationState, AnimationsManager, CameraManager, MaterialId, MaterialsManager, MeshesManager,
-    RenderContext, RessourceRef, RessourcesManager, SkinsManager, TexturesManager,
+    AnimationState, AnimationsManager, CameraManager, MaterialsManager, MeshesManager,
+    RenderContext, ResourceRef, ResourcesManager, SkinsManager, TexturesManager,
 };
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawInstance {
-    _model_matrix: [f32; 16],
-    _normal_quat: [f32; 4],
-    _material: MaterialId,
-    _skin_offset: i32,
-    _animation: AnimationState,
+    pub model_matrix: [f32; 16],
+    pub normal_quat: [f32; 4],
+    pub material: u32,
+    // pub material: MaterialHandle,
+    // pub __padding1__: u8,
+    // pub __padding2__: u16,
+    pub skin_offset: i32,
+    pub animation: AnimationState,
 }
 
 impl DrawInstance {
@@ -48,12 +51,12 @@ pub struct GeometryPassOutputs {
 pub struct GeometryPass {
     pub outputs: GeometryPassOutputs,
 
-    camera: RessourceRef<CameraManager>,
-    textures: RessourceRef<TexturesManager>,
-    materials: RessourceRef<MaterialsManager>,
-    meshes: RessourceRef<MeshesManager>,
-    skins: RessourceRef<SkinsManager>,
-    animations: RessourceRef<AnimationsManager>,
+    camera: ResourceRef<CameraManager>,
+    textures: ResourceRef<TexturesManager>,
+    materials: ResourceRef<MaterialsManager>,
+    meshes: ResourceRef<MeshesManager>,
+    skins: ResourceRef<SkinsManager>,
+    animations: ResourceRef<AnimationsManager>,
 
     cull: GeometryCull,
 
@@ -76,23 +79,23 @@ impl GeometryPass {
     pub fn new(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
-        ressources: &RessourcesManager,
+        resources: &ResourcesManager,
     ) -> Self {
         let outputs = Self::make_outputs(device, surface_config);
 
-        let camera = ressources.get::<CameraManager>();
-        let textures = ressources.get::<TexturesManager>();
-        let materials = ressources.get::<MaterialsManager>();
-        let meshes = ressources.get::<MeshesManager>();
-        let skins = ressources.get::<SkinsManager>();
-        let animations = ressources.get::<AnimationsManager>();
+        let camera = resources.get::<CameraManager>();
+        let textures = resources.get::<TexturesManager>();
+        let materials = resources.get::<MaterialsManager>();
+        let meshes = resources.get::<MeshesManager>();
+        let skins = resources.get::<SkinsManager>();
+        let animations = resources.get::<AnimationsManager>();
 
         let albedo_metallic_view = outputs.albedo_metallic.create_view(&Default::default());
         let normal_roughness_view = outputs.normal_roughness.create_view(&Default::default());
         let emissive_view = outputs.emissive.create_view(&Default::default());
         let depth_view = outputs.depth.create_view(&Default::default());
 
-        let cull = GeometryCull::new(device, ressources);
+        let cull = GeometryCull::new(device, resources);
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("geometry.wgsl"));
 
@@ -355,16 +358,16 @@ impl GeometryPass {
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, ProfilerCommandEncoder,
-        RessourceRef, RessourcesManager,
+        CameraManager, GpuInstance, InstancesManager, MeshInfo, MeshesManager,
+        ProfilerCommandEncoder, ResourceRef, ResourcesManager,
     };
 
     use super::DrawInstance;
 
     pub struct GeometryCull {
-        camera: RessourceRef<CameraManager>,
-        meshes: RessourceRef<MeshesManager>,
-        instances: RessourceRef<InstancesManager>,
+        camera: ResourceRef<CameraManager>,
+        meshes: ResourceRef<MeshesManager>,
+        instances: ResourceRef<InstancesManager>,
 
         pub(crate) draw_instances: wgpu::Buffer,
         pub(crate) draw_indirects: wgpu::Buffer,
@@ -378,10 +381,10 @@ mod cull {
     }
 
     impl GeometryCull {
-        pub fn new(device: &wgpu::Device, ressources: &RessourcesManager) -> Self {
-            let camera = ressources.get::<CameraManager>();
-            let meshes = ressources.get::<MeshesManager>();
-            let instances = ressources.get::<InstancesManager>();
+        pub fn new(device: &wgpu::Device, resources: &ResourcesManager) -> Self {
+            let camera = resources.get::<CameraManager>();
+            let meshes = resources.get::<MeshesManager>();
+            let instances = resources.get::<InstancesManager>();
 
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Geometry[cull] draw instances"),
@@ -445,7 +448,7 @@ mod cull {
                                 has_dynamic_offset: false,
                                 min_binding_size: wgpu::BufferSize::new(
                                     std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                        + Instance::SIZE,
+                                        + GpuInstance::SIZE,
                                 ),
                             },
                             count: None,

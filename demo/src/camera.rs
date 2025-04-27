@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use calva::renderer::Camera;
-use winit::{dpi::PhysicalSize, event::WindowEvent};
+use winit::event::WindowEvent;
 
 pub struct MyCamera {
     pub aspect: f32,
@@ -13,9 +13,9 @@ pub struct MyCamera {
 }
 
 impl MyCamera {
-    pub fn new(size: PhysicalSize<u32>) -> Self {
+    pub fn new((width, height): (u32, u32)) -> Self {
         Self {
-            aspect: size.width as f32 / size.height as f32,
+            aspect: width as f32 / height as f32,
             fovy: 45.0_f32.to_radians(),
             znear: 0.1,
             zfar: 80.0,
@@ -28,8 +28,8 @@ impl MyCamera {
         self.controller.handle_event(event)
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.aspect = size.width as f32 / size.height as f32;
+    pub fn resize(&mut self, (width, height): (u32, u32)) {
+        self.aspect = width as f32 / height as f32;
     }
 
     pub fn update(&mut self, dt: Duration) {

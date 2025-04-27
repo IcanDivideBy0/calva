@@ -1,4 +1,4 @@
-use crate::{CameraManager, RenderContext, RessourceRef, RessourcesManager, SkyboxManager};
+use crate::{CameraManager, RenderContext, ResourceRef, ResourcesManager, SkyboxManager};
 
 pub struct SkyboxPassInputs<'a> {
     pub depth: &'a wgpu::Texture,
@@ -6,8 +6,8 @@ pub struct SkyboxPassInputs<'a> {
 }
 
 pub struct SkyboxPass {
-    camera: RessourceRef<CameraManager>,
-    skybox: RessourceRef<SkyboxManager>,
+    camera: ResourceRef<CameraManager>,
+    skybox: ResourceRef<SkyboxManager>,
 
     depth_view: wgpu::TextureView,
     output_view: wgpu::TextureView,
@@ -18,11 +18,11 @@ pub struct SkyboxPass {
 impl SkyboxPass {
     pub fn new(
         device: &wgpu::Device,
-        ressources: &RessourcesManager,
+        resources: &ResourcesManager,
         inputs: SkyboxPassInputs,
     ) -> Self {
-        let camera = ressources.get::<CameraManager>();
-        let skybox = ressources.get::<SkyboxManager>();
+        let camera = resources.get::<CameraManager>();
+        let skybox = resources.get::<SkyboxManager>();
 
         let output_view = inputs.output.create_view(&Default::default());
         let depth_view = inputs.depth.create_view(&Default::default());

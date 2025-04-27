@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use gltf::animation::util::ReadOutputs;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -22,11 +23,11 @@ struct ChannelSampler<T>(BTreeMap<Duration, T>);
 
 impl<T: Interpolate + Copy> ChannelSampler<T> {
     fn first(&self) -> (&Duration, &T) {
-        self.0.range(..).next().unwrap()
+        self.0.first_key_value().unwrap()
     }
 
     fn last(&self) -> (&Duration, &T) {
-        self.0.range(..).next_back().unwrap()
+        self.0.last_key_value().unwrap()
     }
 
     fn closest_before(&self, time: &Duration) -> (&Duration, &T) {
@@ -107,25 +108,29 @@ pub struct AnimationSampler {
 }
 
 impl AnimationSampler {
-    pub fn new(animation: gltf::Animation, buffers: &[gltf::buffer::Data]) -> Self {
+    pub fn new(animation: gltf::Animation, buffers: &[gltf::buffer::Data]) -> Result<Self> {
         let mut samplers: HashMap<usize, NodeSampler> = HashMap::new();
 
         for channel in animation.channels() {
             let reader =
                 channel.reader(|buffer| buffers.get(buffer.index()).map(std::ops::Deref::deref));
 
-            let keyframes = reader
+            let inputs = reader
                 .read_inputs()
-                .unwrap()
-                .map(Duration::from_secs_f32)
-                .collect::<Vec<_>>();
+                .ok_or_else(|| anyhow!("Invalid animation inputs buffer"))?;
+
+            let keyframes = inputs.map(Duration::from_secs_f32).collect::<Vec<_>>();
 
             let target_node = channel.target().node();
             let sampler = samplers
                 .entry(target_node.index())
                 .or_insert_with(|| NodeSampler::from_node_default(target_node));
 
-            match reader.read_outputs().unwrap() {
+            let outputs = reader
+                .read_outputs()
+                .ok_or_else(|| anyhow!("Invalid animation outputs buffer"))?;
+
+            match outputs {
                 ReadOutputs::Translations(translations) => {
                     sampler.translations = ChannelSampler(
                         keyframes
@@ -162,7 +167,7 @@ impl AnimationSampler {
             }
         }
 
-        Self { samplers }
+        Ok(Self { samplers })
     }
 
     pub fn get_node_transform(&self, node: &gltf::Node, time: &Duration) -> glam::Mat4 {

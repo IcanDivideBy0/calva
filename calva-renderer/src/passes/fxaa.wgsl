@@ -67,12 +67,11 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 
     let luma_result = dot(LUMA, r_avg);
 
-    var color: vec3<f32>;
-    if luma_min < luma_result && luma_result < luma_max {
-        color = r_avg;
-    } else {
-        color = r1;
-    }
+    let color = select(
+        r1,     // false
+        r_avg, // true
+        luma_min < luma_result && luma_result < luma_max
+    );
 
     return vec4<f32>(color, 1.0);
 }

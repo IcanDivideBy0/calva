@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [features]
-default = ["egui", "winit", "gltf", "profiler"]
+default = ["egui", "winit", "gltf"]
 winit = ["renderer/winit"]
-profiler = ["renderer/profiler"]
 egui = ["renderer/egui"]
 
 [dependencies]

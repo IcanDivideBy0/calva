@@ -28,8 +28,10 @@ struct AnimationState {
 
 struct Instance {
     transform: mat4x4<f32>,
-    mesh_id: u32,
-    material_id: u32,
+    /* | deleted  | mat_id   | mesh_id          | */
+    /* | 8        | 8        | 16               | */
+    packed_data: u32,
+    _padding: u32,
     animation: AnimationState,
 }
 struct Instances {
@@ -90,6 +92,7 @@ fn reset(@builtin(global_invocation_id) global_id: vec3<u32>) {
 fn plane_distance_to_point(plane: vec4<f32>, p: vec3<f32>) -> f32 {
     return dot(plane.xyz, p) + plane.w;
 }
+
 fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>, scale: vec3<f32>) -> bool {
     let p = transform * vec4<f32>(sphere.center, 1.0);
     let pos = p.xyz / p.w;
@@ -172,8 +175,14 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let instance = &instances.instances[instance_index];
+
+    let deleted = bool((*instance).packed_data >> 24);
+    if deleted {
+        return;
+    }
+
     let transform = &(*instance).transform;
-    let mesh_id = (*instance).mesh_id;
+    let mesh_id = (*instance).packed_data & 0xFFFF;
     let mesh_info = &meshes_info[mesh_id];
 
     // /!\ negative scaling not supported
@@ -200,7 +209,7 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
         (*transform)[2].xyz * inv_scale.z,
     );
 
-    (*draw_instance).material_id = (*instance).material_id;
+    (*draw_instance).material_id = (*instance).packed_data >> 16 & 0xFF;
     (*draw_instance).skin_offset = (*mesh_info).skin_offset;
     (*draw_instance).animation = (*instance).animation;
 }

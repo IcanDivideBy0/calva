@@ -2,14 +2,12 @@ use crate::{
     AmbientLightPass, AmbientLightPassInputs, AnimatePass, CameraManager, DirectionalLightPass,
     DirectionalLightPassInputs, FxaaPass, FxaaPassInputs, GeometryPass, HierarchicalDepthPass,
     HierarchicalDepthPassInputs, PointLightsPass, PointLightsPassInputs, RenderContext, Renderer,
-    RessourcesManager, SkyboxPass, SkyboxPassInputs, SsaoPass, SsaoPassInputs, ToneMappingPass,
+    ResourcesManager, SkyboxPass, SkyboxPassInputs, SsaoPass, SsaoPassInputs, ToneMappingPass,
     ToneMappingPassInputs,
 };
 
 pub struct Engine {
-    pub ressources: RessourcesManager,
-
-    size: (u32, u32),
+    pub resources: ResourcesManager,
 
     pub animate: AnimatePass,
     pub geometry: GeometryPass,
@@ -25,16 +23,11 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(renderer: &Renderer) -> Self {
-        let ressources = RessourcesManager::new(&renderer.device);
+        let resources = ResourcesManager::new(&renderer.device);
 
-        let size = (
-            renderer.surface_config.width,
-            renderer.surface_config.height,
-        );
+        let animate = AnimatePass::new(&renderer.device, &resources);
 
-        let animate = AnimatePass::new(&renderer.device, &ressources);
-
-        let geometry = GeometryPass::new(&renderer.device, &renderer.surface_config, &ressources);
+        let geometry = GeometryPass::new(&renderer.device, &renderer.surface_config, &resources);
 
         let hierarchical_depth = HierarchicalDepthPass::new(
             &renderer.device,
@@ -53,7 +46,7 @@ impl Engine {
 
         let directional_light = DirectionalLightPass::new(
             &renderer.device,
-            &ressources,
+            &resources,
             DirectionalLightPassInputs {
                 albedo_metallic: &geometry.outputs.albedo_metallic,
                 normal_roughness: &geometry.outputs.normal_roughness,
@@ -64,7 +57,7 @@ impl Engine {
 
         let point_lights = PointLightsPass::new(
             &renderer.device,
-            &ressources,
+            &resources,
             PointLightsPassInputs {
                 albedo_metallic: &geometry.outputs.albedo_metallic,
                 normal_roughness: &geometry.outputs.normal_roughness,
@@ -75,7 +68,7 @@ impl Engine {
 
         let skybox = SkyboxPass::new(
             &renderer.device,
-            &ressources,
+            &resources,
             SkyboxPassInputs {
                 depth: &geometry.outputs.depth,
                 output: &ambient_light.outputs.output,
@@ -91,7 +84,7 @@ impl Engine {
 
         let ssao = SsaoPass::new(
             &renderer.device,
-            &ressources,
+            &resources,
             SsaoPassInputs {
                 normal: &geometry.outputs.normal_roughness,
                 depth: &geometry.outputs.depth,
@@ -108,9 +101,7 @@ impl Engine {
         );
 
         Self {
-            ressources,
-
-            size,
+            resources,
 
             animate,
             geometry,
@@ -126,16 +117,6 @@ impl Engine {
     }
 
     pub fn resize(&mut self, renderer: &Renderer) {
-        let renderer_size = (
-            renderer.surface_config.width,
-            renderer.surface_config.height,
-        );
-
-        if self.size == renderer_size {
-            return;
-        }
-        self.size = renderer_size;
-
         self.geometry
             .resize(&renderer.device, &renderer.surface_config);
 
@@ -205,7 +186,7 @@ impl Engine {
     }
 
     pub fn update(&mut self, renderer: &Renderer) {
-        self.ressources
+        self.resources
             .get::<CameraManager>()
             .get_mut()
             .update(&renderer.queue);

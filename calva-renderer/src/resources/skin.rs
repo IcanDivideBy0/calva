@@ -1,19 +1,17 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use crate::MeshesManager;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct SkinIndex(u32);
+pub struct SkinHandle(u32);
 
-impl SkinIndex {
+impl SkinHandle {
     pub(crate) fn as_offset(&self, vertex_offset: i32) -> i32 {
         self.0 as i32 - vertex_offset
     }
 }
 
 pub struct SkinsManager {
-    offset: AtomicU32,
+    offset: u32,
     joints: wgpu::Buffer,
     weights: wgpu::Buffer,
 
@@ -86,7 +84,7 @@ impl SkinsManager {
         });
 
         Self {
-            offset: AtomicU32::new(1),
+            offset: 1,
             joints,
             weights,
 
@@ -95,23 +93,24 @@ impl SkinsManager {
         }
     }
 
-    pub fn add(&mut self, queue: &wgpu::Queue, joints: &[u8], weights: &[u8]) -> SkinIndex {
-        let size = (joints.len() / Self::JOINTS_SIZE as usize) as u32;
-        let offset = self.offset.fetch_add(size, Ordering::Relaxed);
+    pub fn add(&mut self, queue: &wgpu::Queue, joints: &[u8], weights: &[u8]) -> SkinHandle {
+        let handle = SkinHandle(self.offset);
 
         queue.write_buffer(
             &self.joints,
-            offset as wgpu::BufferAddress * Self::JOINTS_SIZE,
+            handle.0 as wgpu::BufferAddress * Self::JOINTS_SIZE,
             joints,
         );
 
         queue.write_buffer(
             &self.weights,
-            offset as wgpu::BufferAddress * Self::WEIGHTS_SIZE,
+            handle.0 as wgpu::BufferAddress * Self::WEIGHTS_SIZE,
             weights,
         );
 
-        SkinIndex(offset)
+        self.offset += (joints.len() as u32) / (Self::JOINTS_SIZE as u32);
+
+        handle
     }
 }
 

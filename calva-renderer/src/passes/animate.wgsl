@@ -5,8 +5,10 @@ struct AnimationState {
 
 struct Instance {
     transform: mat4x4<f32>,
-    mesh_id: u32,
-    material_id: u32,
+    /* | deleted  | mat_id   | mesh_id          | */
+    /* | 8        | 8        | 16               | */
+    packed_data: u32,
+    _padding: u32,
     animation: AnimationState,
 }
 struct Instances {

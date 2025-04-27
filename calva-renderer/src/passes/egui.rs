@@ -60,7 +60,8 @@ impl EguiPass {
             &self.paint_jobs,
             &self.screen_descriptor,
         );
-        renderer.queue.submit(std::iter::once(encoder.finish()));
+        // renderer.queue.submit(std::iter::once(encoder.finish()));
+        renderer.queue.submit([encoder.finish()]);
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {

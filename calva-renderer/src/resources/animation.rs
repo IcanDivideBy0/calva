@@ -2,17 +2,17 @@ use wgpu::{util::DeviceExt, wgt::TextureViewDescriptor};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct AnimationId(u32);
+pub struct AnimationHandle(u32);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct AnimationState {
-    pub animation: AnimationId,
+    pub animation: AnimationHandle,
     pub time: f32,
 }
 
-impl From<AnimationId> for AnimationState {
-    fn from(animation: AnimationId) -> Self {
+impl From<AnimationHandle> for AnimationState {
+    fn from(animation: AnimationHandle) -> Self {
         Self {
             animation,
             time: 0.0,
@@ -105,7 +105,7 @@ impl AnimationsManager {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         animation: Vec<Vec<glam::Mat4>>,
-    ) -> AnimationId {
+    ) -> AnimationHandle {
         let pixels = (0..4)
             .flat_map(|i| {
                 animation
@@ -140,7 +140,7 @@ impl AnimationsManager {
         self.views.push(view);
         self.bind_group =
             Self::create_bind_group(device, &self.bind_group_layout, &self.views, &self.sampler);
-        AnimationId(self.views.len() as u32 - 1)
+        AnimationHandle(self.views.len() as u32 - 1)
     }
 
     fn create_bind_group(

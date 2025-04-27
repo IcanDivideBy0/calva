@@ -1,16 +1,18 @@
 use crate::{
-    AnimationState, AnimationsManager, Camera, CameraManager, DirectionalLight, MaterialId,
-    MeshesManager, RenderContext, RessourceRef, RessourcesManager, SkinsManager, UniformBuffer,
-    UniformData,
+    AnimationState, AnimationsManager, Camera, CameraManager, MeshesManager, RenderContext,
+    ResourceRef, ResourcesManager, SkinsManager, UniformBuffer, UniformData,
 };
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawInstance {
-    _model_matrix: [f32; 16],
-    _material: MaterialId,
-    _skin_offset: i32,
-    _animation: AnimationState,
+    pub model_matrix: [f32; 16],
+    pub material: u32,
+    // pub material: MaterialHandle,
+    // pub __padding1__: u8,
+    // pub __padding2__: u16,
+    pub skin_offset: i32,
+    pub animation: AnimationState,
 }
 
 impl DrawInstance {
@@ -36,6 +38,23 @@ impl DrawInstance {
     };
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DirectionalLight {
+    pub direction: glam::Vec3,
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
+impl Default for DirectionalLight {
+    fn default() -> Self {
+        Self {
+            direction: glam::vec3(0.5, -1.0, 0.5),
+            color: [1.0; 3],
+            intensity: 5.0,
+        }
+    }
+}
+
 pub struct DirectionalLightPassInputs<'a> {
     pub albedo_metallic: &'a wgpu::Texture,
     pub normal_roughness: &'a wgpu::Texture,
@@ -46,10 +65,10 @@ pub struct DirectionalLightPassInputs<'a> {
 pub struct DirectionalLightPass {
     pub uniform: UniformBuffer<DirectionalLightUniform>,
 
-    camera: RessourceRef<CameraManager>,
-    meshes: RessourceRef<MeshesManager>,
-    skins: RessourceRef<SkinsManager>,
-    animations: RessourceRef<AnimationsManager>,
+    camera: ResourceRef<CameraManager>,
+    meshes: ResourceRef<MeshesManager>,
+    skins: ResourceRef<SkinsManager>,
+    animations: ResourceRef<AnimationsManager>,
 
     output_view: wgpu::TextureView,
     cull: DirectionalLightCull,
@@ -76,17 +95,17 @@ impl DirectionalLightPass {
 
     pub fn new(
         device: &wgpu::Device,
-        ressources: &RessourcesManager,
+        resources: &ResourcesManager,
         inputs: DirectionalLightPassInputs,
     ) -> Self {
         let uniform = UniformBuffer::new(device, DirectionalLightUniform::default());
 
-        let camera = ressources.get::<CameraManager>();
-        let meshes = ressources.get::<MeshesManager>();
-        let skins = ressources.get::<SkinsManager>();
-        let animations = ressources.get::<AnimationsManager>();
+        let camera = resources.get::<CameraManager>();
+        let meshes = resources.get::<MeshesManager>();
+        let skins = resources.get::<SkinsManager>();
+        let animations = resources.get::<AnimationsManager>();
 
-        let cull = DirectionalLightCull::new(device, ressources, &uniform);
+        let cull = DirectionalLightCull::new(device, resources, &uniform);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("DirectionalLight sampler"),
@@ -524,16 +543,16 @@ impl UniformData for DirectionalLightUniform {
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, Instance, InstancesManager, MeshInfo, MeshesManager, ProfilerCommandEncoder,
-        RessourceRef, RessourcesManager, UniformBuffer,
+        CameraManager, GpuInstance, InstancesManager, MeshInfo, MeshesManager,
+        ProfilerCommandEncoder, ResourceRef, ResourcesManager, UniformBuffer,
     };
 
     use super::{DirectionalLightUniform, DrawInstance};
 
     pub struct DirectionalLightCull {
-        camera: RessourceRef<CameraManager>,
-        meshes: RessourceRef<MeshesManager>,
-        instances: RessourceRef<InstancesManager>,
+        camera: ResourceRef<CameraManager>,
+        meshes: ResourceRef<MeshesManager>,
+        instances: ResourceRef<InstancesManager>,
 
         pub(crate) draw_instances: wgpu::Buffer,
         pub(crate) draw_indirects: wgpu::Buffer,
@@ -549,12 +568,12 @@ mod cull {
     impl DirectionalLightCull {
         pub fn new(
             device: &wgpu::Device,
-            ressources: &RessourcesManager,
+            resources: &ResourcesManager,
             uniform: &UniformBuffer<DirectionalLightUniform>,
         ) -> Self {
-            let camera = ressources.get::<CameraManager>();
-            let meshes = ressources.get::<MeshesManager>();
-            let instances = ressources.get::<InstancesManager>();
+            let camera = resources.get::<CameraManager>();
+            let meshes = resources.get::<MeshesManager>();
+            let instances = resources.get::<InstancesManager>();
 
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("DirectionalLight[cull] draw instances"),
@@ -618,7 +637,7 @@ mod cull {
                                 has_dynamic_offset: false,
                                 min_binding_size: wgpu::BufferSize::new(
                                     std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                        + Instance::SIZE,
+                                        + GpuInstance::SIZE,
                                 ),
                             },
                             count: None,

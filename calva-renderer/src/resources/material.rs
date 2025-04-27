@@ -1,22 +1,28 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-
-use crate::TextureId;
+use crate::{util::id_generator::IdGenerator, TextureHandle};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MaterialId(u32);
+pub struct MaterialHandle(u8);
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Material {
-    pub albedo: TextureId,
-    pub normal: TextureId,
-    pub metallic_roughness: TextureId,
-    pub emissive: TextureId,
+    pub albedo: TextureHandle,
+    pub normal: TextureHandle,
+    pub metallic_roughness: TextureHandle,
+    pub emissive: TextureHandle,
+}
+
+impl Material {
+    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Material>() as _;
+
+    fn address(handle: &MaterialHandle) -> wgpu::BufferAddress {
+        handle.0 as wgpu::BufferAddress * Self::SIZE
+    }
 }
 
 pub struct MaterialsManager {
-    material_index: AtomicU32,
+    ids: IdGenerator,
     buffer: wgpu::Buffer,
 
     pub(crate) bind_group_layout: wgpu::BindGroupLayout,
@@ -24,7 +30,7 @@ pub struct MaterialsManager {
 }
 
 impl MaterialsManager {
-    const MAX_MATERIALS: usize = 256;
+    const MAX_MATERIALS: usize = 1 << 8; // see material_id
 
     pub fn new(device: &wgpu::Device) -> Self {
         use wgpu::util::DeviceExt;
@@ -59,21 +65,28 @@ impl MaterialsManager {
         });
 
         Self {
-            material_index: AtomicU32::new(1),
+            ids: IdGenerator::new(1),
             buffer,
             bind_group_layout,
             bind_group,
         }
     }
 
-    pub fn add(&self, queue: &wgpu::Queue, material: Material) -> MaterialId {
-        let index = self.material_index.fetch_add(1, Ordering::Relaxed);
-        let offset =
-            index as wgpu::BufferAddress * std::mem::size_of::<Material>() as wgpu::BufferAddress;
+    pub fn add(&mut self, queue: &wgpu::Queue, materials: &[Material]) -> Vec<MaterialHandle> {
+        materials
+            .iter()
+            .map(|material| {
+                let handle = MaterialHandle(self.ids.get() as u8);
 
-        queue.write_buffer(&self.buffer, offset, bytemuck::bytes_of(&material));
+                queue.write_buffer(
+                    &self.buffer,
+                    Material::address(&handle),
+                    bytemuck::bytes_of(material),
+                );
 
-        MaterialId(index)
+                handle
+            })
+            .collect::<Vec<_>>()
     }
 }
 

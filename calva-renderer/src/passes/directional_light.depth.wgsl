@@ -58,27 +58,14 @@ fn get_skinning_matrix(animation_id: u32, time: f32, skin_index: u32) -> mat4x4<
         );
     }
 
-    let packed_joints = skinning_joints[skin_index];
+    let joints = unpack4xU8(skinning_joints[skin_index]);
     let weights = skinning_weights[skin_index];
 
-    let joints = vec4<u32>(
-        (packed_joints >> 0u) & 0xFFu,
-        (packed_joints >> 8u) & 0xFFu,
-        (packed_joints >> 16u) & 0xFFu,
-        (packed_joints >> 24u) & 0xFFu,
-    );
-
-    let m1 = get_joint_matrix(animation_id, time, joints.x) * weights.x;
-    let m2 = get_joint_matrix(animation_id, time, joints.y) * weights.y;
-    let m3 = get_joint_matrix(animation_id, time, joints.z) * weights.z;
-    let m4 = get_joint_matrix(animation_id, time, joints.w) * weights.w;
-
-    return mat4x4<f32>(
-        m1[0] + m2[0] + m3[0] + m4[0],
-        m1[1] + m2[1] + m3[1] + m4[1],
-        m1[2] + m2[2] + m3[2] + m4[2],
-        m1[3] + m2[3] + m3[3] + m4[3],
-    );
+    return
+        get_joint_matrix(animation_id, time, joints.x) * weights.x +
+        get_joint_matrix(animation_id, time, joints.y) * weights.y +
+        get_joint_matrix(animation_id, time, joints.z) * weights.z +
+        get_joint_matrix(animation_id, time, joints.w) * weights.w;
 }
 
 @vertex

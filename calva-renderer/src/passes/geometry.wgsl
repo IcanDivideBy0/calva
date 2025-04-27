@@ -91,15 +91,8 @@ fn get_skinning_matrix(animation_id: u32, time: f32, skin_index: u32) -> mat4x4<
         );
     }
 
-    let packed_joints = skinning_joints[skin_index];
+    let joints = unpack4xU8(skinning_joints[skin_index]);
     let weights = skinning_weights[skin_index];
-
-    let joints = vec4<u32>(
-        (packed_joints >> 0u) & 0xFFu,
-        (packed_joints >> 8u) & 0xFFu,
-        (packed_joints >> 16u) & 0xFFu,
-        (packed_joints >> 24u) & 0xFFu,
-    );
 
     return
         get_joint_matrix(animation_id, time, joints.x) * weights.x +

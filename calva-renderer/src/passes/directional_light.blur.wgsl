@@ -4,8 +4,7 @@
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) ndc: vec2<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(0) uv: vec2<f32>,
 }
 
 @vertex
@@ -15,12 +14,10 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
         f32(vertex_index & 1u),
     ) * 2.0;
 
-    var out: VertexOutput;
-    out.position = vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0);
-    out.ndc = out.position.xy;
-    out.uv = out.ndc * vec2<f32>(0.5, -0.5) + 0.5;
-
-    return out;
+    return VertexOutput(
+        vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0),
+        vec2<f32>(tc.x, 1.0 - tc.y)
+    );
 }
 
 //

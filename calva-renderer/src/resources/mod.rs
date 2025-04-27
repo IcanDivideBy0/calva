@@ -1,9 +1,9 @@
 mod animation;
 mod camera;
 mod instance;
-mod light;
 mod material;
 mod mesh;
+mod point_light;
 mod skin;
 mod skybox;
 mod texture;
@@ -11,9 +11,9 @@ mod texture;
 pub use animation::*;
 pub use camera::*;
 pub use instance::*;
-pub use light::*;
 pub use material::*;
 pub use mesh::*;
+pub use point_light::*;
 pub use skin::*;
 pub use skybox::*;
 pub use texture::*;
@@ -26,9 +26,9 @@ use std::{
 };
 
 #[derive(Clone)]
-pub struct RessourceRef<T>(Arc<RwLock<T>>);
+pub struct ResourceRef<T>(Arc<RwLock<T>>);
 
-impl<T> RessourceRef<T>
+impl<T> ResourceRef<T>
 where
     T: for<'a> From<&'a wgpu::Device>,
 {
@@ -41,41 +41,41 @@ where
     }
 }
 
-pub struct RessourcesManager {
+pub struct ResourcesManager {
     device: wgpu::Device,
-    ressources: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+    resources: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
 }
 
-impl RessourcesManager {
+impl ResourcesManager {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             device: device.clone(),
-            ressources: Default::default(),
+            resources: Default::default(),
         }
     }
 
-    pub fn get<T>(&self) -> RessourceRef<T>
+    pub fn get<T>(&self) -> ResourceRef<T>
     where
         T: for<'a> From<&'a wgpu::Device> + Send + Sync + 'static,
     {
-        let read = self.ressources.read();
+        let read = self.resources.read();
 
         let arc = match read.get(&TypeId::of::<T>()) {
             Some(arc) => arc.clone(),
             None => {
                 drop(read); // prevent deadlock
 
-                self.ressources
+                self.resources
                     .write()
                     .entry(TypeId::of::<T>())
                     .or_insert_with(|| {
-                        let ressource = <T as From<&wgpu::Device>>::from(&self.device);
-                        Arc::new(RwLock::new(ressource))
+                        let resource = <T as From<&wgpu::Device>>::from(&self.device);
+                        Arc::new(RwLock::new(resource))
                     })
                     .clone()
             }
         };
 
-        RessourceRef(arc.downcast::<RwLock<T>>().unwrap())
+        ResourceRef(arc.downcast::<RwLock<T>>().unwrap())
     }
 }

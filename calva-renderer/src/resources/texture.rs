@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct TextureId(u32);
+pub struct TextureHandle(u32);
 
 pub struct TexturesManager {
     mipmaps: MipmapGenerator,
@@ -84,13 +84,13 @@ impl TexturesManager {
         }
     }
 
-    pub fn add(&mut self, device: &wgpu::Device, view: wgpu::TextureView) -> TextureId {
+    pub fn add(&mut self, device: &wgpu::Device, view: wgpu::TextureView) -> TextureHandle {
         self.views.push(view);
 
         self.bind_group =
             Self::create_bind_group(device, &self.bind_group_layout, &self.views, &self.sampler);
 
-        TextureId(self.views.len() as u32 - 1)
+        TextureHandle(self.views.len() as u32 - 1)
     }
 
     pub fn generate_mipmaps(
@@ -110,6 +110,7 @@ impl TexturesManager {
         sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
         let max_textures = device.limits().max_sampled_textures_per_shader_stage;
+
         let views = (0..max_textures as _)
             .map(|i| views.get(i).unwrap_or(&views[0]))
             .collect::<Vec<_>>();
@@ -162,7 +163,7 @@ impl MipmapGenerator {
                 f32(vertex_index >> 1u),
                 f32(vertex_index &  1u),
             ) * 2.0;
-        
+            
             return VertexOutput(
                 vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0),
                 vec2<f32>(tc.x, 1.0 - tc.y)

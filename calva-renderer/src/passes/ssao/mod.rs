@@ -1,4 +1,4 @@
-use crate::{CameraManager, RenderContext, RessourceRef, RessourcesManager, UniformBuffer};
+use crate::{CameraManager, RenderContext, ResourceRef, ResourcesManager, UniformBuffer};
 
 mod blit;
 mod blur;
@@ -95,7 +95,7 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
     pub config: UniformBuffer<SsaoConfig>,
     random: UniformBuffer<SsaoRandom>,
 
-    camera: RessourceRef<CameraManager>,
+    camera: ResourceRef<CameraManager>,
 
     output_view: wgpu::TextureView,
 
@@ -111,13 +111,13 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     pub fn new(
         device: &wgpu::Device,
-        ressources: &RessourcesManager,
+        resources: &ResourcesManager,
         inputs: SsaoPassInputs,
     ) -> Self {
         let config = UniformBuffer::new(device, SsaoConfig::default());
         let random = UniformBuffer::new(device, SsaoRandom::new());
 
-        let camera = ressources.get::<CameraManager>();
+        let camera = resources.get::<CameraManager>();
 
         let output = Self::make_texture(device, Some("Ssao output"));
         let output_view = output.create_view(&Default::default());

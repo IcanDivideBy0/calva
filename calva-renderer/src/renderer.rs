@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use anyhow::{anyhow, Result};
 
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult};
@@ -12,7 +14,8 @@ pub struct Renderer<'window> {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
 
-    pub profiler: std::cell::RefCell<RendererProfiler>,
+    profiler: RefCell<GpuProfiler>,
+    profiler_results: RefCell<Vec<GpuTimerQueryResult>>,
 }
 
 impl<'window> Renderer<'window> {
@@ -68,39 +71,36 @@ impl<'window> Renderer<'window> {
             .ok_or_else(|| anyhow!("Surface not compatible with adapter"))?;
         surface_config.format = surface_config.format.add_srgb_suffix();
         surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
-        surface_config.present_mode = wgpu::PresentMode::AutoVsync;
+        // surface_config.present_mode = wgpu::PresentMode::AutoVsync;
 
         surface.configure(&device, &surface_config);
 
-        let profiler = std::cell::RefCell::new(RendererProfiler {
-            inner: GpuProfiler::new(
-                &device,
-                GpuProfilerSettings {
-                    // enable_debug_groups: false,
-                    enable_timer_queries: false,
-                    ..Default::default()
-                },
-            )?,
-            results: vec![],
-        });
+        let profiler = RefCell::new(GpuProfiler::new(
+            &device,
+            GpuProfilerSettings {
+                enable_debug_groups: false,
+                enable_timer_queries: false,
+                ..Default::default()
+            },
+        )?);
+        let profiler_results = RefCell::new(vec![]);
 
         Ok(Self {
-            adapter,
-            adapter_info,
-            device,
-            queue,
             surface,
             surface_config,
 
+            adapter,
+            adapter_info,
+
+            device,
+            queue,
+
             profiler,
+            profiler_results,
         })
     }
 
     pub fn resize(&mut self, (width, height): (u32, u32)) {
-        if (width, height) == (self.surface_config.width, self.surface_config.height) {
-            return;
-        }
-
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
@@ -112,8 +112,7 @@ impl<'window> Renderer<'window> {
         let frame = self.surface.get_current_texture()?;
         let frame_view = frame.texture.create_view(&Default::default());
 
-        let mut renderer_profiler = self.profiler.try_borrow_mut()?;
-        let profiler = &mut renderer_profiler.inner;
+        let mut profiler = self.profiler.try_borrow_mut()?;
 
         let scope = profiler.scope("RenderPass", &mut encoder);
 
@@ -130,11 +129,11 @@ impl<'window> Renderer<'window> {
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        self.device.poll(wgpu::MaintainBase::Wait)?;
+        self.device.poll(wgpu::PollType::Wait)?;
 
-        profiler.end_frame().unwrap();
+        profiler.end_frame()?;
         if let Some(results) = profiler.process_finished_frame(self.queue.get_timestamp_period()) {
-            renderer_profiler.results = results
+            *self.profiler_results.try_borrow_mut()? = results
         }
 
         Ok(())
@@ -144,31 +143,76 @@ impl<'window> Renderer<'window> {
 #[cfg(feature = "egui")]
 impl egui::Widget for &Renderer<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        egui::CollapsingHeader::new("Adapter")
-            .default_open(true)
-            .show(ui, |ui| {
-                let wgpu::AdapterInfo {
-                    name,
-                    driver,
-                    driver_info,
-                    ..
-                } = &self.adapter_info;
+        ui.vertical(|ui| {
+            egui::CollapsingHeader::new("Adapter")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let wgpu::AdapterInfo {
+                        name,
+                        driver,
+                        driver_info,
+                        ..
+                    } = &self.adapter_info;
 
-                egui::Grid::new("EguiPass::AdapterInfo")
-                    .num_columns(2)
-                    .spacing([40.0, 0.0])
-                    .show(ui, |ui| {
-                        ui.label("Device");
-                        ui.label(name);
+                    egui::Grid::new("EguiPass::AdapterInfo")
+                        .num_columns(2)
+                        .spacing([40.0, 0.0])
+                        .show(ui, |ui| {
+                            ui.label("Device");
+                            ui.label(name);
 
-                        ui.end_row();
+                            ui.end_row();
 
-                        ui.label("Driver");
-                        ui.label(format!("{driver} ({driver_info})"));
-                    });
-            });
+                            ui.label("Driver");
+                            ui.label(format!("{driver} ({driver_info})"));
+                        });
+                });
 
-        ui.add(&*self.profiler.try_borrow().unwrap())
+            fn profiler_ui(results: &[GpuTimerQueryResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
+                move |ui| {
+                    let frame = egui::Frame {
+                        inner_margin: egui::Margin {
+                            left: 10,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    };
+
+                    for result in results {
+                        ui.vertical(|ui| {
+                            ui.columns(2, |columns| {
+                                columns[0].label(&result.label);
+
+                                columns[1].with_layout(
+                                    egui::Layout::right_to_left(egui::Align::TOP),
+                                    |ui| {
+                                        let start = result
+                                            .time
+                                            .as_ref()
+                                            .map(|r| r.start)
+                                            .unwrap_or_default();
+                                        let end =
+                                            result.time.as_ref().map(|r| r.end).unwrap_or_default();
+
+                                        let diff = end - start;
+                                        let time = diff * 1000.0 * 1000.0;
+                                        let time_str = format!("{time:.3}");
+                                        ui.monospace(format!("{time_str} µs"));
+                                    },
+                                )
+                            });
+
+                            frame.show(ui, profiler_ui(&result.nested_queries));
+                        });
+                    }
+                }
+            }
+
+            egui::CollapsingHeader::new("Profiler")
+                .default_open(true)
+                .show(ui, profiler_ui(&self.profiler_results.borrow()))
+        })
+        .response
     }
 }
 
@@ -177,56 +221,4 @@ pub type ProfilerCommandEncoder<'a> = wgpu_profiler::Scope<'a, wgpu::CommandEnco
 pub struct RenderContext<'a> {
     pub encoder: ProfilerCommandEncoder<'a>,
     pub frame: &'a wgpu::TextureView,
-}
-
-pub struct RendererProfiler {
-    inner: GpuProfiler,
-    results: Vec<GpuTimerQueryResult>,
-}
-
-#[cfg(all(feature = "profiler", feature = "egui"))]
-impl egui::Widget for &RendererProfiler {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        fn profiler_ui(results: &[GpuTimerQueryResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
-            move |ui| {
-                let frame = egui::Frame {
-                    inner_margin: egui::Margin {
-                        left: 10,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-
-                for result in results {
-                    ui.vertical(|ui| {
-                        ui.columns(2, |columns| {
-                            columns[0].label(&result.label);
-
-                            columns[1].with_layout(
-                                egui::Layout::right_to_left(egui::Align::TOP),
-                                |ui| {
-                                    let start =
-                                        result.time.as_ref().map(|r| r.start).unwrap_or_default();
-                                    let end =
-                                        result.time.as_ref().map(|r| r.end).unwrap_or_default();
-
-                                    let diff = end - start;
-                                    let time = diff * 1000.0 * 1000.0;
-                                    let time_str = format!("{time:.3}");
-                                    ui.monospace(format!("{time_str} µs"));
-                                },
-                            )
-                        });
-
-                        frame.show(ui, profiler_ui(&result.nested_queries));
-                    });
-                }
-            }
-        }
-
-        egui::CollapsingHeader::new("Profiler")
-            .default_open(true)
-            .show(ui, profiler_ui(&self.results))
-            .header_response
-    }
 }

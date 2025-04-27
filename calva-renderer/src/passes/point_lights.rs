@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    util::icosphere::Icosphere, CameraManager, LightsManager, PointLight, RenderContext,
-    RessourceRef, RessourcesManager,
+    util::icosphere::Icosphere, CameraManager, PointLight, PointLightsManager, RenderContext,
+    ResourceRef, ResourcesManager,
 };
 
 pub struct PointLightsPassInputs<'a> {
@@ -13,8 +13,8 @@ pub struct PointLightsPassInputs<'a> {
 }
 
 pub struct PointLightsPass {
-    camera: RessourceRef<CameraManager>,
-    lights: RessourceRef<LightsManager>,
+    camera: ResourceRef<CameraManager>,
+    lights: ResourceRef<PointLightsManager>,
 
     vertex_count: u32,
     vertices: wgpu::Buffer,
@@ -33,11 +33,11 @@ pub struct PointLightsPass {
 impl PointLightsPass {
     pub fn new(
         device: &wgpu::Device,
-        ressources: &RessourcesManager,
+        resources: &ResourcesManager,
         inputs: PointLightsPassInputs,
     ) -> Self {
-        let camera = ressources.get::<CameraManager>();
-        let lights = ressources.get::<LightsManager>();
+        let camera = resources.get::<CameraManager>();
+        let lights = resources.get::<PointLightsManager>();
 
         let icosphere = Icosphere::new(1);
 
@@ -304,7 +304,7 @@ impl PointLightsPass {
         stencil_pass.set_vertex_buffer(1, self.vertices.slice(..));
         stencil_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-        stencil_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
+        stencil_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count());
 
         drop(stencil_pass);
 
@@ -337,7 +337,7 @@ impl PointLightsPass {
         lighting_pass.set_vertex_buffer(1, self.vertices.slice(..));
         lighting_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-        lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count_point_lights());
+        lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count());
 
         drop(lighting_pass);
     }

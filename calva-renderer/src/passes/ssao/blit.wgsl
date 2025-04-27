@@ -14,11 +14,10 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
         f32(vertex_index & 1u),
     ) * 2.0;
 
-    var out: VertexOutput;
-    out.position = vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0);
-    out.uv = out.position.xy * vec2<f32>(0.5, -0.5) + 0.5;
-
-    return out;
+    return VertexOutput(
+        vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0),
+        vec2<f32>(tc.x, 1.0 - tc.y)
+    );
 }
 
 //

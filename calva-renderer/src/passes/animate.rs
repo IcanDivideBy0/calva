@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    Instance, InstancesManager, RenderContext, RessourceRef, RessourcesManager, UniformBuffer,
+    GpuInstance, InstancesManager, RenderContext, ResourceRef, ResourcesManager, UniformBuffer,
     UniformData,
 };
 
@@ -33,17 +33,17 @@ impl UniformData for AnimateUniform {
 pub struct AnimatePass {
     pub uniform: UniformBuffer<AnimateUniform>,
 
-    instances: RessourceRef<InstancesManager>,
+    instances: ResourceRef<InstancesManager>,
 
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::ComputePipeline,
 }
 
 impl AnimatePass {
-    pub fn new(device: &wgpu::Device, ressources: &RessourcesManager) -> Self {
+    pub fn new(device: &wgpu::Device, resources: &ResourcesManager) -> Self {
         let uniform = UniformBuffer::new(device, AnimateUniform::default());
 
-        let instances = ressources.get::<InstancesManager>();
+        let instances = resources.get::<InstancesManager>();
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("AnimatePass bind group layout"),
@@ -54,7 +54,7 @@ impl AnimatePass {
                     ty: wgpu::BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
                     min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress + Instance::SIZE,
+                        std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress + GpuInstance::SIZE,
                     ),
                 },
                 count: None,
