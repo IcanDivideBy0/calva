@@ -1,22 +1,18 @@
-struct Camera {
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
-    view_proj: mat4x4<f32>,
-    inv_view: mat4x4<f32>,
-    inv_proj: mat4x4<f32>,
-    frustum: array<vec4<f32>, 6>,
-}
+import package::resources::{
+    camera::Camera,
+    material::Material,
+};
+import package::util::math::{rotate, mat4_to_mat3};
+
+//
+// Vertex shader
+//
+
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 @group(1) @binding(0) var textures: binding_array<texture_2d<f32>>;
 @group(1) @binding(1) var textures_sampler: sampler;
 
-struct Material {
-    albedo: u32,
-    normal: u32,
-    metallic_roughness: u32,
-    emissive: u32,
-}
 @group(2) @binding(0) var<storage, read> materials: array<Material>;
 
 @group(3) @binding(0) var<storage, read> skinning_joints: array<u32>;
@@ -53,14 +49,6 @@ struct VertexOutput {
     @location(3) bitangent: vec3<f32>,
     @location(4) uv: vec2<f32>,
     @location(5) @interpolate(flat) material_id: u32,
-}
-
-fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
-    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-}
-
-fn mat4_to_mat3(m: mat4x4<f32>) -> mat3x3<f32> {
-    return mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
 }
 
 const ANIMATIONS_SAMPLES_PER_SEC: f32 = 15.0;
@@ -153,11 +141,9 @@ fn vs_main(
     return out;
 }
 
-
-//===========================================================================//
-// Fragment
-//===========================================================================//
-
+//
+// Fragment shader
+//
 
 struct FragmentOutput {
     @location(0) albedo_metallic: vec4<f32>,

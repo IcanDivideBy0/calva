@@ -1,8 +1,10 @@
 use crate::util::id_generator::IdGenerator;
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PointLightHandle(u32);
+#[derive(
+    Debug, Copy, Clone, Default, PartialEq, Eq, Ord, PartialOrd, bytemuck::Pod, bytemuck::Zeroable,
+)]
+pub struct PointLightHandle(u16);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -30,7 +32,7 @@ pub struct PointLightsManager {
 }
 
 impl PointLightsManager {
-    const MAX_POINT_LIGHTS: usize = 10_000;
+    const MAX_POINT_LIGHTS: usize = 1 << 16;
 
     pub fn new(device: &wgpu::Device) -> Self {
         let point_lights = device.create_buffer(&wgpu::BufferDescriptor {
@@ -46,41 +48,79 @@ impl PointLightsManager {
         }
     }
 
+    pub fn count(&self) -> u16 {
+        self.ids.count()
+    }
+
     pub fn add(
         &mut self,
         queue: &wgpu::Queue,
         point_lights: &[PointLight],
     ) -> Vec<PointLightHandle> {
-        point_lights
+        let handles = point_lights
             .iter()
-            .map(|point_light| {
-                let handle = PointLightHandle(self.ids.get());
+            .map(|_| PointLightHandle(self.ids.get()))
+            .collect::<Vec<_>>();
 
-                queue.write_buffer(
-                    &self.point_lights,
-                    PointLight::address(&handle),
-                    bytemuck::bytes_of(point_light),
-                );
+        let mut writes: Vec<(wgpu::BufferAddress, Vec<PointLight>)> = vec![];
+        if let Some((handle, point_light)) = Option::zip(handles.first(), point_lights.first()) {
+            writes.push((PointLight::address(handle), vec![*point_light]));
+        } else {
+            return handles;
+        }
 
-                handle
-            })
-            .collect::<Vec<_>>()
-    }
+        for (idx, pair) in handles.windows(2).enumerate() {
+            let prev = pair[0];
+            let next = pair[1];
 
-    pub fn remove(&mut self, queue: &wgpu::Queue, handles: &[PointLightHandle]) {
-        for handle in handles {
-            self.ids.recycle(handle.0);
+            if next.0 != prev.0 + 1 {
+                writes.push((PointLight::address(&next), vec![]));
+            }
 
+            writes.last_mut().unwrap().1.push(point_lights[idx + 1]);
+        }
+
+        for (address, point_lights) in writes {
             queue.write_buffer(
                 &self.point_lights,
-                PointLight::address(handle),
-                bytemuck::bytes_of(&PointLight::default()),
+                address,
+                bytemuck::cast_slice(&point_lights),
             );
         }
+
+        handles
     }
 
-    pub fn count(&self) -> u32 {
-        self.ids.next
+    pub fn remove(&mut self, queue: &wgpu::Queue, handles: &mut [PointLightHandle]) {
+        handles.sort();
+
+        let mut writes: Vec<(wgpu::BufferAddress, Vec<PointLight>)> = vec![];
+        if let Some(handle) = handles.first() {
+            self.ids.recycle(handle.0 as _);
+            writes.push((PointLight::address(handle), vec![PointLight::default()]));
+        } else {
+            return;
+        }
+
+        for pair in handles.windows(2) {
+            let prev = pair[0];
+            let next = pair[1];
+
+            self.ids.recycle(next.0 as _);
+            if next.0 != prev.0 + 1 {
+                writes.push((PointLight::address(&next), vec![]));
+            }
+
+            writes.last_mut().unwrap().1.push(PointLight::default());
+        }
+
+        for (address, point_lights) in writes {
+            queue.write_buffer(
+                &self.point_lights,
+                address,
+                bytemuck::cast_slice(&point_lights),
+            );
+        }
     }
 }
 

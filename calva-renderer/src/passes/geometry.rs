@@ -97,7 +97,10 @@ impl GeometryPass {
 
         let cull = GeometryCull::new(device, resources);
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("geometry.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Geometry shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("geometry").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Geometry[render] pipeline layout"),
@@ -509,7 +512,10 @@ mod cull {
                 ],
             });
 
-            let shader = device.create_shader_module(wgpu::include_wgsl!("geometry.cull.wgsl"));
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Geometry[cull] shader"),
+                source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("geometry[cull]").into()),
+            });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Geometry[cull] pipeline layout"),
@@ -564,11 +570,11 @@ mod cull {
 
             const WORKGROUP_SIZE: u32 = 32;
 
-            let meshes_count: u32 = self.meshes.get().count();
+            let meshes_count = self.meshes.get().count();
             let meshes_workgroups_count =
                 (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-            let instances_count: u32 = self.instances.get().count();
+            let instances_count = self.instances.get().count();
             let instances_workgroups_count =
                 (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 

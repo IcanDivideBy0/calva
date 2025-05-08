@@ -11,9 +11,8 @@ use calva::{
 pub mod navmesh;
 pub mod tile;
 
-use tile::{Face, Tile};
+pub use tile::{Face, Tile};
 
-#[allow(unused)]
 pub struct WorldGenerator {
     seed: u32,
     noise: Box<dyn NoiseFn<f64, 2>>,
@@ -21,8 +20,7 @@ pub struct WorldGenerator {
 }
 
 impl WorldGenerator {
-    #[allow(unused)]
-    pub fn new(seed: impl Hash, tiles: &[Tile]) -> Self {
+    pub fn new(seed: impl Hash) -> Self {
         let seed = SipHasher::from(seed).into_rng().random();
 
         let noise = Box::new(
@@ -34,16 +32,17 @@ impl WorldGenerator {
             .set_scale(0.08),
         );
 
-        let options = tiles.iter().flat_map(SlotOption::permutations).collect();
-
         Self {
             seed,
             noise,
-            options,
+            options: BTreeSet::new(),
         }
     }
 
-    #[allow(unused)]
+    pub fn set_tiles(&mut self, tiles: &[Tile]) {
+        self.options = tiles.iter().flat_map(SlotOption::permutations).collect();
+    }
+
     pub fn chunk(&self, model: &GltfModel, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
         let chunk = Chunk::new(self.seed, coord, self.noise.as_ref(), &self.options);
 
@@ -74,12 +73,12 @@ impl WorldGenerator {
 }
 
 type ChunkGrid = [[RefCell<Slot>; Chunk::SIZE]; Chunk::SIZE];
-struct Chunk {
+pub struct Chunk {
     grid: ChunkGrid,
 }
 
 impl Chunk {
-    const SIZE: usize = 3;
+    pub const SIZE: usize = 3;
 
     fn new(
         seed: impl Hash,
@@ -157,7 +156,11 @@ impl Chunk {
 
         while let Some((x, y)) = Self::min_entropy_slot(&grid) {
             let mut slot = grid[y][x].borrow_mut();
-            slot.options = [*slot.options.iter().choose(&mut rng).unwrap()].into();
+            slot.options = [*slot.options.iter().choose(&mut rng).unwrap_or_else(|| {
+                dbg!("Cannot generate chunk");
+                options.first().unwrap()
+            })]
+            .into();
             drop(slot);
 
             Self::propagate(&grid, x, y);
@@ -187,7 +190,9 @@ impl Chunk {
         for face in Face::all() {
             let (xx, yy) = match face {
                 Face::North if y > 0 => (x, y - 1),
+                // #[allow(clippy::absurd_extreme_comparisons)]
                 Face::East if x < Self::SIZE - 1 => (x + 1, y),
+                // #[allow(clippy::absurd_extreme_comparisons)]
                 Face::South if y < Self::SIZE - 1 => (x, y + 1),
                 Face::West if x > 0 => (x - 1, y),
                 _ => continue,

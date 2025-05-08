@@ -36,7 +36,10 @@ impl SkyboxPass {
             push_constant_ranges: &[],
         });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("skybox.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Skybox shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("skybox").into()),
+        });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skybox render pipeline"),

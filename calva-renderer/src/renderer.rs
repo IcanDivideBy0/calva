@@ -78,8 +78,8 @@ impl<'window> Renderer<'window> {
         let profiler = RefCell::new(GpuProfiler::new(
             &device,
             GpuProfilerSettings {
-                enable_debug_groups: false,
-                enable_timer_queries: false,
+                // enable_debug_groups: false,
+                // enable_timer_queries: false,
                 ..Default::default()
             },
         )?);
@@ -133,7 +133,7 @@ impl<'window> Renderer<'window> {
 
         profiler.end_frame()?;
         if let Some(results) = profiler.process_finished_frame(self.queue.get_timestamp_period()) {
-            *self.profiler_results.try_borrow_mut()? = results
+            *self.profiler_results.try_borrow_mut()? = results;
         }
 
         Ok(())
@@ -167,6 +167,10 @@ impl egui::Widget for &Renderer<'_> {
                             ui.label(format!("{driver} ({driver_info})"));
                         });
                 });
+
+            if !self.profiler.borrow().settings().enable_timer_queries {
+                return;
+            }
 
             fn profiler_ui(results: &[GpuTimerQueryResult]) -> impl FnOnce(&mut egui::Ui) + '_ {
                 move |ui| {
@@ -210,7 +214,7 @@ impl egui::Widget for &Renderer<'_> {
 
             egui::CollapsingHeader::new("Profiler")
                 .default_open(true)
-                .show(ui, profiler_ui(&self.profiler_results.borrow()))
+                .show(ui, profiler_ui(&self.profiler_results.borrow()));
         })
         .response
     }

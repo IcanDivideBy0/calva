@@ -65,7 +65,10 @@ impl ToneMappingPass {
 
         let bind_group = Self::make_bind_group(device, &bind_group_layout, &inputs);
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("tone_mapping.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ToneMapping shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("tone_mapping").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ToneMapping pipeline layout"),

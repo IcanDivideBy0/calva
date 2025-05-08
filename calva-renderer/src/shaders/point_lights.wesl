@@ -1,11 +1,6 @@
-struct Camera {
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
-    view_proj: mat4x4<f32>,
-    inv_view: mat4x4<f32>,
-    inv_proj: mat4x4<f32>,
-    frustum: array<vec4<f32>, 6>,
-}
+import package::resources::camera::Camera;
+import package::util::pbr::pbr;
+
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct LightInstance {
@@ -79,40 +74,6 @@ fn vs_main_lighting(
 @group(1) @binding(2) var t_normal_roughness: texture_2d<f32>;
 @group(1) @binding(3) var t_depth: texture_depth_2d;
 
-fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
-}
-
-const PI: f32 = 3.14159265359;
-
-fn distribution_ggx(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
-    let a = roughness * roughness;
-    let a2 = a * a;
-    let NdotH = max(dot(N, H), 0.0);
-    let NdotH2 = NdotH * NdotH;
-
-    let num = a2;
-    let denom = (NdotH2 * (a2 - 1.0) + 1.0);
-
-    return num / (PI * denom * denom);
-}
-
-fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
-    let r = (roughness + 1.0);
-    let k = (r * r) / 8.0;
-
-    return NdotV / (NdotV * (1.0 - k) + k);
-}
-
-fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f32 {
-    let NdotV = max(dot(N, V), 0.0);
-    let NdotL = max(dot(N, L), 0.0);
-    let ggx2 = geometry_schlick_ggx(NdotV, roughness);
-    let ggx1 = geometry_schlick_ggx(NdotL, roughness);
-
-    return ggx1 * ggx2;
-}
-
 @fragment
 fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let c = vec2<i32>(floor(in.position.xy));
@@ -131,34 +92,17 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let light_to_frag = in.l_position - frag_pos_view;
 
-    let N = normal;
-    let V = normalize(-frag_pos_view);
-    let L = normalize(light_to_frag);
-    let H = normalize(L + V);
-    let NdotL = max(dot(N, L), 0.0);
-
     let dist_square = dot(light_to_frag, light_to_frag);
     // let attenuation = 1.0 / max(dist_square, 0.0001);
     let factor = dist_square * in.l_inv_square_radius;
     let smooth_factor = saturate(1.0 - factor * factor);
     let attenuation = smooth_factor * smooth_factor / max(dist_square, 0.0001);
 
-    let radiance = in.l_color * attenuation;
-
-    let F0 = mix(vec3<f32>(0.04), albedo, metallic);
-    let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
-
-    let NDF = distribution_ggx(N, H, roughness);
-    let G = geometry_smith(N, V, L, roughness);
-
-    let num = NDF * G * F;
-    let denom = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;
-    let specular = num / denom;
-
-    let kS = F;
-    let kD = (1.0 - kS) * (1.0 - metallic);
-
-    let color = (kD * albedo / PI + specular) * radiance * NdotL;
-
-    return vec4<f32>(color, 1.0);
+    return pbr(
+        normal_roughness,
+        albedo_metallic,
+        frag_pos_view.xyz,
+        light_to_frag,
+        in.l_color * attenuation,
+    );
 }

@@ -18,7 +18,7 @@ impl MyCamera {
             aspect: width as f32 / height as f32,
             fovy: 45.0_f32.to_radians(),
             znear: 0.1,
-            zfar: 80.0,
+            zfar: 280.0,
 
             controller: FlyingCamera::default(),
         }
@@ -81,7 +81,7 @@ mod controller {
             Self {
                 transform: glam::Mat4::default(),
 
-                speed: 16.0,
+                speed: 64.0,
                 sensitivity: 0.003,
 
                 amount_left: 0.0,

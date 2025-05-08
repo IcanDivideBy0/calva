@@ -26,3 +26,10 @@ egui-wgpu = { version = "0.31", optional = true }
 
 # Winit
 winit = { version = "0.30", optional = true }
+
+wesl = { git = "https://github.com/wgsl-tooling-wg/wesl-rs", version = "0.1.2" }
+
+[build-dependencies]
+wesl = { git = "https://github.com/wgsl-tooling-wg/wesl-rs", version = "0.1.2", features = [
+  "naga_ext",
+] }

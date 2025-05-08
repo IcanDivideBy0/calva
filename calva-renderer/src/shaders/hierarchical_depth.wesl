@@ -20,11 +20,6 @@ fn main(
     let texelSize =  1.0 / vec2<f32>(textureDimensions(t_depth));
     let base_coord = (4.0 * vec2<f32>(global_id.xy) + 0.5) / vec2<f32>(textureDimensions(t_depth));
 
-    // let gather1 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(1, 1));
-    // let gather2 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(1, 3));
-    // let gather3 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(3, 1));
-    // let gather4 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(3, 3));
-
     let gather1 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(1, 1));
     let gather2 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(1, 3));
     let gather3 = textureGather(t_depth, t_sampler, base_coord, vec2<i32>(3, 1));

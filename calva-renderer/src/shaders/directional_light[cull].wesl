@@ -1,51 +1,15 @@
-struct Camera {
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
-    view_proj: mat4x4<f32>,
-    inv_view: mat4x4<f32>,
-    inv_proj: mat4x4<f32>,
-    frustum: array<vec4<f32>, 6>,
-}
+import package::util::math::plane_distance_to_point;
+import package::resources::{
+    camera::Camera,
+    mesh::{MeshInfo, MeshBoundingSphere},
+    animation::AnimationState,
+    instances::Instances,
+    directional_light::DirectionalLight,
+};
+
+
 @group(0) @binding(0) var<uniform> camera: Camera;
-
-struct DirectionalLight {
-    color: vec4<f32>,
-    direction_world: vec4<f32>,
-    direction_view: vec4<f32>,
-    view_proj: mat4x4<f32>,
-}
-@group(1) @binding(0) var<uniform> directional_light: DirectionalLight;
-
-struct MeshBoundingSphere {
-    center: vec3<f32>,
-    radius: f32,
-}
-
-struct MeshInfo {
-    vertex_count: u32,
-    base_index: u32,
-    vertex_offset: i32,
-    skin_offset: i32,
-    bounding_sphere: MeshBoundingSphere,
-}
-
-struct AnimationState {
-    animation_id: u32,
-    time: f32,
-}
-
-struct Instance {
-    transform: mat4x4<f32>,
-    /* | deleted  | mat_id   | mesh_id          | */
-    /* | 8        | 8        | 16               | */
-    packed_data: u32,
-    _padding: u32,
-    animation: AnimationState,
-}
-struct Instances {
-    count: u32,
-    instances: array<Instance>
-}
+@group(1) @binding(0) var<uniform> light: DirectionalLight;
 
 struct CullInfo {
     view_proj: mat4x4<f32>,
@@ -101,18 +65,14 @@ fn reset(@builtin(global_invocation_id) global_id: vec3<u32>) {
     draw_indirects.count = 0u;
 }
 
-fn plane_distance_to_point(plane: vec4<f32>, p: vec3<f32>) -> f32 {
-    return dot(plane.xyz, p) + plane.w;
-}
-
 fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
     let center_world = transform * vec4<f32>(sphere.center, 1.0);
 
-    let c = directional_light.view_proj * center_world;
+    let c = light.view_proj * center_world;
     let center_light_view = c.xyz;
 
     // This is orthographic projection, so we can project radius into clip space to measure its length
-    let r = directional_light.view_proj * transform * vec4<f32>(sphere.radius, 0.0, 0.0, 1.0);
+    let r = light.view_proj * transform * vec4<f32>(sphere.radius, 0.0, 0.0, 1.0);
     let radius_light_view = length(r.xyz - center_light_view);
 
     if length(center_light_view.xy) - radius_light_view > 1.0 {
@@ -129,7 +89,7 @@ fn sphere_visible(sphere: MeshBoundingSphere, transform: mat4x4<f32>) -> bool {
     let max_scale = max(max(scale.x, scale.y), scale.z);
     let neg_radius = -(sphere.radius * max_scale);
 
-    let light_dir = directional_light.direction_world.xyz;
+    let light_dir = light.direction_world.xyz;
     for (var i = 0u; i < 6u; i++) {
         let plane_normal = camera.frustum[i].xyz;
 
@@ -171,7 +131,7 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let draw_instance = &draw_instances[draw_instance_index];
     (*draw_instance).transform = *transform;
-    (*draw_instance).material_id = (*instance).packed_data >> 16 & 0xFF;
+    (*draw_instance).material_id = ((*instance).packed_data >> 16) & 0xFF;
     (*draw_instance).skin_offset = (*mesh_info).skin_offset;
     (*draw_instance).animation = (*instance).animation;
 }

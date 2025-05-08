@@ -72,7 +72,10 @@ impl HierarchicalDepthPass {
         let bind_group =
             Self::make_bind_group(device, &bind_group_layout, &sampler, &output_view, &inputs);
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("hierarchical_depth.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("HierarchicalDepth shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("hierarchical_depth").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("HierarchicalDepth pipeline layout"),

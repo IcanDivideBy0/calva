@@ -1,11 +1,5 @@
-struct Camera {
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
-    view_proj: mat4x4<f32>,
-    inv_view: mat4x4<f32>,
-    inv_proj: mat4x4<f32>,
-    frustum: array<vec4<f32>, 6>,
-}
+import package::resources::camera::Camera;
+
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 //

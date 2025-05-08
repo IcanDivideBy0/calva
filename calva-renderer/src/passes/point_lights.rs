@@ -72,7 +72,10 @@ impl PointLightsPass {
             },
         ];
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("point_lights.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("PointLights shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("point_lights").into()),
+        });
 
         let stencil_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -304,7 +307,7 @@ impl PointLightsPass {
         stencil_pass.set_vertex_buffer(1, self.vertices.slice(..));
         stencil_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-        stencil_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count());
+        stencil_pass.draw_indexed(0..self.vertex_count, 0, 0..(lights.count() as _));
 
         drop(stencil_pass);
 
@@ -337,7 +340,7 @@ impl PointLightsPass {
         lighting_pass.set_vertex_buffer(1, self.vertices.slice(..));
         lighting_pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
-        lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..lights.count());
+        lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..(lights.count() as _));
 
         drop(lighting_pass);
     }

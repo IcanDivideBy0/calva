@@ -123,7 +123,7 @@ impl MeshesManager {
         }
     }
 
-    pub fn count(&self) -> u32 {
+    pub fn count(&self) -> u16 {
         self.ids.next
     }
 
@@ -139,7 +139,7 @@ impl MeshesManager {
         indices: &[u8],
         skin: Option<SkinHandle>,
     ) -> MeshHandle {
-        let handle = MeshHandle(self.ids.get() as _);
+        let handle = MeshHandle(self.ids.get());
 
         queue.write_buffer(
             &self.vertices,

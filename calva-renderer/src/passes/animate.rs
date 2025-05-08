@@ -46,7 +46,7 @@ impl AnimatePass {
         let instances = resources.get::<InstancesManager>();
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("AnimatePass bind group layout"),
+            label: Some("Animate bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::COMPUTE,
@@ -62,7 +62,7 @@ impl AnimatePass {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("AnimatePass bind group"),
+            label: Some("Animate bind group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -70,16 +70,19 @@ impl AnimatePass {
             }],
         });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("animate.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Animate shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("animate").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("AnimatePass pipeline layout"),
+            label: Some("Animate pipeline layout"),
             bind_group_layouts: &[&bind_group_layout, &uniform.bind_group_layout],
             push_constant_ranges: &[],
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("AnimatePass pipeline"),
+            label: Some("Animate pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: Some("main"),

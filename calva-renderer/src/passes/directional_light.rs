@@ -120,8 +120,12 @@ impl DirectionalLightPass {
         let light_depth_view = light_depth.create_view(&Default::default());
 
         let light_depth_pipeline = {
-            let shader =
-                device.create_shader_module(wgpu::include_wgsl!("directional_light.depth.wgsl",));
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("DirectionalLight[depth] shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    wesl::include_wesl!("directional_light[depth]").into(),
+                ),
+            });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[depth] render pipeline layout"),
@@ -171,8 +175,12 @@ impl DirectionalLightPass {
         let blur_pass = blur::DirectionalLightBlur::new(device, &light_depth);
 
         let (lighting_bind_group_layout, lighting_bind_group, lighting_pipeline) = {
-            let shader = device
-                .create_shader_module(wgpu::include_wgsl!("directional_light.lighting.wgsl",));
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("DirectionalLight[lighting] shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    wesl::include_wesl!("directional_light[lighting]").into(),
+                ),
+            });
 
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -698,8 +706,12 @@ mod cull {
                 ],
             });
 
-            let shader =
-                device.create_shader_module(wgpu::include_wgsl!("directional_light.cull.wgsl"));
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("DirectionalLight[cull] shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    wesl::include_wesl!("directional_light[cull]").into(),
+                ),
+            });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[cull] pipeline layout"),
@@ -762,11 +774,11 @@ mod cull {
 
             const WORKGROUP_SIZE: u32 = 32;
 
-            let meshes_count: u32 = self.meshes.get().count();
+            let meshes_count = self.meshes.get().count();
             let meshes_workgroups_count =
                 (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-            let instances_count: u32 = self.instances.get().count();
+            let instances_count = self.instances.get().count();
             let instances_workgroups_count =
                 (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
@@ -866,8 +878,12 @@ mod blur {
                 push_constant_ranges: &[],
             });
 
-            let shader =
-                device.create_shader_module(wgpu::include_wgsl!("directional_light.blur.wgsl"));
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("DirectionalLight[blur] shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    wesl::include_wesl!("directional_light[blur]").into(),
+                ),
+            });
 
             let make_render_bundle = |direction: Direction| {
                 let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

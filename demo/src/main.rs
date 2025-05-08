@@ -4,13 +4,15 @@ use anyhow::{anyhow, Result};
 use calva::{
     gltf::GltfModel,
     renderer::{
-        egui::{self},
-        CameraManager, EguiWinitPass, Engine, InstanceHandle, InstancesManager, PointLightsManager,
-        Renderer, SkyboxManager,
+        egui, CameraManager, EguiWinitPass, Engine, InstanceHandle, InstancesManager,
+        PointLightHandle, PointLightsManager, Renderer, SkyboxManager,
     },
 };
-use std::sync::Arc;
-use std::time::Instant;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+    time::Instant,
+};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -18,6 +20,7 @@ use winit::{
     keyboard::{KeyCode, ModifiersState, PhysicalKey},
     window::{Fullscreen, Window, WindowId},
 };
+use worldgen::{Chunk, Tile};
 
 pub mod camera;
 pub mod fog;
@@ -46,6 +49,10 @@ struct DemoApp<'a> {
         EguiWinitPass,
     )>,
 
+    worldgen: worldgen::WorldGenerator,
+    worldgen_model: Option<GltfModel>,
+    worldgen_chunks: HashMap<glam::IVec2, (Vec<InstanceHandle>, Vec<PointLightHandle>)>,
+
     monsters_models: Vec<GltfModel>,
     monsters_instances: Vec<InstanceHandle>,
 
@@ -57,6 +64,11 @@ impl DemoApp<'_> {
     pub fn new() -> Self {
         Self {
             state: None,
+
+            // worldgen: worldgen::WorldGenerator::new(rand::random::<u32>()),
+            worldgen: worldgen::WorldGenerator::new("Calva!533d"),
+            worldgen_model: None,
+            worldgen_chunks: HashMap::new(),
 
             monsters_models: vec![],
             monsters_instances: vec![],
@@ -110,7 +122,7 @@ impl DemoApp<'_> {
             .read_to_end(&mut dungeon_buffer)
             .unwrap();
         let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer).unwrap();
-        let dungeon = GltfModel::new(renderer, engine, doc, &buffers, &images).unwrap();
+        self.worldgen_model = GltfModel::new(renderer, engine, doc, &buffers, &images).ok();
 
         let tile_builder = worldgen::tile::TileBuilder::new(&renderer.device);
 
@@ -121,11 +133,13 @@ impl DemoApp<'_> {
         ]
         .iter()
         .filter_map(|node_name| {
-            let node = dungeon.get_node(node_name)?;
+            let node = self.worldgen_model.as_ref().unwrap().get_node(node_name)?;
             let tile = tile_builder.build(&renderer.device, &renderer.queue, &buffers, node);
             Some(tile)
         })
         .collect::<Vec<_>>();
+
+        self.worldgen.set_tiles(&tiles);
 
         // let tile = &tiles[7];
         // let navmesh = worldgen::navmesh::NavMesh::new(tile);
@@ -154,27 +168,22 @@ impl DemoApp<'_> {
         //         .add_point_lights(&renderer.queue, &point_lights);
         // }
 
-        let worldgen = worldgen::WorldGenerator::new(
-            "Calva!533d", // rand::random::<u32>(),
-            &tiles,
-        );
-
-        const DIM: i32 = 1;
-        for x in -DIM..=DIM {
-            for y in -DIM..=DIM {
-                let (instances, point_lights) = worldgen.chunk(&dungeon, glam::ivec2(x, y));
-                engine
-                    .resources
-                    .get::<InstancesManager>()
-                    .get_mut()
-                    .add(&renderer.queue, &instances);
-                engine
-                    .resources
-                    .get::<PointLightsManager>()
-                    .get_mut()
-                    .add(&renderer.queue, &point_lights);
-            }
-        }
+        // const DIM: i32 = 0;
+        // for x in -DIM..=DIM {
+        //     for y in -DIM..=DIM {
+        //         let (instances, point_lights) = self.worldgen.chunk(&dungeon, glam::ivec2(x, y));
+        //         engine
+        //             .resources
+        //             .get::<InstancesManager>()
+        //             .get_mut()
+        //             .add(&renderer.queue, &instances);
+        //         engine
+        //             .resources
+        //             .get::<PointLightsManager>()
+        //             .get_mut()
+        //             .add(&renderer.queue, &point_lights);
+        //     }
+        // }
 
         Ok(())
     }
@@ -257,6 +266,59 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
         if camera.handle_event(&event) {
             return;
+        }
+
+        let (_, _, cam_pos) = camera.controller.transform.to_scale_rotation_translation();
+
+        let chunk_coord = ((cam_pos / Tile::WORLD_SIZE + 0.5) / Chunk::SIZE as f32).floor();
+        let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
+        let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
+        let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
+
+        self.worldgen_chunks
+            .retain(|pos, (instances, point_lights)| {
+                let should_remove = !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
+
+                if should_remove {
+                    engine
+                        .resources
+                        .get::<InstancesManager>()
+                        .get_mut()
+                        .remove(&renderer.queue, instances);
+
+                    engine
+                        .resources
+                        .get::<PointLightsManager>()
+                        .get_mut()
+                        .remove(&renderer.queue, point_lights);
+                }
+
+                !should_remove
+            });
+
+        for x in chunk_x {
+            for y in chunk_y.clone() {
+                let key = glam::ivec2(x, y);
+
+                if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
+                    let (instances, point_lights) = self
+                        .worldgen
+                        .chunk(self.worldgen_model.as_ref().unwrap(), key);
+
+                    entry.insert((
+                        engine
+                            .resources
+                            .get::<InstancesManager>()
+                            .get_mut()
+                            .add(&renderer.queue, &instances),
+                        engine
+                            .resources
+                            .get::<PointLightsManager>()
+                            .get_mut()
+                            .add(&renderer.queue, &point_lights),
+                    ));
+                }
+            }
         }
 
         match event {
@@ -395,7 +457,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                             .resources
                             .get::<InstancesManager>()
                             .get_mut()
-                            .remove(&renderer.queue, &[handle])
+                            .remove(&renderer.queue, &mut [handle])
                     }
                 }
 

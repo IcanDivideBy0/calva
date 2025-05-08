@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "*.gltf": "json",
+    "*.wesl": "wgsl"
+  },
+}

@@ -93,7 +93,10 @@ impl AmbientLightPass {
 
         let bind_group = Self::make_bind_group(device, &bind_group_layout, &inputs);
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("ambient_light.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("AmbientLight shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("ambient_light").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("AmbientLight pipeline layout"),

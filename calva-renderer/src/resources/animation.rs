@@ -32,10 +32,10 @@ impl AnimationsManager {
     // pub const SAMPLE_RATE: Duration = Duration::from_secs_f32(1.0 / 15.0);
     pub const SAMPLES_PER_SEC: f32 = 15.0;
 
-    const MAX_ANIMATIONS: usize = 512;
+    const MAX_ANIMATIONS: u32 = 512;
 
     pub fn new(device: &wgpu::Device) -> Self {
-        let mut views = Vec::with_capacity(Self::MAX_ANIMATIONS);
+        let mut views = Vec::with_capacity(Self::MAX_ANIMATIONS as _);
 
         views.push(
             device
@@ -149,7 +149,7 @@ impl AnimationsManager {
         views: &[wgpu::TextureView],
         sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
-        let views = (0..Self::MAX_ANIMATIONS)
+        let views = (0..Self::MAX_ANIMATIONS as _)
             .map(|i| views.get(i).unwrap_or(&views[0]))
             .collect::<Vec<_>>();
 

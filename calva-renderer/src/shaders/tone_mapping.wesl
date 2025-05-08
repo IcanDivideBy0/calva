@@ -16,13 +16,12 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<
 // Fragment shader
 //
 
-
-struct Config {
+struct ToneMappingConfig {
     exposure: f32,
     gamma: f32,
 }
-@group(0) @binding(0) var<uniform> config: Config;
 
+@group(0) @binding(0) var<uniform> config: ToneMappingConfig;
 @group(1) @binding(0) var t_hdr: texture_2d<f32>;
 
 @fragment
