@@ -1,14 +1,14 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 pub struct IdGenerator {
     pub next: u16,
-    recycle: BTreeSet<u16>,
+    recycle: HashSet<u16>,
 }
 
 impl IdGenerator {
     pub fn new(init: u16) -> Self {
         Self {
-            recycle: BTreeSet::new(),
+            recycle: HashSet::new(),
             next: init,
         }
     }
@@ -18,10 +18,13 @@ impl IdGenerator {
     }
 
     pub fn get(&mut self) -> u16 {
-        self.recycle.pop_first().unwrap_or_else(|| {
+        if let Some(recycled) = self.recycle.iter().next().copied() {
+            self.recycle.remove(&recycled);
+            recycled
+        } else {
             self.next += 1;
             self.next - 1
-        })
+        }
     }
 
     pub fn recycle(&mut self, id: u16) {

@@ -160,7 +160,7 @@ impl DemoApp<'_> {
         //         .resources
         //         .get::<InstancesManager>()
         //         .get_mut()
-        //         .add(&renderer.queue, instances);
+        //         .add(&instances);
         //     engine
         //         .resources
         //         .get::<LightsManager>()
@@ -176,7 +176,7 @@ impl DemoApp<'_> {
         //             .resources
         //             .get::<InstancesManager>()
         //             .get_mut()
-        //             .add(&renderer.queue, &instances);
+        //             .add(&instances);
         //         engine
         //             .resources
         //             .get::<PointLightsManager>()
@@ -275,48 +275,50 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
         let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
 
-        self.worldgen_chunks
-            .retain(|pos, (instances, point_lights)| {
-                let should_remove = !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
+        if event == WindowEvent::RedrawRequested {
+            self.worldgen_chunks
+                .retain(|pos, (instances, point_lights)| {
+                    let should_remove = !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
 
-                if should_remove {
-                    engine
-                        .resources
-                        .get::<InstancesManager>()
-                        .get_mut()
-                        .remove(&renderer.queue, instances);
-
-                    engine
-                        .resources
-                        .get::<PointLightsManager>()
-                        .get_mut()
-                        .remove(&renderer.queue, point_lights);
-                }
-
-                !should_remove
-            });
-
-        for x in chunk_x {
-            for y in chunk_y.clone() {
-                let key = glam::ivec2(x, y);
-
-                if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
-                    let (instances, point_lights) = self
-                        .worldgen
-                        .chunk(self.worldgen_model.as_ref().unwrap(), key);
-
-                    entry.insert((
+                    if should_remove {
                         engine
                             .resources
                             .get::<InstancesManager>()
                             .get_mut()
-                            .add(&renderer.queue, &instances),
+                            .remove(instances);
+
                         engine
                             .resources
                             .get::<PointLightsManager>()
                             .get_mut()
-                            .add(&renderer.queue, &point_lights),
-                    ));
+                            .remove(&renderer.queue, point_lights);
+                    }
+
+                    !should_remove
+                });
+
+            for x in chunk_x {
+                for y in chunk_y.clone() {
+                    let key = glam::ivec2(x, y);
+
+                    if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
+                        let (instances, point_lights) = self
+                            .worldgen
+                            .chunk(self.worldgen_model.as_ref().unwrap(), key);
+
+                        entry.insert((
+                            engine
+                                .resources
+                                .get::<InstancesManager>()
+                                .get_mut()
+                                .add(&instances),
+                            engine
+                                .resources
+                                .get::<PointLightsManager>()
+                                .get_mut()
+                                .add(&renderer.queue, &point_lights),
+                        ));
+                    }
                 }
             }
         }
@@ -457,7 +459,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                             .resources
                             .get::<InstancesManager>()
                             .get_mut()
-                            .remove(&renderer.queue, &mut [handle])
+                            .remove(&mut [handle])
                     }
                 }
 
@@ -477,7 +479,6 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                                 let instances_handles =
                                     engine.resources.get::<InstancesManager>().get_mut().add(
-                                        &renderer.queue,
                                         &ennemy
                                             .scene_instances(
                                                 None,

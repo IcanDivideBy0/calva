@@ -1,4 +1,4 @@
-const SHADERS: &'static [&'static str] = &[
+const SHADERS: &[&str] = &[
     "ambient_light",
     "animate",
     "directional_light[blur]",
@@ -9,6 +9,7 @@ const SHADERS: &'static [&'static str] = &[
     "geometry",
     "geometry[cull]",
     "hierarchical_depth",
+    "instances_manager",
     "point_lights",
     "skybox",
     "ssao",
