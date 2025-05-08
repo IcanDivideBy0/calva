@@ -13,3 +13,15 @@ struct Instances {
     count: u32,
     instances: array<Instance>,
 }
+
+fn instance_deleted(instance: Instance) -> bool {
+    return bool(instance.packed_data >> 24);
+}
+
+fn instance_mesh_id(instance: Instance) -> u32 {
+    return instance.packed_data & 0xFFFF;
+}
+
+fn instance_material_id(instance: Instance) -> u32 {
+    return (instance.packed_data >> 16) & 0xFF;
+}

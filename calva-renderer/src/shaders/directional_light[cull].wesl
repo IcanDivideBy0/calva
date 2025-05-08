@@ -1,9 +1,14 @@
 import package::util::math::plane_distance_to_point;
 import package::resources::{
+    instances::{
+        Instances,
+        instance_deleted,
+        instance_mesh_id,
+        instance_material_id,
+    },
     camera::Camera,
     mesh::{MeshInfo, MeshBoundingSphere},
     animation::AnimationState,
-    instances::Instances,
     directional_light::DirectionalLight,
 };
 
@@ -113,13 +118,12 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let instance = &instances.instances[instance_index];
 
-    let deleted = bool((*instance).packed_data >> 24);
-    if deleted {
+    if instance_deleted(*instance) {
         return;
     }
 
     let transform = &(*instance).transform;
-    let mesh_id = (*instance).packed_data & 0xFFFF;
+    let mesh_id = instance_mesh_id(*instance);
     let mesh_info = &meshes_info[mesh_id];
 
     if !sphere_visible((*mesh_info).bounding_sphere, (*transform)) {
@@ -131,7 +135,7 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let draw_instance = &draw_instances[draw_instance_index];
     (*draw_instance).transform = *transform;
-    (*draw_instance).material_id = ((*instance).packed_data >> 16) & 0xFF;
+    (*draw_instance).material_id = instance_material_id(*instance);
     (*draw_instance).skin_offset = (*mesh_info).skin_offset;
     (*draw_instance).animation = (*instance).animation;
 }

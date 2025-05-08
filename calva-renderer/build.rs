@@ -19,6 +19,6 @@ const SHADERS: &'static [&'static str] = &[
 
 fn main() {
     for shader in SHADERS {
-        wesl::Wesl::new("src/shaders").build_artifact(format!("{}.wesl", shader), shader);
+        wesl::Wesl::new("src/shaders").build_artifact(format!("{shader}.wesl"), shader);
     }
 }
