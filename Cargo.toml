@@ -5,6 +5,9 @@ members = ["calva", "calva-gltf", "calva-renderer", "demo"]
 [profile.dev.package."*"]
 opt-level = 3
 
+# [profile.release]
+# debug = true
+
 [patch.crates-io]
 # wgpu = { git = "https://github.com/gfx-rs/wgpu.git", branch = "master" }
 # wgpu = { path = "../wgpu/wgpu" }

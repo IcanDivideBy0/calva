@@ -1,6 +1,7 @@
 #![warn(clippy::all)]
 
 use anyhow::{anyhow, Result};
+use async_std::task;
 use calva::{
     gltf::GltfModel,
     renderer::{
@@ -23,7 +24,6 @@ use winit::{
 use worldgen::{Chunk, Tile};
 
 pub mod camera;
-pub mod fog;
 pub mod worldgen;
 
 #[async_std::main]
@@ -237,7 +237,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         .inverse();
 
         let renderer: Renderer<'a> =
-            pollster::block_on(Renderer::new(window.clone(), window.inner_size().into())).unwrap();
+            task::block_on(Renderer::new(window.clone(), window.inner_size().into())).unwrap();
         let mut engine = Engine::new(&renderer);
 
         engine.ambient_light.config.color = [0.106535, 0.061572, 0.037324];
@@ -276,22 +276,19 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
 
         if event == WindowEvent::RedrawRequested {
+            let instances_manager_resource = engine.resources.get::<InstancesManager>();
+            let mut instances_manager = instances_manager_resource.get_mut();
+
+            let point_lights_manager_resource = engine.resources.get::<PointLightsManager>();
+            let mut point_lights_manager = point_lights_manager_resource.get_mut();
+
             self.worldgen_chunks
                 .retain(|pos, (instances, point_lights)| {
                     let should_remove = !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
 
                     if should_remove {
-                        engine
-                            .resources
-                            .get::<InstancesManager>()
-                            .get_mut()
-                            .remove(instances);
-
-                        engine
-                            .resources
-                            .get::<PointLightsManager>()
-                            .get_mut()
-                            .remove(&renderer.queue, point_lights);
+                        instances_manager.remove(instances);
+                        point_lights_manager.remove(&renderer.queue, point_lights);
                     }
 
                     !should_remove
@@ -307,16 +304,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                             .chunk(self.worldgen_model.as_ref().unwrap(), key);
 
                         entry.insert((
-                            engine
-                                .resources
-                                .get::<InstancesManager>()
-                                .get_mut()
-                                .add(&instances),
-                            engine
-                                .resources
-                                .get::<PointLightsManager>()
-                                .get_mut()
-                                .add(&renderer.queue, &point_lights),
+                            instances_manager.add(&instances),
+                            point_lights_manager.add(&renderer.queue, &point_lights),
                         ));
                     }
                 }

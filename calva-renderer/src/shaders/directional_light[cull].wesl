@@ -2,7 +2,7 @@ import package::util::math::plane_distance_to_point;
 import package::resources::{
     instances::{
         Instances,
-        instance_deleted,
+        instance_active,
         instance_mesh_id,
         instance_material_id,
     },
@@ -118,7 +118,7 @@ fn cull(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let instance = &instances.instances[instance_index];
 
-    if instance_deleted(*instance) {
+    if !instance_active(*instance) {
         return;
     }
 

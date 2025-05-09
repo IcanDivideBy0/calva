@@ -14,7 +14,6 @@ gltf = { version = "1.4", features = ["extras"] }
 image = "0.25"
 noise = "0.9"
 winit = "0.30"
-pollster = "0.4"
 rand = "0.9"
 rand_seeder = "0.4"
 serde = "1.0"
