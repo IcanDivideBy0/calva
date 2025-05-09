@@ -335,6 +335,10 @@ impl DirectionalLightPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
+        if self.uniform.light.intensity <= 0.0 {
+            return;
+        }
+
         let mut encoder = ctx.encoder.scope("DirectionalLight");
 
         let camera = self.camera.get();
