@@ -181,7 +181,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Ssao shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("ssao").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::ssao").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

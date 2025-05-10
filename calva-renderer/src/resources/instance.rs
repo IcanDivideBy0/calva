@@ -207,7 +207,7 @@ impl InstancesManager {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("InstancesManager shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("instances_manager").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("resources::instances").into()),
         });
 
         let maintain_pipeline_layout =

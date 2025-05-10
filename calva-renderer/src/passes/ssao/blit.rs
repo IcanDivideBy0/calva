@@ -57,7 +57,7 @@ impl SsaoBlitPass {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("SsaoBlit shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("ssao[blit]").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::ssao[blit]").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

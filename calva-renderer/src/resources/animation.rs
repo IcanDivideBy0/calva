@@ -1,4 +1,4 @@
-use wgpu::{util::DeviceExt, wgt::TextureViewDescriptor};
+use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -53,10 +53,7 @@ impl AnimationsManager {
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[wgpu::TextureFormat::Rgba32Float],
                 })
-                .create_view(&TextureViewDescriptor {
-                    // format: Some(wgpu::TextureFormat::Rg),
-                    ..Default::default()
-                }),
+                .create_view(&Default::default()),
         );
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -149,10 +146,6 @@ impl AnimationsManager {
         views: &[wgpu::TextureView],
         sampler: &wgpu::Sampler,
     ) -> wgpu::BindGroup {
-        let views = (0..Self::MAX_ANIMATIONS as _)
-            .map(|i| views.get(i).unwrap_or(&views[0]))
-            .collect::<Vec<_>>();
-
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("AnimationsManager bind group"),
             layout,
@@ -160,8 +153,7 @@ impl AnimationsManager {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureViewArray(
-                        &views,
-                        // &views.iter().collect::<Vec<_>>(),
+                        &views.iter().collect::<Vec<_>>(),
                     ),
                 },
                 wgpu::BindGroupEntry {

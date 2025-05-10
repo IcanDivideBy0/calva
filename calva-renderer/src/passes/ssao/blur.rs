@@ -53,7 +53,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("SsaoBlur"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("ssao[blur]").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::ssao[blur]").into()),
         });
 
         let make_render_bundle = |direction: Direction| {

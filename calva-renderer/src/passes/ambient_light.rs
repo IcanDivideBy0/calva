@@ -95,7 +95,7 @@ impl AmbientLightPass {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("AmbientLight shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("ambient_light").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::ambient_light").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

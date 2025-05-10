@@ -67,7 +67,7 @@ impl FxaaPass {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Fxaa shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("fxaa").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::fxaa").into()),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

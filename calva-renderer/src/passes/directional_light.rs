@@ -123,7 +123,7 @@ impl DirectionalLightPass {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("DirectionalLight[depth] shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    wesl::include_wesl!("directional_light[depth]").into(),
+                    wesl::include_wesl!("passes::directional_light[depth]").into(),
                 ),
             });
 
@@ -178,7 +178,7 @@ impl DirectionalLightPass {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("DirectionalLight[lighting] shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    wesl::include_wesl!("directional_light[lighting]").into(),
+                    wesl::include_wesl!("passes::directional_light[lighting]").into(),
                 ),
             });
 
@@ -713,7 +713,7 @@ mod cull {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("DirectionalLight[cull] shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    wesl::include_wesl!("directional_light[cull]").into(),
+                    wesl::include_wesl!("passes::directional_light[cull]").into(),
                 ),
             });
 
@@ -885,7 +885,7 @@ mod blur {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("DirectionalLight[blur] shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    wesl::include_wesl!("directional_light[blur]").into(),
+                    wesl::include_wesl!("passes::directional_light[blur]").into(),
                 ),
             });
 

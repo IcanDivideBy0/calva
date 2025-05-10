@@ -99,7 +99,7 @@ impl GeometryPass {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Geometry shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("geometry").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::geometry").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -514,7 +514,9 @@ mod cull {
 
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Geometry[cull] shader"),
-                source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("geometry[cull]").into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    wesl::include_wesl!("passes::geometry[cull]").into(),
+                ),
             });
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

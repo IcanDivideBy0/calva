@@ -72,7 +72,7 @@ impl AnimatePass {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Animate shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("animate").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::animate").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

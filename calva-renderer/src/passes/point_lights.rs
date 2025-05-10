@@ -74,7 +74,7 @@ impl PointLightsPass {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("PointLights shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("point_lights").into()),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::point_lights").into()),
         });
 
         let stencil_pipeline = {

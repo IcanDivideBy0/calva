@@ -30,6 +30,7 @@ impl<'window> Renderer<'window> {
         .union(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) // All except WebGL
         .union(wgpu::Features::POLYGON_MODE_LINE) // Vulkan, DX12, Metal
         .union(wgpu::Features::FLOAT32_FILTERABLE) // Vulkan, DX12, Metal
+        .union(wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY) // Vulkan, DX12
         .union(GpuProfiler::ALL_WGPU_TIMER_FEATURES) // Vulkan, DX12
         ;
 
