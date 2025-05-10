@@ -5,7 +5,6 @@ import package::resources::directional_light::DirectionalLight;
 @group(1) @binding(0) var<storage, read> skinning_joints: array<u32>;
 @group(1) @binding(1) var<storage, read> skinning_weights: array<vec4<f32>>;
 
-// TODO: should it be a texture_storage_2d_array?
 @group(2) @binding(0) var animations: binding_array<texture_2d_array<f32>>;
 @group(2) @binding(1) var animations_sampler: sampler;
 

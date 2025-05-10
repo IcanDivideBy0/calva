@@ -164,7 +164,5 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
                 },
             )
             .execute_bundles(std::iter::once(&self.v_pass));
-
-        encoder.pop_debug_group();
     }
 }
