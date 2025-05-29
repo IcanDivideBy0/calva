@@ -1,6 +1,7 @@
 use noise::NoiseFn;
 use rand::prelude::*;
 use rand_seeder::SipHasher;
+use std::fmt;
 use std::{cell::RefCell, collections::BTreeSet, hash::Hash};
 
 use calva::{
@@ -46,27 +47,29 @@ impl WorldGenerator {
     pub fn chunk(&self, model: &GltfModel, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
         let chunk = Chunk::new(self.seed, coord, self.noise.as_ref(), &self.options);
 
+        // dbg!(&chunk);
+
         let mut instances = vec![];
         let mut point_lights = vec![];
 
         let offset = coord * (Chunk::SIZE as i32);
 
-        for y in 0..Chunk::SIZE {
-            for x in 0..Chunk::SIZE {
+        (0..Chunk::SIZE)
+            .flat_map(|x| (0..Chunk::SIZE).map(move |y| (x, y)))
+            .filter_map(|(x, y)| -> Option<(Vec<Instance>, Vec<PointLight>)> {
                 let slot = chunk.grid[y][x].borrow();
+                let opt = slot.options.first()?;
 
-                if let Some(opt) = slot.options.first() {
-                    let res = model.node_instances(
-                        model.doc.nodes().nth(opt.id).unwrap(),
-                        Some(opt.transform(offset + glam::ivec2(x as _, y as _))),
-                        None,
-                    );
-
-                    instances.extend(res.0);
-                    point_lights.extend(res.1);
-                };
-            }
-        }
+                Some(model.node_instances(
+                    model.doc.nodes().nth(opt.id)?,
+                    Some(opt.transform(offset + glam::ivec2(x as _, y as _))),
+                    None,
+                ))
+            })
+            .for_each(|res| {
+                instances.extend(res.0);
+                point_lights.extend(res.1);
+            });
 
         (instances, point_lights)
     }
@@ -74,11 +77,13 @@ impl WorldGenerator {
 
 type ChunkGrid = [[RefCell<Slot>; Chunk::SIZE]; Chunk::SIZE];
 pub struct Chunk {
+    coord: glam::IVec2,
     grid: ChunkGrid,
 }
 
 impl Chunk {
     pub const SIZE: usize = 3;
+    pub const WORLD_SIZE: f32 = Self::SIZE as f32 * Tile::WORLD_SIZE;
 
     fn new(
         seed: impl Hash,
@@ -140,7 +145,7 @@ impl Chunk {
                 let mut constraint = [
                     Some(elevation_start),
                     Some(elevation_start),
-                    Some(elevation_start.max(elevation_end)),
+                    Some(u8::max(elevation_start, elevation_end)),
                     Some(elevation_end),
                     Some(elevation_end),
                 ];
@@ -157,7 +162,7 @@ impl Chunk {
         while let Some((x, y)) = Self::min_entropy_slot(&grid) {
             let mut slot = grid[y][x].borrow_mut();
             slot.options = [*slot.options.iter().choose(&mut rng).unwrap_or_else(|| {
-                dbg!("Cannot generate chunk");
+                eprintln!("Cannot generate chunk {coord}");
                 options.first().unwrap()
             })]
             .into();
@@ -166,7 +171,7 @@ impl Chunk {
             Self::propagate(&grid, x, y);
         }
 
-        Self { grid }
+        Self { coord, grid }
     }
 
     fn min_entropy_slot(grid: &ChunkGrid) -> Option<(usize, usize)> {
@@ -214,6 +219,93 @@ impl Chunk {
     }
 }
 
+impl fmt::Debug for Chunk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use colored::Colorize;
+        let get_constraint = |face: Face, i: usize| {
+            let (x, y) = match face {
+                Face::North => (i, 0),
+                Face::East => (Self::SIZE - 1, i),
+                Face::South => (Self::SIZE - 1 - i, Self::SIZE - 1),
+                Face::West => (0, Self::SIZE - 1 - i),
+            };
+
+            self.grid[y][x]
+                .borrow()
+                .options
+                .first()
+                .unwrap()
+                .constraint(face)
+                .map(|c| match c {
+                    Some(x) => {
+                        let c = (x + 1) * 31;
+                        format!("{}", x.to_string().bold().red().on_truecolor(c, c, c))
+                    }
+                    None => String::from(" "),
+                })
+        };
+
+        let north: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::North, i));
+
+        writeln!(f, "Chunk ({},{})", self.coord.x, self.coord.y)?;
+
+        writeln!(
+            f,
+            "{}",
+            north
+                .iter()
+                .enumerate()
+                .map(|(idx, c)| c[(idx.min(1))..].join(""))
+                .collect::<Vec<_>>()
+                .join("")
+        )?;
+
+        let east: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::East, i));
+        let west: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::West, i));
+        for y in 0..Self::SIZE {
+            let e = &east[y];
+            let w = &west[Self::SIZE - 1 - y];
+
+            let end = if y < Self::SIZE - 1 {
+                SlotOption::WFC_SAMPLES
+            } else {
+                SlotOption::WFC_SAMPLES - 1
+            };
+
+            for i in 1..end {
+                let last = i == SlotOption::WFC_SAMPLES - 1;
+
+                let c = if last { "┼" } else { "│" };
+                let mut strs = [c; Self::SIZE + 1];
+
+                strs[0] = w[SlotOption::WFC_SAMPLES - 1 - i].as_str();
+                strs[Self::SIZE] = e[i].as_str();
+
+                let sep = if last { "─" } else { " " };
+                writeln!(f, "{}", strs.join(&sep.repeat(SlotOption::WFC_SAMPLES - 2)))?;
+            }
+        }
+
+        let mut south: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::South, i));
+        writeln!(
+            f,
+            "{}",
+            south
+                .iter_mut()
+                .rev()
+                .enumerate()
+                .map(|(idx, c)| {
+                    c.reverse();
+                    c[(idx.min(1))..].join("")
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        )?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct Slot {
     options: BTreeSet<SlotOption>,
@@ -228,11 +320,11 @@ impl Slot {
         self.entropy() == 1
     }
 
-    fn constraints(&self, face: Face) -> impl Iterator<Item = ModuleConstraint> + '_ {
+    fn constraints(&self, face: Face) -> impl Iterator<Item = SlotConstraint> + '_ {
         self.options.iter().map(move |opt| opt.constraint(face))
     }
 
-    fn apply_constraints(&mut self, face: Face, constraints: &[ModuleConstraint]) -> bool {
+    fn apply_constraints(&mut self, face: Face, constraints: &[SlotConstraint]) -> bool {
         if self.collapsed() {
             return false;
         }
@@ -250,14 +342,14 @@ impl Slot {
     }
 }
 
-type ModuleConstraint = [Option<u8>; SlotOption::WFC_SAMPLES];
+type SlotConstraint = [Option<u8>; SlotOption::WFC_SAMPLES];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct SlotOption {
     id: usize,
     elevation: u8,
     rotation: u8,
-    constraints: [ModuleConstraint; 4], // north east south west
+    constraints: [SlotConstraint; 4], // north east south west
 }
 
 impl Eq for SlotOption {}
@@ -275,12 +367,6 @@ impl Hash for SlotOption {
     }
 }
 
-impl std::cmp::PartialOrd for SlotOption {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl std::cmp::Ord for SlotOption {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.id
@@ -290,13 +376,19 @@ impl std::cmp::Ord for SlotOption {
     }
 }
 
+impl std::cmp::PartialOrd for SlotOption {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl SlotOption {
     const WFC_SAMPLES: usize = 5;
     const FLOOR_HEIGHT: f32 = 4.0;
 
     const ELEVATION_MAX: usize = 4;
 
-    fn constraint(&self, face: Face) -> ModuleConstraint {
+    fn constraint(&self, face: Face) -> SlotConstraint {
         match face {
             Face::North => self.constraints[0],
             Face::East => self.constraints[1],
@@ -333,7 +425,7 @@ impl SlotOption {
         });
 
         (0..4).flat_map(move |rotation| {
-            let it = (0..=Self::ELEVATION_MAX as u8).map(move |elevation| Self {
+            let it = (0..=(Self::ELEVATION_MAX as u8 + 2)).map(move |elevation| Self {
                 id: tile.node_id,
                 elevation,
                 rotation,
@@ -360,5 +452,51 @@ impl SlotOption {
             * glam::vec3(Tile::WORLD_SIZE, Self::FLOOR_HEIGHT, Tile::WORLD_SIZE);
 
         glam::Mat4::from_rotation_translation(quat, translation)
+    }
+}
+
+impl fmt::Debug for SlotOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use colored::Colorize;
+        let get_visual_constraint = |face: Face| {
+            self.constraint(face).map(|c| match c {
+                Some(x) => {
+                    let c = (x + 1) * 31;
+                    format!("{x}").bold().red().on_truecolor(c, c, c)
+                }
+                None => " ".normal(),
+            })
+        };
+
+        let north = get_visual_constraint(Face::North);
+        let east = get_visual_constraint(Face::East);
+        let south = get_visual_constraint(Face::South);
+        let west = get_visual_constraint(Face::West);
+
+        writeln!(
+            f,
+            "SlotOption {{ id[{}], elevetion[{}], rotation [{}] }}",
+            self.id, self.elevation, self.rotation
+        )?;
+
+        writeln!(
+            f,
+            "╔{}{}{}{}{}╗",
+            north[0], north[1], north[2], north[3], north[4],
+        )?;
+
+        writeln!(f, "{}     {}", west[4], east[0])?;
+        writeln!(f, "{}     {}", west[3], east[1])?;
+        writeln!(f, "{}     {}", west[2], east[2])?;
+        writeln!(f, "{}     {}", west[1], east[3])?;
+        writeln!(f, "{}     {}", west[0], east[4])?;
+
+        writeln!(
+            f,
+            "╚{}{}{}{}{}╝",
+            south[4], south[3], south[2], south[1], south[0],
+        )?;
+
+        Ok(())
     }
 }

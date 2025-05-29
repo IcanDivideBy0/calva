@@ -39,15 +39,16 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+struct DemoState<'a> {
+    window: Arc<Window>,
+    camera: camera::MyCamera,
+    renderer: Renderer<'a>,
+    engine: Engine,
+    egui: EguiWinitPass,
+}
+
 struct DemoApp<'a> {
-    #[allow(clippy::type_complexity)]
-    state: Option<(
-        Arc<Window>,
-        camera::MyCamera,
-        Renderer<'a>,
-        Engine,
-        EguiWinitPass,
-    )>,
+    state: Option<DemoState<'a>>,
 
     worldgen: worldgen::WorldGenerator,
     worldgen_model: Option<GltfModel>,
@@ -79,7 +80,7 @@ impl DemoApp<'_> {
     }
 
     pub fn init_skybox(&mut self) -> Result<()> {
-        let (_, _, renderer, ref mut engine, ..) = self
+        let state = self
             .state
             .as_mut()
             .ok_or_else(|| anyhow!("Invalid state"))?;
@@ -99,17 +100,18 @@ impl DemoApp<'_> {
             Ok::<_, image::ImageError>(bytes)
         })?;
 
-        engine
+        state
+            .engine
             .resources
             .get::<SkyboxManager>()
             .get_mut()
-            .set_skybox(&renderer.device, &renderer.queue, &pixels);
+            .set_skybox(&state.renderer.device, &state.renderer.queue, &pixels);
 
         Ok(())
     }
 
     pub fn init_worldgen(&mut self) -> Result<()> {
-        let (_, _, renderer, ref mut engine, ..) = self
+        let state = self
             .state
             .as_mut()
             .ok_or_else(|| anyhow!("Invalid state"))?;
@@ -122,9 +124,10 @@ impl DemoApp<'_> {
             .read_to_end(&mut dungeon_buffer)
             .unwrap();
         let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer).unwrap();
-        self.worldgen_model = GltfModel::new(renderer, engine, doc, &buffers, &images).ok();
+        self.worldgen_model =
+            GltfModel::new(&state.renderer, &mut state.engine, doc, &buffers, &images).ok();
 
-        let tile_builder = worldgen::tile::TileBuilder::new(&renderer.device);
+        let tile_builder = worldgen::tile::TileBuilder::new(&state.renderer.device);
 
         let tiles = [
             "module01", "module03", "module07", "module08", "module09", "module10", "module11",
@@ -134,7 +137,12 @@ impl DemoApp<'_> {
         .iter()
         .filter_map(|node_name| {
             let node = self.worldgen_model.as_ref().unwrap().get_node(node_name)?;
-            let tile = tile_builder.build(&renderer.device, &renderer.queue, &buffers, node);
+            let tile = tile_builder.build(
+                &state.renderer.device,
+                &state.renderer.queue,
+                &buffers,
+                node,
+            );
             Some(tile)
         })
         .collect::<Vec<_>>();
@@ -189,7 +197,7 @@ impl DemoApp<'_> {
     }
 
     pub fn init_monster_models(&mut self) -> Result<()> {
-        let (_, _, renderer, ref mut engine, ..) = self
+        let state = self
             .state
             .as_mut()
             .ok_or_else(|| anyhow!("Invalid state"))?;
@@ -213,7 +221,7 @@ impl DemoApp<'_> {
         ]
         .iter()
         .take(1)
-        .map(|filepath| GltfModel::from_path(renderer, engine, filepath))
+        .map(|filepath| GltfModel::from_path(&state.renderer, &mut state.engine, filepath))
         .collect::<Result<Vec<_>>>()?;
 
         Ok(())
@@ -245,7 +253,13 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
         let egui = EguiWinitPass::new(&renderer.device, &renderer.surface_config, &window);
 
-        self.state = Some((window, camera, renderer, engine, egui));
+        self.state = Some(DemoState {
+            window,
+            camera,
+            renderer,
+            engine,
+            egui,
+        });
 
         self.init_skybox().unwrap();
         self.init_worldgen().unwrap();
@@ -253,33 +267,34 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let (window, ref mut camera, renderer, ref mut engine, ref mut egui) =
-            if let Some(state) = self.state.as_mut() {
-                state
-            } else {
-                return;
-            };
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
 
-        if egui.on_event(window, &event).consumed {
+        if state.egui.on_event(&state.window, &event).consumed {
             return;
         }
 
-        if camera.handle_event(&event) {
+        if state.camera.handle_event(&event) {
             return;
         }
-
-        let (_, _, cam_pos) = camera.controller.transform.to_scale_rotation_translation();
-
-        let chunk_coord = ((cam_pos / Tile::WORLD_SIZE + 0.5) / Chunk::SIZE as f32).floor();
-        let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
-        let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
-        let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
 
         if event == WindowEvent::RedrawRequested {
-            let instances_manager_resource = engine.resources.get::<InstancesManager>();
+            let (_, _, cam_pos) = state
+                .camera
+                .controller
+                .transform
+                .to_scale_rotation_translation();
+
+            let chunk_coord = ((cam_pos + Tile::WORLD_SIZE * 0.5) / Chunk::WORLD_SIZE).floor();
+            let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
+            let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
+            let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
+
+            let instances_manager_resource = state.engine.resources.get::<InstancesManager>();
             let mut instances_manager = instances_manager_resource.get_mut();
 
-            let point_lights_manager_resource = engine.resources.get::<PointLightsManager>();
+            let point_lights_manager_resource = state.engine.resources.get::<PointLightsManager>();
             let mut point_lights_manager = point_lights_manager_resource.get_mut();
 
             self.worldgen_chunks
@@ -288,16 +303,15 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                     if should_remove {
                         instances_manager.remove(instances);
-                        point_lights_manager.remove(&renderer.queue, point_lights);
+                        point_lights_manager.remove(&state.renderer.queue, point_lights);
                     }
 
                     !should_remove
                 });
 
-            for x in chunk_x {
-                for y in chunk_y.clone() {
-                    let key = glam::ivec2(x, y);
-
+            chunk_x
+                .flat_map(|x| chunk_y.clone().map(move |y| glam::ivec2(x, y)))
+                .for_each(|key| {
                     if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
                         let (instances, point_lights) = self
                             .worldgen
@@ -305,20 +319,19 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                         entry.insert((
                             instances_manager.add(&instances),
-                            point_lights_manager.add(&renderer.queue, &point_lights),
+                            point_lights_manager.add(&state.renderer.queue, &point_lights),
                         ));
                     }
-                }
-            }
+                });
         }
 
         match event {
             WindowEvent::Resized(size) => {
                 let size = size.into();
 
-                camera.resize(size);
-                renderer.resize(size);
-                engine.resize(renderer);
+                state.camera.resize(size);
+                state.renderer.resize(size);
+                state.engine.resize(&state.renderer);
             }
 
             WindowEvent::RedrawRequested => {
@@ -329,12 +342,12 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 let dt = self.render_time.elapsed();
                 self.render_time = Instant::now();
 
-                **engine.animate.uniform = dt;
+                **state.engine.animate.uniform = dt;
 
-                camera.update(dt);
-                ***engine.resources.get::<CameraManager>().get_mut() = (&*camera).into();
+                state.camera.update(dt);
+                ***state.engine.resources.get::<CameraManager>().get_mut() = (&state.camera).into();
 
-                egui.update(renderer, window, |ctx| {
+                state.egui.update(&state.renderer, &state.window, |ctx| {
                     egui::SidePanel::right("engine_panel")
                         .min_width(320.0)
                         .frame(egui::containers::Frame {
@@ -343,11 +356,11 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                             ..Default::default()
                         })
                         .show(ctx, |ui| {
-                            ui.add(&*renderer);
+                            ui.add(&state.renderer);
 
-                            ui.add(&mut *engine.ambient_light.config);
-                            ui.add(&mut *engine.ssao.config);
-                            ui.add(&mut *engine.tone_mapping.config);
+                            ui.add(&mut *state.engine.ambient_light.config);
+                            ui.add(&mut *state.engine.ssao.config);
+                            ui.add(&mut *state.engine.tone_mapping.config);
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)
@@ -355,7 +368,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                     ui.horizontal(|ui| {
                                         egui::color_picker::color_edit_button_rgb(
                                             ui,
-                                            &mut engine.directional_light.uniform.light.color,
+                                            &mut state.engine.directional_light.uniform.light.color,
                                         );
                                         ui.add(
                                             egui::Label::new(egui::WidgetText::from("Color"))
@@ -365,7 +378,12 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                                     ui.add(
                                         egui::Slider::new(
-                                            &mut engine.directional_light.uniform.light.intensity,
+                                            &mut state
+                                                .engine
+                                                .directional_light
+                                                .uniform
+                                                .light
+                                                .intensity,
                                             0.0..=50.0,
                                         )
                                         .text("Intensity"),
@@ -374,25 +392,27 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                     ui.columns(2, |columns| {
                                         columns[0].add(
                                             egui::Slider::new(
-                                                &mut engine
+                                                &mut state
+                                                    .engine
                                                     .directional_light
                                                     .uniform
                                                     .light
                                                     .direction
                                                     .x,
-                                                -1.0..=1.0,
+                                                -1.5..=1.5,
                                             )
                                             .text("X"),
                                         );
                                         columns[1].add(
                                             egui::Slider::new(
-                                                &mut engine
+                                                &mut state
+                                                    .engine
                                                     .directional_light
                                                     .uniform
                                                     .light
                                                     .direction
                                                     .z,
-                                                -1.0..=1.0,
+                                                -1.5..=1.5,
                                             )
                                             .text("Z"),
                                         );
@@ -401,13 +421,13 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         });
                 });
 
-                engine.update(renderer);
+                state.engine.update(&state.renderer);
 
-                let result = renderer.render(|ctx| {
-                    engine.render(ctx);
+                let result = state.renderer.render(|ctx| {
+                    state.engine.render(ctx);
                     // fog.render(ctx, &engine.resources.camera, &time);
                     // navmesh_debug.render(ctx, &engine.resources.get::<CameraManager>().get());
-                    egui.render(ctx);
+                    state.egui.render(ctx);
                 });
 
                 match result {
@@ -421,7 +441,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 }
 
                 // Emits a new redraw requested event.
-                window.request_redraw();
+                state.window.request_redraw();
             }
 
             WindowEvent::CloseRequested
@@ -444,7 +464,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     ..
                 } => {
                     if let Some(handle) = self.monsters_instances.pop() {
-                        engine
+                        state
+                            .engine
                             .resources
                             .get::<InstancesManager>()
                             .get_mut()
@@ -466,8 +487,12 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                     4.0 * z as f32,
                                 ));
 
-                                let instances_handles =
-                                    engine.resources.get::<InstancesManager>().get_mut().add(
+                                let instances_handles = state
+                                    .engine
+                                    .resources
+                                    .get::<InstancesManager>()
+                                    .get_mut()
+                                    .add(
                                         &ennemy
                                             .scene_instances(
                                                 None,
@@ -489,10 +514,12 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     physical_key: PhysicalKey::Code(KeyCode::Enter),
                     ..
                 } if self.kb_modifiers.alt_key() => {
-                    window.set_fullscreen(match window.fullscreen() {
-                        None => Some(Fullscreen::Borderless(None)),
-                        _ => None,
-                    });
+                    state
+                        .window
+                        .set_fullscreen(match state.window.fullscreen() {
+                            None => Some(Fullscreen::Borderless(None)),
+                            _ => None,
+                        });
                 }
                 _ => {}
             },
