@@ -1,10 +1,12 @@
 {
-	"settings": {
-		"rust.clippy_preference": "on",
-	},
-	"folders": [
-		{
-			"path": "."
-		}
-	]
+  "settings": {
+    "files.associations": {
+      "*.gltf": "json",
+      "*.wesl": "wgsl"
+    },
+    "rust-analyzer.check.command": "clippy"
+  },
+  "folders": [
+    { "path": "." }
+  ]
 }

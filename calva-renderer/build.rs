@@ -1,26 +1,20 @@
-const SHADERS: &[&str] = &[
-    "passes/ambient_light",
-    "passes/animate",
-    "passes/directional_light[blur]",
-    "passes/directional_light[cull]",
-    "passes/directional_light[depth]",
-    "passes/directional_light[lighting]",
-    "passes/fxaa",
-    "passes/geometry",
-    "passes/geometry[cull]",
-    "passes/hierarchical_depth",
-    "passes/point_lights",
-    "passes/skybox",
-    "passes/ssao",
-    "passes/ssao[blit]",
-    "passes/ssao[blur]",
-    "passes/tone_mapping",
-    "resources/instances",
-];
+use wesl::Wesl;
 
-fn main() {
-    for shader in SHADERS {
-        wesl::Wesl::new("src/shaders")
-            .build_artifact(format!("{shader}.wesl"), &shader.replace("/", "::"));
+const SHADERS_PATH: &str = "src/shaders";
+
+fn main() -> anyhow::Result<()> {
+    let compiler = Wesl::new(SHADERS_PATH);
+
+    for entry in glob::glob(&format!("{SHADERS_PATH}/**/*.wesl"))? {
+        let entrypoint = entry?
+            .display()
+            .to_string()
+            .replace(&format!("{SHADERS_PATH}/"), "");
+
+        let out_name = entrypoint.clone().replace(".wesl", "").replace("/", "::");
+
+        compiler.build_artifact(entrypoint, &out_name);
     }
+
+    Ok(())
 }

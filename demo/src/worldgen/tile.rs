@@ -1,4 +1,5 @@
 use calva::renderer::wgpu::{self, util::DeviceExt};
+use itertools::Itertools;
 
 pub struct TileBuilder {
     depth: wgpu::Texture,
@@ -92,7 +93,7 @@ impl TileBuilder {
         queue: &wgpu::Queue,
         buffers: &[gltf::buffer::Data],
         node: gltf::Node,
-    ) -> Tile {
+    ) -> Option<Tile> {
         let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
             buffers.get(buffer.index()).map(std::ops::Deref::deref)
         };
@@ -159,10 +160,10 @@ impl TileBuilder {
         );
 
         if triangles.is_empty() {
-            return Tile {
+            return Some(Tile {
                 node_id: node.index(),
                 height_map: [[-Tile::MAX_HEIGHT; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
-            };
+            });
         }
 
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -179,8 +180,7 @@ impl TileBuilder {
                 * self
                     .depth
                     .format()
-                    .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))
-                    .unwrap()) as _,
+                    .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))?) as _,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -225,8 +225,7 @@ impl TileBuilder {
                             * self
                                 .depth
                                 .format()
-                                .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))
-                                .unwrap(),
+                                .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))?,
                     ),
                     rows_per_image: None,
                 },
@@ -245,24 +244,18 @@ impl TileBuilder {
 
         let buffer_view = buffer_slice.get_mapped_range();
 
-        let height_map = {
-            let mut it = bytemuck::cast_slice::<u8, u16>(&buffer_view)
-                .chunks_exact(Tile::TEXTURE_SIZE)
-                .map(|slice| {
-                    let mut it = slice.iter().map(|&depth| {
-                        ((depth as f32 / u16::MAX as f32) - 0.5) * -2.0 * Tile::MAX_HEIGHT
-                    });
+        let height_map = bytemuck::cast_slice::<u8, u16>(&buffer_view)
+            .iter()
+            .map(|depth| ((*depth as f32 / u16::MAX as f32) - 0.5) * -2.0 * Tile::MAX_HEIGHT)
+            .chunks(Tile::TEXTURE_SIZE)
+            .into_iter()
+            .filter_map(|chunk| chunk.collect_array())
+            .collect_array()?;
 
-                    std::array::from_fn(|_| it.next().unwrap())
-                });
-
-            std::array::from_fn(|_| it.next().unwrap())
-        };
-
-        Tile {
+        Some(Tile {
             node_id: node.index(),
             height_map,
-        }
+        })
     }
 }
 

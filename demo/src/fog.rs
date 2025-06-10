@@ -27,274 +27,272 @@ impl FogPass {
         let cy = (rand::random::<f64>(), rand::random::<f64>());
         let cz = (rand::random::<f64>(), rand::random::<f64>());
 
-        let noise_data = (0..Self::NOISE_SIZE)
-            .flat_map(|z| {
-                let z = z as f64;
-                let zz = z * Self::NOISE_SCALE * std::f64::consts::TAU;
-                (0..Self::NOISE_SIZE)
-                    .flat_map(|y| {
-                        let y = y as f64;
-                        let yy = y * Self::NOISE_SCALE * std::f64::consts::TAU;
-                        (0..Self::NOISE_SIZE)
-                            .map(|x| {
-                                let x = x as f64;
-                                let xx = x * Self::NOISE_SCALE * std::f64::consts::TAU;
+        let noise_data = itertools::iproduct!(
+            0..Self::NOISE_SIZE,
+            0..Self::NOISE_SIZE,
+            0..Self::NOISE_SIZE
+        )
+        .map(|(x, y, z)| {
+            let x = x as f64;
+            let xx = x * Self::NOISE_SCALE * std::f64::consts::TAU;
 
-                                // let n = perlin.get([
-                                //     f64::from(x) * Self::NOISE_SCALE,
-                                //     f64::from(y) * Self::NOISE_SCALE,
-                                //     f64::from(z) * Self::NOISE_SCALE,
-                                // ]);
+            let y = y as f64;
+            let yy = y * Self::NOISE_SCALE * std::f64::consts::TAU;
 
-                                let nx = perlin.get([
-                                    cx.0 + 3.0 * xx.cos(),
-                                    cx.1 + 3.0 * yy.sin(), //
-                                    3.0 * yy.cos() * xx.sin(),
-                                ]);
-                                let ny = perlin.get([
-                                    cy.0 + 3.0 * yy.cos(),
-                                    cy.1 + 3.0 * zz.sin(), //
-                                    3.0 * zz.cos() * yy.sin(),
-                                ]);
-                                let nz = perlin.get([
-                                    cz.0 + 3.0 * zz.cos(),
-                                    cz.1 + 3.0 * xx.sin(), //
-                                    3.0 * xx.cos() * zz.sin(),
-                                ]);
+            let z = z as f64;
+            let zz = z * Self::NOISE_SCALE * std::f64::consts::TAU;
 
-                                // let n = (nx + ny + nz) / 3.0;
-                                // let n1 = (nx + ny) / 2.0;
-                                // let n2 = (nx + nz) / 2.0;
-                                // let n3 = (nz + ny) / 2.0;
+            // let n = perlin.get([
+            //     f64::from(x) * Self::NOISE_SCALE,
+            //     f64::from(y) * Self::NOISE_SCALE,
+            //     f64::from(z) * Self::NOISE_SCALE,
+            // ]);
 
-                                let n = fbm.get([nx, ny, nz]);
-                                // let n = nx;
+            let nx = perlin.get([
+                cx.0 + 3.0 * xx.cos(),
+                cx.1 + 3.0 * yy.sin(), //
+                3.0 * yy.cos() * xx.sin(),
+            ]);
+            let ny = perlin.get([
+                cy.0 + 3.0 * yy.cos(),
+                cy.1 + 3.0 * zz.sin(), //
+                3.0 * zz.cos() * yy.sin(),
+            ]);
+            let nz = perlin.get([
+                cz.0 + 3.0 * zz.cos(),
+                cz.1 + 3.0 * xx.sin(), //
+                3.0 * xx.cos() * zz.sin(),
+            ]);
 
-                                // let n = perlin.get([nx, ny, nz]);
-                                // let n = perlin.get([
-                                //     cx.0 + 5.0 * (xx.cos() * xx.sin()),
-                                //     cy.0 + 5.0 * (yy.cos() * yy.sin()), //
-                                //     cz.0 + 5.0 * (zz.cos() * zz.sin()),
-                                //     0.34,
-                                // ]);
+            // let n = (nx + ny + nz) / 3.0;
+            // let n1 = (nx + ny) / 2.0;
+            // let n2 = (nx + nz) / 2.0;
+            // let n3 = (nz + ny) / 2.0;
 
-                                // let n = nx;
-                                // nx = nx * std::f64::consts::PI;
-                                // ny = ny * std::f64::consts::PI;
+            let n = fbm.get([nx, ny, nz]);
+            // let n = nx;
 
-                                // let n = perlin.get([
-                                //     cx.0 + nx.cos(),
-                                //     cy.0 + ny.sin(),
-                                //     cz.0 + nx.sin() * ny.cos(),
-                                // ]);
+            // let n = perlin.get([nx, ny, nz]);
+            // let n = perlin.get([
+            //     cx.0 + 5.0 * (xx.cos() * xx.sin()),
+            //     cy.0 + 5.0 * (yy.cos() * yy.sin()), //
+            //     cz.0 + 5.0 * (zz.cos() * zz.sin()),
+            //     0.34,
+            // ]);
 
-                                // let n = nx;
-                                // let mut nz = perlin.get([
-                                //     cz.0 + zz.cos(),
-                                //     cz.1 + zz.sin(), //
-                                //     (cz.0 + cz.1) + xx.cos() + yy.sin(),
-                                // ]);
+            // let n = nx;
+            // nx = nx * std::f64::consts::PI;
+            // ny = ny * std::f64::consts::PI;
 
-                                // let n = ny;
+            // let n = perlin.get([
+            //     cx.0 + nx.cos(),
+            //     cy.0 + ny.sin(),
+            //     cz.0 + nx.sin() * ny.cos(),
+            // ]);
 
-                                // let mut nx = perlin.get([
-                                //     cx.0 + yy.cos(),
-                                //     cx.1 + zz.sin(), //
-                                //     (cx.0 + cx.1) + yy.sin() * zz.cos(),
-                                // ]);
+            // let n = nx;
+            // let mut nz = perlin.get([
+            //     cz.0 + zz.cos(),
+            //     cz.1 + zz.sin(), //
+            //     (cz.0 + cz.1) + xx.cos() + yy.sin(),
+            // ]);
 
-                                // let mut ny = perlin.get([
-                                //     cy.0 + zz.cos(),
-                                //     cy.1 + xx.sin(), //
-                                //     (cy.0 + cy.1) + zz.sin() * xx.cos(),
-                                // ]);
+            // let n = ny;
 
-                                // let mut nz = perlin.get([
-                                //     cz.0 + xx.cos(),
-                                //     cz.1 + yy.sin(), //
-                                //     (cz.0 + cz.1) + xx.sin() * yy.cos(),
-                                // ]);
+            // let mut nx = perlin.get([
+            //     cx.0 + yy.cos(),
+            //     cx.1 + zz.sin(), //
+            //     (cx.0 + cx.1) + yy.sin() * zz.cos(),
+            // ]);
 
-                                // let n = ny;
+            // let mut ny = perlin.get([
+            //     cy.0 + zz.cos(),
+            //     cy.1 + xx.sin(), //
+            //     (cy.0 + cy.1) + zz.sin() * xx.cos(),
+            // ]);
 
-                                // nx = (nx * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // ny = (ny * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // nz = (nz * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let mut nz = perlin.get([
+            //     cz.0 + xx.cos(),
+            //     cz.1 + yy.sin(), //
+            //     (cz.0 + cz.1) + xx.sin() * yy.cos(),
+            // ]);
 
-                                // let n = perlin.get([nx.cos(), nz.cos(), ny.cos()]);
-                                // let n = perlin.get([nx, ny]);
+            // let n = ny;
 
-                                // let mut nx = perlin.get([xx.cos(), yy.sin(), xx.sin() * yy.cos()]);
-                                // let mut ny = perlin.get([yy.cos(), yy.sin(), nx]);
-                                // let mut nz = perlin.get([zz.cos(), zz.sin(), ny]);
-                                // nx = (nx * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // ny = (ny * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // nz = (nz * 0.5 + 0.5) * std::f64::consts::TAU;
+            // nx = (nx * 0.5 + 0.5) * std::f64::consts::TAU;
+            // ny = (ny * 0.5 + 0.5) * std::f64::consts::TAU;
+            // nz = (nz * 0.5 + 0.5) * std::f64::consts::TAU;
 
-                                // let n = perlin.get([nx, ny, nz]);
-                                // let n = nx;
+            // let n = perlin.get([nx.cos(), nz.cos(), ny.cos()]);
+            // let n = perlin.get([nx, ny]);
 
-                                // let l = (nx.powf(2.0) + ny.powf(2.0) + nz.powf(2.0)).sqrt();
-                                // let n = perlin.get([nx / l, ny / l, nz / l]);
+            // let mut nx = perlin.get([xx.cos(), yy.sin(), xx.sin() * yy.cos()]);
+            // let mut ny = perlin.get([yy.cos(), yy.sin(), nx]);
+            // let mut nz = perlin.get([zz.cos(), zz.sin(), ny]);
+            // nx = (nx * 0.5 + 0.5) * std::f64::consts::TAU;
+            // ny = (ny * 0.5 + 0.5) * std::f64::consts::TAU;
+            // nz = (nz * 0.5 + 0.5) * std::f64::consts::TAU;
 
-                                // let mut nx = perlin.get([cx.0 + xx.sin(), cx.1 + xx.cos()]);
-                                // let mut ny = perlin.get([cy.0 + yy.sin(), cy.1 + yy.cos()]);
-                                // let mut nz = perlin.get([cz.0 + zz.sin(), cz.1 + zz.cos()]);
+            // let n = perlin.get([nx, ny, nz]);
+            // let n = nx;
 
-                                // nx = (nx * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // ny = (ny * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // nz = (nz * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let l = (nx.powf(2.0) + ny.powf(2.0) + nz.powf(2.0)).sqrt();
+            // let n = perlin.get([nx / l, ny / l, nz / l]);
 
-                                // let l = (nx.powf(2.0) + ny.powf(2.0) + nz.powf(2.0)).sqrt();
+            // let mut nx = perlin.get([cx.0 + xx.sin(), cx.1 + xx.cos()]);
+            // let mut ny = perlin.get([cy.0 + yy.sin(), cy.1 + yy.cos()]);
+            // let mut nz = perlin.get([cz.0 + zz.sin(), cz.1 + zz.cos()]);
 
-                                // let n = perlin.get([nx / l, ny / l, nz / l]);
+            // nx = (nx * 0.5 + 0.5) * std::f64::consts::TAU;
+            // ny = (ny * 0.5 + 0.5) * std::f64::consts::TAU;
+            // nz = (nz * 0.5 + 0.5) * std::f64::consts::TAU;
 
-                                // let ny = perlin.get([yy.sin() + 3.978, yy.cos()]);
-                                // let nz = perlin.get([zz.sin() - 3.978, zz.cos()]);
+            // let l = (nx.powf(2.0) + ny.powf(2.0) + nz.powf(2.0)).sqrt();
 
-                                // let n = (nx + ny) / 2.0;
-                                // let n = nx;
+            // let n = perlin.get([nx / l, ny / l, nz / l]);
 
-                                // let p = [
-                                //     xx.cos(),
-                                //     xx.sin() * yy.cos(),
-                                //     xx.sin() * yy.sin() * zz.cos(),
-                                //     xx.sin() * yy.sin() * zz.sin(),
-                                // ];
+            // let ny = perlin.get([yy.sin() + 3.978, yy.cos()]);
+            // let nz = perlin.get([zz.sin() - 3.978, zz.cos()]);
 
-                                // let n1 = perlin.get([
-                                //     p[0].sin(),
-                                //     p[1].cos(), //
-                                //     p[0].cos() * p[1].sin(),
-                                // ]);
+            // let n = (nx + ny) / 2.0;
+            // let n = nx;
 
-                                // let n2 = perlin.get([
-                                //     p[2].sin(),
-                                //     p[3].cos(), //
-                                //     p[2].cos() * p[3].sin(),
-                                // ]);
+            // let p = [
+            //     xx.cos(),
+            //     xx.sin() * yy.cos(),
+            //     xx.sin() * yy.sin() * zz.cos(),
+            //     xx.sin() * yy.sin() * zz.sin(),
+            // ];
 
-                                // let n = (n1 + n2) / 2.0;
+            // let n1 = perlin.get([
+            //     p[0].sin(),
+            //     p[1].cos(), //
+            //     p[0].cos() * p[1].sin(),
+            // ]);
 
-                                // let n = perlin.get([
-                                //     xx.sin(),
-                                //     zz.cos(), //
-                                //     xx.cos() * zz.sin(),
-                                //     // 100.0, // f64::from(z) * Self::NOISE_SCALE,
-                                //     // 100.0, // f64::from(z) * Self::NOISE_SCALE,
-                                //     // 100.0, // f64::from(z) * Self::NOISE_SCALE,
-                                // ]);
+            // let n2 = perlin.get([
+            //     p[2].sin(),
+            //     p[3].cos(), //
+            //     p[2].cos() * p[3].sin(),
+            // ]);
 
-                                // let n = perlin.get([
-                                //     f64::from(x) * Self::NOISE_SCALE + 0.5,
-                                //     f64::from(y) * Self::NOISE_SCALE + 0.5,
-                                //     f64::from(z) * Self::NOISE_SCALE + 0.5,
-                                // ]);
+            // let n = (n1 + n2) / 2.0;
 
-                                // let n = perlin.get([xx.cos(), yy.cos(), zz.cos()]);
-                                // let n = perlin.get([
-                                //     xx.sin(),
-                                //     yy.cos(), //
-                                //               // xx.cos() * yy.sin(),
-                                //               // zz.cos(),
-                                // ]);
+            // let n = perlin.get([
+            //     xx.sin(),
+            //     zz.cos(), //
+            //     xx.cos() * zz.sin(),
+            //     // 100.0, // f64::from(z) * Self::NOISE_SCALE,
+            //     // 100.0, // f64::from(z) * Self::NOISE_SCALE,
+            //     // 100.0, // f64::from(z) * Self::NOISE_SCALE,
+            // ]);
 
-                                // let nxy = perlin.get([
-                                //     xx.sin(),
-                                //     yy.cos(), //
-                                //     xx.cos() * yy.sin(),
-                                // ]);
-                                // let nyz = perlin.get([
-                                //     yy.sin(),
-                                //     zz.cos(), //
-                                //     yy.cos() * zz.sin(),
-                                // ]);
-                                // let nzx = perlin.get([
-                                //     zz.sin(),
-                                //     xx.cos(), //
-                                //     zz.cos() * xx.sin(),
-                                // ]);
+            // let n = perlin.get([
+            //     f64::from(x) * Self::NOISE_SCALE + 0.5,
+            //     f64::from(y) * Self::NOISE_SCALE + 0.5,
+            //     f64::from(z) * Self::NOISE_SCALE + 0.5,
+            // ]);
 
-                                // let nxy = (nxy * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // let nyz = (nyz * 0.5 + 0.5) * std::f64::consts::TAU;
-                                // let nzx = (nzx * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let n = perlin.get([xx.cos(), yy.cos(), zz.cos()]);
+            // let n = perlin.get([
+            //     xx.sin(),
+            //     yy.cos(), //
+            //               // xx.cos() * yy.sin(),
+            //               // zz.cos(),
+            // ]);
 
-                                // let n = perlin.get([xx.cos(), yy.cos(), xx.sin(), yy.sin()]);
+            // let nxy = perlin.get([
+            //     xx.sin(),
+            //     yy.cos(), //
+            //     xx.cos() * yy.sin(),
+            // ]);
+            // let nyz = perlin.get([
+            //     yy.sin(),
+            //     zz.cos(), //
+            //     yy.cos() * zz.sin(),
+            // ]);
+            // let nzx = perlin.get([
+            //     zz.sin(),
+            //     xx.cos(), //
+            //     zz.cos() * xx.sin(),
+            // ]);
 
-                                // let n = (nx + ny + nz) / 3.0;
+            // let nxy = (nxy * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let nyz = (nyz * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let nzx = (nzx * 0.5 + 0.5) * std::f64::consts::TAU;
 
-                                // let n = perlin.get([
-                                //     xx.cos(),            //
-                                //     yy.sin(),            //
-                                //     xx.sin() * yy.cos(), //
-                                // ]);
+            // let n = perlin.get([xx.cos(), yy.cos(), xx.sin(), yy.sin()]);
 
-                                // let nn = (n * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let n = (nx + ny + nz) / 3.0;
 
-                                // let nz = perlin.get([
-                                //     zz.sin(), //
-                                //     zz.cos(), //
-                                // ]);
+            // let n = perlin.get([
+            //     xx.cos(),            //
+            //     yy.sin(),            //
+            //     xx.sin() * yy.cos(), //
+            // ]);
 
-                                // let n = (2.0 * n + nz) / 3.0;
+            // let nn = (n * 0.5 + 0.5) * std::f64::consts::TAU;
 
-                                // let p1 = perlin.get([xx.cos(), yy.sin(), xx.sin() * yy.cos()]);
-                                // let p2 = perlin2.get([zz.cos(), xx.sin(), zz.sin() * xx.cos()]);
-                                // let p3 = perlin.get([yy.cos(), zz.sin(), yy.sin() * zz.cos()]);
-                                // let p2 = perlin.get([xx.cos(), zz.sin(), xx.sin() * zz.cos()]);
+            // let nz = perlin.get([
+            //     zz.sin(), //
+            //     zz.cos(), //
+            // ]);
 
-                                // let n = (p1 + p2 + p3) / 3.0;
-                                // let n = (p1 + p2) / 2.0;
+            // let n = (2.0 * n + nz) / 3.0;
 
-                                // let mut xy = perlin.get([
-                                //     xx.cos() / std::f64::consts::TAU, //
-                                //     yy.cos() / std::f64::consts::TAU, //
-                                //     xx.sin() / std::f64::consts::TAU, //
-                                //     yy.sin() / std::f64::consts::TAU, //
-                                // ]);
-                                // let xy = perlin.get([
-                                //     xx.cos(), //
-                                //     yy.sin(), //
+            // let p1 = perlin.get([xx.cos(), yy.sin(), xx.sin() * yy.cos()]);
+            // let p2 = perlin2.get([zz.cos(), xx.sin(), zz.sin() * xx.cos()]);
+            // let p3 = perlin.get([yy.cos(), zz.sin(), yy.sin() * zz.cos()]);
+            // let p2 = perlin.get([xx.cos(), zz.sin(), xx.sin() * zz.cos()]);
 
-                                // ]);
+            // let n = (p1 + p2 + p3) / 3.0;
+            // let n = (p1 + p2) / 2.0;
 
-                                // let rad_xy = (xy * 0.5 + 0.5) * std::f64::consts::TAU;
+            // let mut xy = perlin.get([
+            //     xx.cos() / std::f64::consts::TAU, //
+            //     yy.cos() / std::f64::consts::TAU, //
+            //     xx.sin() / std::f64::consts::TAU, //
+            //     yy.sin() / std::f64::consts::TAU, //
+            // ]);
+            // let xy = perlin.get([
+            //     xx.cos(), //
+            //     yy.sin(), //
 
-                                // let xyzz = perlin.get([
-                                //     rad_xy.cos(),            //
-                                //     zz.sin(),                //
-                                //     rad_xy.sin() * zz.cos(), //
-                                // ]);
+            // ]);
 
-                                // let n = xy;
+            // let rad_xy = (xy * 0.5 + 0.5) * std::f64::consts::TAU;
 
-                                // let p = [xx.cos(), yy.cos(), xx.sin(), yy.sin()];
+            // let xyzz = perlin.get([
+            //     rad_xy.cos(),            //
+            //     zz.sin(),                //
+            //     rad_xy.sin() * zz.cos(), //
+            // ]);
 
-                                // let q = glam::Quat::from_array([
-                                //     (xx.cos()) as f32,
-                                //     (xx.sin() * yy.cos()) as f32,
-                                //     (xx.sin() * yy.sin() * zz.cos()) as f32,
-                                //     (xx.sin() * yy.sin() * zz.sin()) as f32,
-                                // ]);
-                                // let p = [
-                                //     xx.cos(),
-                                //     xx.sin() * yy.cos(),
-                                //     xx.sin() * yy.sin() * zz.cos(),
-                                //     xx.sin() * yy.sin() * zz.sin(),
-                                // ];
+            // let n = xy;
 
-                                // let p = (q * glam::Vec3::Y).normalize();
+            // let p = [xx.cos(), yy.cos(), xx.sin(), yy.sin()];
 
-                                // let n = perlin.get([p.x as f64, p.y as f64, p.z as f64]);
-                                // let n = perlin.get([q.x as f64, q.y as f64, q.z as f64, q.w as f64]);
+            // let q = glam::Quat::from_array([
+            //     (xx.cos()) as f32,
+            //     (xx.sin() * yy.cos()) as f32,
+            //     (xx.sin() * yy.sin() * zz.cos()) as f32,
+            //     (xx.sin() * yy.sin() * zz.sin()) as f32,
+            // ]);
+            // let p = [
+            //     xx.cos(),
+            //     xx.sin() * yy.cos(),
+            //     xx.sin() * yy.sin() * zz.cos(),
+            //     xx.sin() * yy.sin() * zz.sin(),
+            // ];
 
-                                n as f32 * 0.5 + 0.5
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+            // let p = (q * glam::Vec3::Y).normalize();
+
+            // let n = perlin.get([p.x as f64, p.y as f64, p.z as f64]);
+            // let n = perlin.get([q.x as f64, q.y as f64, q.z as f64, q.w as f64]);
+
+            n as f32 * 0.5 + 0.5
+        })
+        .collect::<Vec<_>>();
 
         let noise_texture = renderer.device.create_texture_with_data(
             &renderer.queue,

@@ -12,14 +12,12 @@ codegen-units = 1
 [patch.crates-io]
 # wgpu = { git = "https://github.com/gfx-rs/wgpu.git", branch = "master" }
 # wgpu = { path = "../wgpu/wgpu" }
-# naga = { git = "https://github.com/gfx-rs/naga.git", branch = "master" }
-# wgpu-profiler = { git = "https://github.com/waywardmonkeys/wgpu-profiler.git", branch = "update-to-wgpu-0.17" }
-# egui-wgpu = { path = "../egui/crates/egui-wgpu" }
-# egui-winit = { path = "../egui/crates/egui-winit" }
-# egui = { path = "../egui/crates/egui" }
-egui = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
-egui-wgpu = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
-egui-winit = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
+# egui = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
+# egui-wgpu = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
+# egui-winit = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
+egui = { git = "https://github.com/emilk/egui.git", branch = "main" }
+egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "main" }
+egui-winit = { git = "https://github.com/emilk/egui.git", branch = "main" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

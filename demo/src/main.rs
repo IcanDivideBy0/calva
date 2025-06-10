@@ -9,11 +9,7 @@ use calva::{
         PointLightHandle, PointLightsManager, Renderer, SkyboxManager,
     },
 };
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -21,10 +17,15 @@ use winit::{
     keyboard::{KeyCode, ModifiersState, PhysicalKey},
     window::{Fullscreen, Window, WindowId},
 };
-use worldgen::{Chunk, Tile};
 
 pub mod camera;
+pub mod fog;
 pub mod worldgen;
+
+use worldgen::{
+    navmesh::{NavMesh, NavMeshDebug},
+    Chunk, Tile,
+};
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -54,6 +55,9 @@ struct DemoApp<'a> {
     worldgen_model: Option<GltfModel>,
     worldgen_chunks: HashMap<glam::IVec2, (Vec<InstanceHandle>, Vec<PointLightHandle>)>,
 
+    navmesh: Option<NavMesh>,
+    navmesh_debug: Option<NavMeshDebug>,
+
     monsters_models: Vec<GltfModel>,
     monsters_instances: Vec<InstanceHandle>,
 
@@ -66,10 +70,12 @@ impl DemoApp<'_> {
         Self {
             state: None,
 
-            // worldgen: worldgen::WorldGenerator::new(rand::random::<u32>()),
             worldgen: worldgen::WorldGenerator::new("Calva!533d"),
             worldgen_model: None,
             worldgen_chunks: HashMap::new(),
+
+            navmesh: None,
+            navmesh_debug: None,
 
             monsters_models: vec![],
             monsters_instances: vec![],
@@ -119,13 +125,10 @@ impl DemoApp<'_> {
         use std::io::Read;
 
         let mut dungeon_buffer = Vec::new();
-        std::fs::File::open("./demo/assets/dungeon.glb")
-            .unwrap()
-            .read_to_end(&mut dungeon_buffer)
-            .unwrap();
-        let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer).unwrap();
-        self.worldgen_model =
-            GltfModel::new(&state.renderer, &mut state.engine, doc, &buffers, &images).ok();
+        std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
+        let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
+        let worldgen_model =
+            GltfModel::new(&state.renderer, &mut state.engine, doc, &buffers, &images)?;
 
         let tile_builder = worldgen::tile::TileBuilder::new(&state.renderer.device);
 
@@ -136,62 +139,52 @@ impl DemoApp<'_> {
         ]
         .iter()
         .filter_map(|node_name| {
-            let node = self.worldgen_model.as_ref().unwrap().get_node(node_name)?;
-            let tile = tile_builder.build(
+            tile_builder.build(
                 &state.renderer.device,
                 &state.renderer.queue,
                 &buffers,
-                node,
-            );
-            Some(tile)
+                worldgen_model.get_node(node_name)?,
+            )
         })
         .collect::<Vec<_>>();
 
         self.worldgen.set_tiles(&tiles);
 
-        // let tile = &tiles[7];
-        // let navmesh = worldgen::navmesh::NavMesh::new(tile);
-        // let _navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
-        //     &renderer.device,
-        //     &engine.resources.get::<CameraManager>().get(),
-        //     &navmesh,
-        //     renderer.surface_config.format,
-        //     worldgen::navmesh::NavMeshDebugInput {
-        //         depth: &engine.geometry.outputs.depth,
-        //     },
-        // );
+        let tile = &tiles[7];
+        let navmesh = worldgen::navmesh::NavMesh::new(tile);
+        let navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
+            &state.renderer.device,
+            &state.engine.resources.get::<CameraManager>().get(),
+            &navmesh,
+            state.renderer.surface_config.format,
+            worldgen::navmesh::NavMeshDebugInput {
+                depth: &state.engine.geometry.outputs.depth,
+            },
+        );
 
-        // {
-        //     let (instances, point_lights) =
-        //         dungeon.node_instances(dungeon.doc.nodes().nth(tile.node_id).unwrap(), None, None);
-        //     engine
-        //         .resources
-        //         .get::<InstancesManager>()
-        //         .get_mut()
-        //         .add(&instances);
-        //     engine
-        //         .resources
-        //         .get::<LightsManager>()
-        //         .get_mut()
-        //         .add_point_lights(&renderer.queue, &point_lights);
-        // }
+        {
+            let (instances, point_lights) = worldgen_model.node_instances(
+                worldgen_model.doc.nodes().nth(tile.node_id).unwrap(),
+                None,
+                None,
+            );
+            state
+                .engine
+                .resources
+                .get::<InstancesManager>()
+                .get_mut()
+                .add(&instances);
+            state
+                .engine
+                .resources
+                .get::<PointLightsManager>()
+                .get_mut()
+                .add(&state.renderer.queue, &point_lights);
+        }
 
-        // const DIM: i32 = 0;
-        // for x in -DIM..=DIM {
-        //     for y in -DIM..=DIM {
-        //         let (instances, point_lights) = self.worldgen.chunk(&dungeon, glam::ivec2(x, y));
-        //         engine
-        //             .resources
-        //             .get::<InstancesManager>()
-        //             .get_mut()
-        //             .add(&instances);
-        //         engine
-        //             .resources
-        //             .get::<PointLightsManager>()
-        //             .get_mut()
-        //             .add(&renderer.queue, &point_lights);
-        //     }
-        // }
+        self.worldgen_model = Some(worldgen_model);
+        self.navmesh = Some(navmesh);
+        self.navmesh_debug = Some(navmesh_debug);
 
         Ok(())
     }
@@ -279,52 +272,6 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             return;
         }
 
-        if event == WindowEvent::RedrawRequested {
-            let (_, _, cam_pos) = state
-                .camera
-                .controller
-                .transform
-                .to_scale_rotation_translation();
-
-            let chunk_coord = ((cam_pos + Tile::WORLD_SIZE * 0.5) / Chunk::WORLD_SIZE).floor();
-            let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
-            let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
-            let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
-
-            let instances_manager_resource = state.engine.resources.get::<InstancesManager>();
-            let mut instances_manager = instances_manager_resource.get_mut();
-
-            let point_lights_manager_resource = state.engine.resources.get::<PointLightsManager>();
-            let mut point_lights_manager = point_lights_manager_resource.get_mut();
-
-            self.worldgen_chunks
-                .retain(|pos, (instances, point_lights)| {
-                    let should_remove = !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
-
-                    if should_remove {
-                        instances_manager.remove(instances);
-                        point_lights_manager.remove(&state.renderer.queue, point_lights);
-                    }
-
-                    !should_remove
-                });
-
-            chunk_x
-                .flat_map(|x| chunk_y.clone().map(move |y| glam::ivec2(x, y)))
-                .for_each(|key| {
-                    if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
-                        let (instances, point_lights) = self
-                            .worldgen
-                            .chunk(self.worldgen_model.as_ref().unwrap(), key);
-
-                        entry.insert((
-                            instances_manager.add(&instances),
-                            point_lights_manager.add(&state.renderer.queue, &point_lights),
-                        ));
-                    }
-                });
-        }
-
         match event {
             WindowEvent::Resized(size) => {
                 let size = size.into();
@@ -335,9 +282,62 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             }
 
             WindowEvent::RedrawRequested => {
-                // navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
-                //     depth: &engine.geometry.outputs.depth,
-                // });
+                // Worldgen
+                {
+                    let (_, _, cam_pos) = state
+                        .camera
+                        .controller
+                        .transform
+                        .to_scale_rotation_translation();
+
+                    let chunk_coord =
+                        ((cam_pos + Tile::WORLD_SIZE * 0.5) / Chunk::WORLD_SIZE).floor();
+                    let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
+                    let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
+                    let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
+
+                    let instances_manager_resource =
+                        state.engine.resources.get::<InstancesManager>();
+                    let mut instances_manager = instances_manager_resource.get_mut();
+
+                    let point_lights_manager_resource =
+                        state.engine.resources.get::<PointLightsManager>();
+                    let mut point_lights_manager = point_lights_manager_resource.get_mut();
+
+                    self.worldgen_chunks
+                        .retain(|pos, (instances, point_lights)| {
+                            let should_remove =
+                                !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
+
+                            if should_remove {
+                                instances_manager.remove(instances);
+                                point_lights_manager.remove(&state.renderer.queue, point_lights);
+                            }
+
+                            !should_remove
+                        });
+
+                    // for key in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
+                    //     if let std::collections::hash_map::Entry::Vacant(entry) =
+                    //         self.worldgen_chunks.entry(key)
+                    //     {
+                    //         let (instances, point_lights) = self
+                    //             .worldgen
+                    //             .chunk(self.worldgen_model.as_ref().unwrap(), key);
+
+                    //         entry.insert((
+                    //             instances_manager.add(&instances),
+                    //             point_lights_manager.add(&state.renderer.queue, &point_lights),
+                    //         ));
+                    //     }
+                    // }
+                }
+
+                if let Some(navmesh_debug) = self.navmesh_debug.as_mut() {
+                    navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
+                        depth: &state.engine.geometry.outputs.depth,
+                    });
+                };
 
                 let dt = self.render_time.elapsed();
                 self.render_time = Instant::now();
@@ -426,7 +426,10 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 let result = state.renderer.render(|ctx| {
                     state.engine.render(ctx);
                     // fog.render(ctx, &engine.resources.camera, &time);
-                    // navmesh_debug.render(ctx, &engine.resources.get::<CameraManager>().get());
+                    if let Some(navmesh_debug) = self.navmesh_debug.as_ref() {
+                        navmesh_debug
+                            .render(ctx, &state.engine.resources.get::<CameraManager>().get())
+                    }
                     state.egui.render(ctx);
                 });
 
@@ -521,6 +524,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                             _ => None,
                         });
                 }
+
                 _ => {}
             },
             _ => {}

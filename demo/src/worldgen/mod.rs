@@ -54,8 +54,7 @@ impl WorldGenerator {
 
         let offset = coord * (Chunk::SIZE as i32);
 
-        (0..Chunk::SIZE)
-            .flat_map(|x| (0..Chunk::SIZE).map(move |y| (x, y)))
+        itertools::iproduct!(0..Chunk::SIZE, 0..Chunk::SIZE)
             .filter_map(|(x, y)| -> Option<(Vec<Instance>, Vec<PointLight>)> {
                 let slot = chunk.grid[y][x].borrow();
                 let opt = slot.options.first()?;
