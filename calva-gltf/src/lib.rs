@@ -529,7 +529,7 @@ impl GltfModel {
         Some(self.scene_data(scene, transform.unwrap_or_default(), animation))
     }
 
-    pub fn get_node(&self, name: &str) -> Option<gltf::Node> {
+    pub fn get_node(&self, name: &str) -> Option<gltf::Node<'_>> {
         self.doc.nodes().find(|node| node.name() == Some(name))
     }
     pub fn get_animation(&self, name: &str) -> Option<AnimationHandle> {

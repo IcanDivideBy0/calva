@@ -15,9 +15,9 @@ codegen-units = 1
 # egui = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
 # egui-wgpu = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
 # egui-winit = { git = "https://github.com/torokati44/egui.git", branch = "wgpu-25" }
-egui = { git = "https://github.com/emilk/egui.git", branch = "main" }
-egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "main" }
-egui-winit = { git = "https://github.com/emilk/egui.git", branch = "main" }
+# egui = { git = "https://github.com/emilk/egui.git", branch = "main" }
+# egui-wgpu = { git = "https://github.com/emilk/egui.git", branch = "main" }
+# egui-winit = { git = "https://github.com/emilk/egui.git", branch = "main" }
 
 # [patch."https://github.com/gfx-rs/naga"]
 # naga = { path = "../naga" }

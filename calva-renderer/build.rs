@@ -13,7 +13,9 @@ fn main() -> anyhow::Result<()> {
 
         let out_name = entrypoint.clone().replace(".wesl", "").replace("/", "::");
 
-        compiler.build_artifact(entrypoint, &out_name);
+        let module_path = format!("package::{entrypoint}").parse().unwrap();
+
+        compiler.build_artifact(&module_path, &out_name);
     }
 
     Ok(())

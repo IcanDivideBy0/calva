@@ -152,15 +152,15 @@ impl DemoApp<'_> {
 
         let tile = &tiles[7];
         let navmesh = worldgen::navmesh::NavMesh::new(tile);
-        let navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
-            &state.renderer.device,
-            &state.engine.resources.get::<CameraManager>().get(),
-            &navmesh,
-            state.renderer.surface_config.format,
-            worldgen::navmesh::NavMeshDebugInput {
-                depth: &state.engine.geometry.outputs.depth,
-            },
-        );
+        // let navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
+        //     &state.renderer.device,
+        //     &state.engine.resources.get::<CameraManager>().get(),
+        //     &navmesh,
+        //     state.renderer.surface_config.format,
+        //     worldgen::navmesh::NavMeshDebugInput {
+        //         depth: &state.engine.geometry.outputs.depth,
+        //     },
+        // );
 
         {
             let (instances, point_lights) = worldgen_model.node_instances(
@@ -184,7 +184,7 @@ impl DemoApp<'_> {
 
         self.worldgen_model = Some(worldgen_model);
         self.navmesh = Some(navmesh);
-        self.navmesh_debug = Some(navmesh_debug);
+        // self.navmesh_debug = Some(navmesh_debug);
 
         Ok(())
     }
@@ -213,7 +213,7 @@ impl DemoApp<'_> {
             "./demo/assets/demons/demon-imp.glb",
         ]
         .iter()
-        .take(1)
+        // .take(1)
         .map(|filepath| GltfModel::from_path(&state.renderer, &mut state.engine, filepath))
         .collect::<Result<Vec<_>>>()?;
 
@@ -317,20 +317,22 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                             !should_remove
                         });
 
-                    // for key in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
-                    //     if let std::collections::hash_map::Entry::Vacant(entry) =
-                    //         self.worldgen_chunks.entry(key)
-                    //     {
-                    //         let (instances, point_lights) = self
-                    //             .worldgen
-                    //             .chunk(self.worldgen_model.as_ref().unwrap(), key);
+                    for key in
+                        itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y))
+                    {
+                        if let std::collections::hash_map::Entry::Vacant(entry) =
+                            self.worldgen_chunks.entry(key)
+                        {
+                            let (instances, point_lights) = self
+                                .worldgen
+                                .chunk(self.worldgen_model.as_ref().unwrap(), key);
 
-                    //         entry.insert((
-                    //             instances_manager.add(&instances),
-                    //             point_lights_manager.add(&state.renderer.queue, &point_lights),
-                    //         ));
-                    //     }
-                    // }
+                            entry.insert((
+                                instances_manager.add(&instances),
+                                point_lights_manager.add(&state.renderer.queue, &point_lights),
+                            ));
+                        }
+                    }
                 }
 
                 if let Some(navmesh_debug) = self.navmesh_debug.as_mut() {

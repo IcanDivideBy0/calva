@@ -1,4 +1,4 @@
-import super::animation::AnimationState;
+import package::resources::animation::AnimationState;
 
 struct Instance {
     /*
