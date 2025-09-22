@@ -134,6 +134,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
                     label: Some("Ssao[blur][horizontal]"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &self.temp_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -153,6 +154,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
                     label: Some("Ssao[blur][vertical]"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &self.output_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,

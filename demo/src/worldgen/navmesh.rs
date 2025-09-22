@@ -3,6 +3,7 @@ use calva::renderer::{
     CameraManager, RenderContext,
 };
 use glam::Vec3Swizzles;
+use wesl::syntax::*;
 
 use super::tile::Tile;
 
@@ -178,7 +179,7 @@ impl NavMeshDebug {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("NavMeshDebug shader"),
             source: wgpu::ShaderSource::Wgsl(
-                r#"
+                wesl::quote_module! {
                     struct Camera {
                         view: mat4x4<f32>,
                         proj: mat4x4<f32>,
@@ -214,7 +215,8 @@ impl NavMeshDebug {
                     fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                         return in.color;
                     }
-                "#
+                }
+                .to_string()
                 .into(),
             ),
         });
@@ -282,6 +284,7 @@ impl NavMeshDebug {
                 label: Some("NavMeshDebug"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: ctx.frame,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

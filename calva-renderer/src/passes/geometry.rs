@@ -243,6 +243,7 @@ impl GeometryPass {
         .map(|view| {
             Some(wgpu::RenderPassColorAttachment {
                 view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),

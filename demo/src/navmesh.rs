@@ -1,11 +1,13 @@
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct Triangle(glam::Vec3, glam::Vec3, glam::Vec3);
+use wesl::syntax::*;
 
 use calva::{
     wgpu::{self, util::DeviceExt},
     RenderContext,
 };
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
+struct Triangle(glam::Vec3, glam::Vec3, glam::Vec3);
 
 pub struct NavMesh {
     vertices: wgpu::Buffer,
@@ -103,7 +105,7 @@ impl NavMesh {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("NavMesh shader"),
             source: wgpu::ShaderSource::Wgsl(
-                r#"
+                wesl::quote_module! {
                     @vertex
                     fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
                         return vec4<f32>(
@@ -112,7 +114,8 @@ impl NavMesh {
                             1.0,
                         );
                     }
-                "#
+                }
+                .to_string()
                 .into(),
             ),
         });

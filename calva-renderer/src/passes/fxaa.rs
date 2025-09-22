@@ -124,6 +124,7 @@ impl FxaaPass {
                 label: Some("Fxaa"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.output_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

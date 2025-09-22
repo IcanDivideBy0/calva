@@ -162,25 +162,25 @@ impl DemoApp<'_> {
         //     },
         // );
 
-        {
-            let (instances, point_lights) = worldgen_model.node_instances(
-                worldgen_model.doc.nodes().nth(tile.node_id).unwrap(),
-                None,
-                None,
-            );
-            state
-                .engine
-                .resources
-                .get::<InstancesManager>()
-                .get_mut()
-                .add(&instances);
-            state
-                .engine
-                .resources
-                .get::<PointLightsManager>()
-                .get_mut()
-                .add(&state.renderer.queue, &point_lights);
-        }
+        // {
+        //     let (instances, point_lights) = worldgen_model.node_instances(
+        //         worldgen_model.doc.nodes().nth(tile.node_id).unwrap(),
+        //         None,
+        //         None,
+        //     );
+        //     state
+        //         .engine
+        //         .resources
+        //         .get::<InstancesManager>()
+        //         .get_mut()
+        //         .add(&instances);
+        //     state
+        //         .engine
+        //         .resources
+        //         .get::<PointLightsManager>()
+        //         .get_mut()
+        //         .add(&state.renderer.queue, &point_lights);
+        // }
 
         self.worldgen_model = Some(worldgen_model);
         self.navmesh = Some(navmesh);

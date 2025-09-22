@@ -1,5 +1,6 @@
 use calva::renderer::wgpu::{self, util::DeviceExt};
 use itertools::Itertools;
+use wesl::syntax::*;
 
 pub struct TileBuilder {
     depth: wgpu::Texture,
@@ -31,24 +32,24 @@ impl TileBuilder {
             push_constant_ranges: &[],
         });
 
+        let tile_half_size = Tile::WORLD_SIZE / 2.0;
+        let tile_max_height = Tile::MAX_HEIGHT;
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("TileBuilder shader"),
             source: wgpu::ShaderSource::Wgsl(
-                format!(
-                    r#"
-                        @vertex
-                        fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {{
-                            return vec4<f32>(
-                                pos.x / {tile_half_size:.1},
-                                -pos.z / {tile_half_size:.1},
-                                -(pos.y / {tile_max_height:.1}) * 0.5 + 0.5,
-                                1.0,
-                            );
-                        }}
-                    "#,
-                    tile_half_size = Tile::WORLD_SIZE / 2.0,
-                    tile_max_height = Tile::MAX_HEIGHT,
-                )
+                wesl::quote_module! {
+                    @vertex
+                    fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {{
+                        return vec4<f32>(
+                            pos.x / #tile_half_size,
+                            -pos.z / #tile_half_size,
+                            -(pos.y / #tile_max_height) * 0.5 + 0.5,
+                            1.0,
+                        );
+                    }}
+                }
+                .to_string()
                 .into(),
             ),
         });
@@ -239,7 +240,7 @@ impl TileBuilder {
         buffer_slice.map_async(wgpu::MapMode::Read, Result::unwrap);
 
         device
-            .poll(wgpu::MaintainBase::WaitForSubmissionIndex(submission_index))
+            .poll(wgpu::PollType::WaitForSubmissionIndex(submission_index))
             .unwrap();
 
         let buffer_view = buffer_slice.get_mapped_range();

@@ -438,6 +438,7 @@ impl FogPass {
                 label: Some("Fog"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: ctx.frame,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

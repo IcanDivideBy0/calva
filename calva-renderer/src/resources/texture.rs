@@ -1,6 +1,7 @@
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use wesl::syntax::*;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -144,38 +145,40 @@ struct MipmapGenerator {
 }
 
 impl MipmapGenerator {
-    const SHADER: &'static str = r#"
-        struct VertexOutput {
-            @builtin(position) position: vec4<f32>,
-            @location(0) uv: vec2<f32>,
-        };
-        
-        @vertex
-        fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VertexOutput {
-            let tc = vec2<f32>(
-                f32(vertex_index >> 1u),
-                f32(vertex_index &  1u),
-            ) * 2.0;
-            
-            return VertexOutput(
-                vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0),
-                vec2<f32>(tc.x, 1.0 - tc.y)
-            );
-        }
-        
-        @group(0) @binding(0) var t_input: texture_2d<f32>;
-        @group(0) @binding(1) var t_sampler: sampler;
-        
-        @fragment
-        fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-            return textureSample(t_input, t_sampler, in.uv);
-        }
-    "#;
-
     fn new(device: &wgpu::Device) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("MipmapGenerator shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(
+                wesl::quote_module! {
+                    struct VertexOutput {
+                        @builtin(position) position: vec4<f32>,
+                        @location(0) uv: vec2<f32>,
+                    };
+
+                    @vertex
+                    fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VertexOutput {
+                        let tc = vec2<f32>(
+                            f32(vertex_index >> 1u),
+                            f32(vertex_index &  1u),
+                        ) * 2.0;
+
+                        return VertexOutput(
+                            vec4<f32>(tc * 2.0 - 1.0, 0.0, 1.0),
+                            vec2<f32>(tc.x, 1.0 - tc.y)
+                        );
+                    }
+
+                    @group(0) @binding(0) var t_input: texture_2d<f32>;
+                    @group(0) @binding(1) var t_sampler: sampler;
+
+                    @fragment
+                    fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+                        return textureSample(t_input, t_sampler, in.uv);
+                    }
+                }
+                .to_string()
+                .into(),
+            ),
         });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -316,6 +319,7 @@ impl MipmapGenerator {
                 label: Some("MipmapGenerator render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
