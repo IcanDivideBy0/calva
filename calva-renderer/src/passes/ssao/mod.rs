@@ -171,12 +171,12 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Ssao pipeline layout"),
             bind_group_layouts: &[
-                &camera.get().bind_group_layout,
-                &config.bind_group_layout,
-                &random.bind_group_layout,
-                &bind_group_layout,
+                Some(&camera.get().bind_group_layout),
+                Some(&config.bind_group_layout),
+                Some(&random.bind_group_layout),
+                Some(&bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -205,7 +205,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             }),
             primitive: Default::default(),
             depth_stencil: None,
-            multiview: None,
+            multiview_mask: None,
             multisample: Default::default(),
             cache: None,
         });

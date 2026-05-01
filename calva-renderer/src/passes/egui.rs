@@ -8,7 +8,8 @@ pub struct EguiPass {
 
 impl EguiPass {
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let egui_renderer = egui_wgpu::Renderer::new(device, surface_config.format, None, 1, false);
+        let egui_renderer =
+            egui_wgpu::Renderer::new(device, surface_config.format, Default::default());
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
@@ -135,11 +136,11 @@ mod winit {
             &mut self,
             renderer: &Renderer,
             window: &winit::window::Window,
-            ui: impl FnMut(&egui::Context),
+            run_ui: impl FnMut(&mut egui::Ui),
         ) {
             let input = self.state.take_egui_input(window);
 
-            let output = self.state.egui_ctx().run(input, ui);
+            let output = self.state.egui_ctx().run_ui(input, run_ui);
 
             self.state
                 .handle_platform_output(window, output.platform_output.clone());

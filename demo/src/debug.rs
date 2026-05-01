@@ -127,7 +127,7 @@ impl Debug {
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Debug render pipeline"),
                 layout: Some(&pipeline_layout),
-                multiview: None,
+                multiview_mask: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
@@ -155,8 +155,8 @@ impl Debug {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: Renderer::DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: None,
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),

@@ -4,34 +4,34 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["egui", "winit", "egui-winit"]
+default = ["winit", "egui", "egui-winit"]
 egui = ["dep:egui", "dep:egui-wgpu"]
 egui-winit = ["dep:egui-winit"]
 
 [dependencies]
 anyhow = "1.0"
-bytemuck = { version = "1.22", features = ["derive"] }
-glam = { version = "0.30", features = ["bytemuck"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+glam = { version = "0.32", features = ["bytemuck"] }
 parking_lot = "0.12"
 raw-window-handle = "0.6"
-rand = "0.9"
-wgpu = { version = "26.0" }
-wgpu-profiler = { version = "0.24" }
-wesl = { version = "0.2", features = ["quote"] }
+rand = "0.10"
+wgpu = { version = "29.0" }
+wgpu-profiler = { version = "0.27" }
+wesl = { version = "0.3" }
+wesl-quote = { version = "0.3" }
 
 # Egui
-# egui = { version = "0.32", optional = true }
-# egui-winit = { version = "0.32", optional = true }
-# egui-wgpu = { version = "0.32", optional = true }
-egui = { git = "https://github.com/emilk/egui", version = "0.32", optional = true }
-egui-winit = { git = "https://github.com/emilk/egui", version = "0.32", optional = true }
-egui-wgpu = { git = "https://github.com/emilk/egui", version = "0.32", optional = true }
+egui = { version = "0.34", optional = true }
+egui-winit = { version = "0.34", optional = true }
+egui-wgpu = { version = "0.34", optional = true }
+# egui = { git = "https://github.com/emilk/egui", version = "0.34", optional = true }
+# egui-winit = { git = "https://github.com/emilk/egui", version = "0.34", optional = true }
+# egui-wgpu = { git = "https://github.com/emilk/egui", version = "0.34", optional = true }
 
 # Winit
 winit = { version = "0.30", optional = true }
 
-
 [build-dependencies]
 anyhow = "1.0"
 glob = "0.3"
-wesl = { version = "0.2", features = ["naga_ext"] }
+wesl = { version = "0.3", features = ["naga-ext"] }

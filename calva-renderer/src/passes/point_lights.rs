@@ -80,14 +80,14 @@ impl PointLightsPass {
         let stencil_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights[stencil] pipeline layout"),
-                bind_group_layouts: &[&camera.get().bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&camera.get().bind_group_layout)],
+                immediate_size: 0,
             });
 
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("PointLights[stencil] pipeline"),
                 layout: Some(&pipeline_layout),
-                multiview: None,
+                multiview_mask: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main_stencil"),
@@ -101,18 +101,24 @@ impl PointLightsPass {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth24PlusStencil8,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: wgpu::StencilState {
                         front: wgpu::StencilFaceState {
                             compare: wgpu::CompareFunction::Always,
-                            fail_op: wgpu::StencilOperation::Keep,
+                            // We could (should?) use `StencilOperation::Keep`
+                            // but it produce vk validation errors because wgpu
+                            // will bypass the `set_stencil_reference` command.
+                            // It should not matter much since the compare
+                            // function is `CompareFunction::Always`, hence will
+                            // never fail.
+                            fail_op: wgpu::StencilOperation::Replace,
                             depth_fail_op: wgpu::StencilOperation::DecrementWrap,
                             pass_op: wgpu::StencilOperation::Keep,
                         },
                         back: wgpu::StencilFaceState {
                             compare: wgpu::CompareFunction::Always,
-                            fail_op: wgpu::StencilOperation::Keep,
+                            fail_op: wgpu::StencilOperation::Replace, // same remark as front face
                             depth_fail_op: wgpu::StencilOperation::IncrementWrap,
                             pass_op: wgpu::StencilOperation::Keep,
                         },
@@ -187,8 +193,11 @@ impl PointLightsPass {
         let lighting_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights[lighting] pipeline layout"),
-                bind_group_layouts: &[&camera.get().bind_group_layout, &bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[
+                    Some(&camera.get().bind_group_layout),
+                    Some(&bind_group_layout),
+                ],
+                immediate_size: 0,
             });
 
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -224,8 +233,8 @@ impl PointLightsPass {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth24PlusStencil8,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(false),
+                    depth_compare: None,
                     stencil: wgpu::StencilState {
                         front: wgpu::StencilFaceState {
                             compare: wgpu::CompareFunction::NotEqual,
@@ -245,7 +254,7 @@ impl PointLightsPass {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -332,6 +341,7 @@ impl PointLightsPass {
                 ..Default::default()
             },
         );
+        lighting_pass.set_stencil_reference(0);
 
         lighting_pass.set_pipeline(&self.lighting_pipeline);
         lighting_pass.set_bind_group(0, &camera.bind_group, &[]);

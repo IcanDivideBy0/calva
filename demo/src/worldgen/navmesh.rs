@@ -172,14 +172,14 @@ impl NavMeshDebug {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("NavMeshDebug pipeline layout"),
-            bind_group_layouts: &[&camera.bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&camera.bind_group_layout)],
+            immediate_size: 0,
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("NavMeshDebug shader"),
             source: wgpu::ShaderSource::Wgsl(
-                wesl::quote_module! {
+                wesl_quote::quote_module! {
                     struct Camera {
                         view: mat4x4<f32>,
                         proj: mat4x4<f32>,
@@ -224,7 +224,7 @@ impl NavMeshDebug {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("NavMeshDebug render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
+            multiview_mask: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -252,8 +252,8 @@ impl NavMeshDebug {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: input.depth.format(),
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: None,
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState {
                     constant: -10,

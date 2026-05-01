@@ -29,7 +29,7 @@ impl TileBuilder {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("TileBuilder pipeline layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let tile_half_size = Tile::WORLD_SIZE / 2.0;
@@ -38,7 +38,7 @@ impl TileBuilder {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("TileBuilder shader"),
             source: wgpu::ShaderSource::Wgsl(
-                wesl::quote_module! {
+                wesl_quote::quote_module! {
                     @vertex
                     fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {{
                         return vec4<f32>(
@@ -57,7 +57,7 @@ impl TileBuilder {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("TileBuilder render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
+            multiview_mask: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -72,8 +72,8 @@ impl TileBuilder {
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: depth.format(),
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -240,7 +240,10 @@ impl TileBuilder {
         buffer_slice.map_async(wgpu::MapMode::Read, Result::unwrap);
 
         device
-            .poll(wgpu::PollType::WaitForSubmissionIndex(submission_index))
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission_index),
+                timeout: None,
+            })
             .unwrap();
 
         let buffer_view = buffer_slice.get_mapped_range();

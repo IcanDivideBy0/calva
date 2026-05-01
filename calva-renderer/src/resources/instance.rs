@@ -213,8 +213,8 @@ impl InstancesManager {
         let maintain_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("InstancesManager[maintain] pipeline layout"),
-                bind_group_layouts: &[&maintain_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&maintain_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let maintain_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {

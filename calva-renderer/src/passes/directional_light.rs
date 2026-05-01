@@ -130,17 +130,17 @@ impl DirectionalLightPass {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[depth] render pipeline layout"),
                 bind_group_layouts: &[
-                    &uniform.bind_group_layout,
-                    &skins.get().bind_group_layout,
-                    &animations.get().bind_group_layout,
+                    Some(&uniform.bind_group_layout),
+                    Some(&skins.get().bind_group_layout),
+                    Some(&animations.get().bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("DirectionalLight[depth] render pipeline"),
                 layout: Some(&pipeline_layout),
-                multiview: None,
+                multiview_mask: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
@@ -162,8 +162,8 @@ impl DirectionalLightPass {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: light_depth.format(),
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
@@ -251,17 +251,17 @@ impl DirectionalLightPass {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[lighting] pipeline layout"),
                 bind_group_layouts: &[
-                    &camera.get().bind_group_layout,
-                    &uniform.bind_group_layout,
-                    &bind_group_layout,
+                    Some(&camera.get().bind_group_layout),
+                    Some(&uniform.bind_group_layout),
+                    Some(&bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("DirectionalLight[lighting] pipeline"),
                 layout: Some(&pipeline_layout),
-                multiview: None,
+                multiview_mask: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
@@ -721,11 +721,11 @@ mod cull {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLight[cull] pipeline layout"),
                 bind_group_layouts: &[
-                    &camera.get().bind_group_layout,
-                    &uniform.bind_group_layout,
-                    &bind_group_layout,
+                    Some(&camera.get().bind_group_layout),
+                    Some(&uniform.bind_group_layout),
+                    Some(&bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
             let pipelines = (
@@ -879,8 +879,8 @@ mod blur {
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("DirectionalLightBlur pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&bind_group_layout)],
+                immediate_size: 0,
             });
 
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -927,13 +927,13 @@ mod blur {
                     primitive: Default::default(),
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: output.format(),
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Always,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::Always),
                         stencil: wgpu::StencilState::default(),
                         bias: wgpu::DepthBiasState::default(),
                     }),
                     multisample: Default::default(),
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
 

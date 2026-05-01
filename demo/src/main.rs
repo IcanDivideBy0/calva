@@ -237,8 +237,12 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         )
         .inverse();
 
-        let renderer: Renderer<'a> =
-            task::block_on(Renderer::new(window.clone(), window.inner_size().into())).unwrap();
+        let renderer: Renderer<'a> = task::block_on(Renderer::new(
+            Box::new(event_loop.owned_display_handle()),
+            window.clone(),
+            window.inner_size().into(),
+        ))
+        .unwrap();
         let mut engine = Engine::new(&renderer);
 
         engine.ambient_light.config.color = [0.106535, 0.061572, 0.037324];
@@ -349,15 +353,15 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 state.camera.update(dt);
                 ***state.engine.resources.get::<CameraManager>().get_mut() = (&state.camera).into();
 
-                state.egui.update(&state.renderer, &state.window, |ctx| {
-                    egui::SidePanel::right("engine_panel")
-                        .min_width(320.0)
+                state.egui.update(&state.renderer, &state.window, |ui| {
+                    egui::Panel::right("engine_panel")
+                        .min_size(320.0)
                         .frame(egui::containers::Frame {
                             inner_margin: egui::Vec2::splat(10.0).into(),
                             fill: egui::Color32::from_black_alpha(200),
                             ..Default::default()
                         })
-                        .show(ctx, |ui| {
+                        .show_inside(ui, |ui| {
                             ui.add(&state.renderer);
 
                             ui.add(&mut *state.engine.ambient_light.config);

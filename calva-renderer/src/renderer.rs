@@ -18,10 +18,14 @@ pub struct Renderer<'window> {
     profiler_results: RefCell<Vec<GpuTimerQueryResult>>,
 }
 
+pub trait WgpuHasDisplayHandle:
+    raw_window_handle::HasDisplayHandle + core::fmt::Debug + Send + Sync + 'static
+{
+}
+
 impl<'window> Renderer<'window> {
     const FEATURES: wgpu::Features = wgpu::Features::empty()
         .union(wgpu::Features::DEPTH_CLIP_CONTROL) // all platforms
-        .union(wgpu::Features::MULTI_DRAW_INDIRECT) // Vulkan, DX12, Metal
         .union(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) // Vulkan, DX12
         .union(wgpu::Features::INDIRECT_FIRST_INSTANCE) // Vulkan, DX12, Metal
         .union(wgpu::Features::TEXTURE_BINDING_ARRAY) // Vulkan, DX12, Metal
@@ -35,12 +39,13 @@ impl<'window> Renderer<'window> {
         ;
 
     pub async fn new(
+        display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>,
         window: impl Into<wgpu::SurfaceTarget<'window>>,
         size: (u32, u32),
     ) -> Result<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_with_display_handle_from_env(display)
         });
         let surface = instance.create_surface(window)?;
         let adapter = instance
@@ -59,7 +64,7 @@ impl<'window> Renderer<'window> {
                 required_limits: wgpu::Limits {
                     max_sampled_textures_per_shader_stage: 512,
                     max_binding_array_elements_per_shader_stage: 512,
-                    max_push_constant_size: 128,
+                    max_immediate_size: 128,
                     max_bind_groups: 6,
                     ..Default::default()
                 },
@@ -71,8 +76,9 @@ impl<'window> Renderer<'window> {
             .get_default_config(&adapter, size.0, size.1)
             .ok_or_else(|| anyhow!("Surface not compatible with adapter"))?;
         surface_config.format = surface_config.format.add_srgb_suffix();
-        surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
+        // surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
         // surface_config.present_mode = wgpu::PresentMode::AutoVsync;
+        surface_config.present_mode = wgpu::PresentMode::Fifo;
 
         surface.configure(&device, &surface_config);
 
@@ -110,7 +116,17 @@ impl<'window> Renderer<'window> {
     pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<()> {
         let mut encoder = self.device.create_command_encoder(&Default::default());
 
-        let frame = self.surface.get_current_texture()?;
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(texture) => texture,
+            wgpu::CurrentSurfaceTexture::Suboptimal(texture) => {
+                drop(texture);
+                self.surface.configure(&self.device, &self.surface_config);
+                return Ok(());
+            }
+
+            _ => return Err(anyhow!("Failed")),
+        };
+
         let frame_view = frame.texture.create_view(&Default::default());
 
         let mut profiler = self.profiler.try_borrow_mut()?;
@@ -127,10 +143,13 @@ impl<'window> Renderer<'window> {
 
         profiler.resolve_queries(&mut encoder);
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        let submission_index = self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        self.device.poll(wgpu::PollType::Wait)?;
+        self.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission_index),
+            timeout: None,
+        })?;
 
         profiler.end_frame()?;
         if let Some(results) = profiler.process_finished_frame(self.queue.get_timestamp_period()) {

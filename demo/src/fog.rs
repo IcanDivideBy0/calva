@@ -377,11 +377,11 @@ impl FogPass {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Fog pipeline layout"),
-                    bind_group_layouts: &[&camera.bind_group_layout, &bind_group_layout],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStages::FRAGMENT,
-                        range: 0..(std::mem::size_of::<f32>() as _),
-                    }],
+                    bind_group_layouts: &[
+                        Some(&camera.bind_group_layout),
+                        Some(&bind_group_layout),
+                    ],
+                    immediate_size: std::mem::size_of::<f32>() as _,
                 });
 
         let pipeline = renderer
@@ -408,13 +408,13 @@ impl FogPass {
                 primitive: Default::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: input.depth.format(),
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: None,
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -458,11 +458,7 @@ impl FogPass {
         rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &self.bind_group, &[]);
 
-        rpass.set_push_constants(
-            wgpu::ShaderStages::FRAGMENT,
-            0,
-            bytemuck::bytes_of(&time.elapsed().as_secs_f32()),
-        );
+        rpass.set_immediates(0, bytemuck::bytes_of(&time.elapsed().as_secs_f32()));
 
         rpass.draw(0..3, 0..1);
     }

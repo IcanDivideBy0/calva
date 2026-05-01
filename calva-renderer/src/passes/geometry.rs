@@ -69,13 +69,6 @@ pub struct GeometryPass {
 }
 
 impl GeometryPass {
-    pub const FEATURES: &'static [wgpu::Features] = &[
-        wgpu::Features::TEXTURE_BINDING_ARRAY,
-        wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
-        wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
-        wgpu::Features::MULTI_DRAW_INDIRECT,
-    ];
-
     pub fn new(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
@@ -105,19 +98,19 @@ impl GeometryPass {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Geometry[render] pipeline layout"),
             bind_group_layouts: &[
-                &camera.get().bind_group_layout,
-                &textures.get().bind_group_layout,
-                &materials.get().bind_group_layout,
-                &skins.get().bind_group_layout,
-                &animations.get().bind_group_layout,
+                Some(&camera.get().bind_group_layout),
+                Some(&textures.get().bind_group_layout),
+                Some(&materials.get().bind_group_layout),
+                Some(&skins.get().bind_group_layout),
+                Some(&animations.get().bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Geometry[render] render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
+            multiview_mask: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -178,8 +171,8 @@ impl GeometryPass {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: outputs.depth.format(),
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -522,8 +515,11 @@ mod cull {
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Geometry[cull] pipeline layout"),
-                bind_group_layouts: &[&camera.get().bind_group_layout, &bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[
+                    Some(&camera.get().bind_group_layout),
+                    Some(&bind_group_layout),
+                ],
+                immediate_size: 0,
             });
 
             let pipelines = (

@@ -46,7 +46,7 @@ impl TexturesManager {
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -149,7 +149,7 @@ impl MipmapGenerator {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("MipmapGenerator shader"),
             source: wgpu::ShaderSource::Wgsl(
-                wesl::quote_module! {
+                wesl_quote::quote_module! {
                     struct VertexOutput {
                         @builtin(position) position: vec4<f32>,
                         @location(0) uv: vec2<f32>,
@@ -215,8 +215,8 @@ impl MipmapGenerator {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("MipmapGenerator render pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
         });
 
         Self {
@@ -256,7 +256,7 @@ impl MipmapGenerator {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }

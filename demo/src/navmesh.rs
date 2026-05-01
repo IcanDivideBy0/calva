@@ -99,7 +99,7 @@ impl NavMesh {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("NavMesh pipeline layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -123,7 +123,7 @@ impl NavMesh {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("NavMesh render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
+            multiview_mask: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
@@ -137,8 +137,8 @@ impl NavMesh {
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: depth.format(),
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),

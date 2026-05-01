@@ -7,17 +7,18 @@ edition = "2021"
 calva = { path = "../calva" }
 anyhow = "1.0"
 async-std = { version = "1.13", features = ["attributes"] }
-bytemuck = "1.22"
+bytemuck = "1.25"
 colored = "3.0"
 env_logger = "0.11"
-glam = { version = "0.30", features = ["bytemuck", "rand"] }
+glam = { version = "0.32", features = ["bytemuck", "rand"] }
 gltf = { version = "1.4", features = ["extras"] }
 image = "0.25"
 itertools = "0.14"
 noise = "0.9"
 winit = "0.30"
-rand = "0.9"
-rand_seeder = "0.4"
+rand = "0.10"
+rand_seeder = "0.5"
 serde = "1.0"
 serde_json = "1.0"
-wesl = { version = "0.2", features = ["quote"] }
+wesl = { version = "0.3" }
+wesl-quote = { version = "0.3" }

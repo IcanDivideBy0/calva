@@ -30,10 +30,10 @@ impl SkyboxPass {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox render pipeline layout"),
             bind_group_layouts: &[
-                &camera.get().bind_group_layout,
-                &skybox.get().bind_group_layout,
+                Some(&camera.get().bind_group_layout),
+                Some(&skybox.get().bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -44,7 +44,7 @@ impl SkyboxPass {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skybox render pipeline"),
             layout: Some(&pipeline_layout),
-            multiview: None,
+            multiview_mask: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -64,8 +64,8 @@ impl SkyboxPass {
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth24PlusStencil8,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
