@@ -39,7 +39,7 @@ fn vs_main_stencil(
 
 struct VertexOutput {
     @builtin(position) @invariant position: vec4<f32>,
-    @location(0) ndc: vec2<f32>,
+    @location(0) @interpolate(linear) ndc: vec2<f32>,
     @location(1) @interpolate(linear) uv: vec2<f32>,
 
     @location(2) l_position: vec3<f32>,

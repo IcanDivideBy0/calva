@@ -9,6 +9,7 @@ use calva::{
     renderer::{Instance, PointLight},
 };
 
+pub mod navgrid;
 pub mod navmesh;
 pub mod tile;
 

@@ -12,131 +12,134 @@ pub struct NavMesh {
 }
 
 impl NavMesh {
+    const TEXTURE_GRID_RATIO: usize = 3;
+    const GRID_SIZE: usize = Tile::TEXTURE_SIZE / Self::TEXTURE_GRID_RATIO;
+
     pub fn new(tile: &Tile) -> Self {
         let get_height = |x: i32, y: i32| {
-            let y = y.max(0).min(Tile::TEXTURE_SIZE as i32 - 1) as usize;
-            let x = x.max(0).min(Tile::TEXTURE_SIZE as i32 - 1) as usize;
+            let y = y.max(0).min(Self::GRID_SIZE as i32 - 1) as usize;
+            let x = x.max(0).min(Self::GRID_SIZE as i32 - 1) as usize;
 
-            tile.height_map[y][x]
+            tile.height_map[y * Self::TEXTURE_GRID_RATIO][x * Self::TEXTURE_GRID_RATIO]
         };
 
-        let triangles =
-            itertools::iproduct!(0..Tile::TEXTURE_SIZE as i32, 0..Tile::TEXTURE_SIZE as i32)
-                .filter_map(move |(x, y)| {
-                    const MAX_STEP: f32 = 0.5;
+        let triangles = itertools::iproduct!(0..Self::GRID_SIZE as i32, 0..Self::GRID_SIZE as i32)
+            .filter_map(move |(x, y)| {
+                const RATIO: f32 = NavMesh::TEXTURE_GRID_RATIO as f32;
+                const MAX_STEP: f32 = 0.25 * RATIO;
 
-                    let height = get_height(x, y);
+                let height = get_height(x, y);
 
-                    if height < 0.0 {
-                        return None;
-                    }
+                if height < 0.0 {
+                    return None;
+                }
 
-                    let mut accept = 0;
-                    let r: i32 = 3;
-                    for yy in -r..=r {
-                        for xx in -r..=r {
-                            if (get_height(x + xx, y + yy) - height).abs() > MAX_STEP {
-                                continue;
-                            }
-
-                            accept += 1;
-                        }
-                    }
-
-                    let threshold = (2 * r + 1) * (r + 1);
-                    if accept < threshold {
-                        return None;
-                    }
-
-                    let mut c = 0;
+                let mut accept = 0;
+                let r: i32 = 3;
+                for yy in -r..=r {
                     for xx in -r..=r {
-                        let a = get_height(x + xx, y);
-                        let b = height; // get_height(x + xx - xx.signum(), y);
-                        if (a - b).abs() < MAX_STEP {
-                            c += 1;
+                        if (get_height(x + xx, y + yy) - height).abs() > MAX_STEP {
+                            continue;
+                        }
+
+                        accept += 1;
+                    }
+                }
+
+                let threshold = (2 * r + 1) * (r + 1);
+                if accept < threshold {
+                    return None;
+                }
+
+                let mut c = 0;
+                for xx in -r..=r {
+                    let a = get_height(x + xx, y);
+                    let b = height; // get_height(x + xx - xx.signum(), y);
+                    if (a - b).abs() < MAX_STEP {
+                        c += 1;
+                    }
+                }
+                if c < 2 * r - 1 {
+                    return None;
+                }
+
+                let mut c = 0;
+                for yy in -r..=r {
+                    let a = get_height(x, y + yy);
+                    let b = height; // get_height(x, y + yy - yy.signum());
+                    if (a - b).abs() < MAX_STEP {
+                        c += 1;
+                    }
+                }
+                if c < 2 * r - 1 {
+                    return None;
+                }
+
+                let mut tl = glam::vec2(x as f32, y as f32);
+                let mut tr = tl + glam::Vec2::X;
+                let mut bl = tl + glam::Vec2::Y;
+                let mut br = bl + glam::Vec2::X;
+
+                tl = tl * Tile::PIXEL_SIZE * RATIO - Tile::WORLD_SIZE / 2.0;
+                tr = tr * Tile::PIXEL_SIZE * RATIO - Tile::WORLD_SIZE / 2.0;
+                bl = bl * Tile::PIXEL_SIZE * RATIO - Tile::WORLD_SIZE / 2.0;
+                br = br * Tile::PIXEL_SIZE * RATIO - Tile::WORLD_SIZE / 2.0;
+
+                let tlh = height
+                    .max(get_height(x - 1, y - 1))
+                    .max(get_height(x, y - 1))
+                    .max(get_height(x - 1, y));
+                let trh = height
+                    .max(get_height(x + 1, y - 1))
+                    .max(get_height(x, y - 1))
+                    .max(get_height(x + 1, y));
+                let blh = height
+                    .max(get_height(x - 1, y + 1))
+                    .max(get_height(x, y + 1))
+                    .max(get_height(x - 1, y));
+                let brh = height
+                    .max(get_height(x + 1, y + 1))
+                    .max(get_height(x, y + 1))
+                    .max(get_height(x + 1, y));
+
+                let tlh = ((tlh - height).abs() < MAX_STEP).then_some(tlh);
+                let trh = ((trh - height).abs() < MAX_STEP).then_some(trh);
+                let blh = ((blh - height).abs() < MAX_STEP).then_some(blh);
+                let brh = ((brh - height).abs() < MAX_STEP).then_some(brh);
+
+                let tl = tlh.map(|tlh| tl.extend(tlh).xzy());
+                let tr = trh.map(|trh| tr.extend(trh).xzy());
+                let bl = blh.map(|blh| bl.extend(blh).xzy());
+                let br = brh.map(|brh| br.extend(brh).xzy());
+
+                let corners = [tl, tr, bl, br]
+                    .iter()
+                    .filter_map(|v| *v)
+                    .collect::<Vec<_>>();
+
+                match corners.len() {
+                    4 => {
+                        let diag1 = corners[1] - corners[2];
+                        let diag2 = corners[3] - corners[0];
+
+                        if diag1.dot(glam::Vec3::Y).abs() > diag2.dot(glam::Vec3::Y).abs() {
+                            Some(vec![
+                                [corners[3], corners[1], corners[0]],
+                                [corners[0], corners[2], corners[3]],
+                            ])
+                        } else {
+                            Some(vec![
+                                [corners[1], corners[2], corners[3]],
+                                [corners[2], corners[1], corners[0]],
+                            ])
                         }
                     }
-                    if c < 2 * r - 1 {
-                        return None;
-                    }
-
-                    let mut c = 0;
-                    for yy in -r..=r {
-                        let a = get_height(x, y + yy);
-                        let b = height; // get_height(x, y + yy - yy.signum());
-                        if (a - b).abs() < MAX_STEP {
-                            c += 1;
-                        }
-                    }
-                    if c < 2 * r - 1 {
-                        return None;
-                    }
-
-                    let mut tl = glam::vec2(x as f32, y as f32);
-                    let mut tr = tl + glam::Vec2::X;
-                    let mut bl = tl + glam::Vec2::Y;
-                    let mut br = bl + glam::Vec2::X;
-
-                    tl = tl * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
-                    tr = tr * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
-                    bl = bl * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
-                    br = br * Tile::PIXEL_SIZE - Tile::WORLD_SIZE / 2.0;
-
-                    let tlh = height
-                        .max(get_height(x - 1, y - 1))
-                        .max(get_height(x, y - 1))
-                        .max(get_height(x - 1, y));
-                    let trh = height
-                        .max(get_height(x + 1, y - 1))
-                        .max(get_height(x, y - 1))
-                        .max(get_height(x + 1, y));
-                    let blh = height
-                        .max(get_height(x - 1, y + 1))
-                        .max(get_height(x, y + 1))
-                        .max(get_height(x - 1, y));
-                    let brh = height
-                        .max(get_height(x + 1, y + 1))
-                        .max(get_height(x, y + 1))
-                        .max(get_height(x + 1, y));
-
-                    let tlh = ((tlh - height).abs() < MAX_STEP).then_some(tlh);
-                    let trh = ((trh - height).abs() < MAX_STEP).then_some(trh);
-                    let blh = ((blh - height).abs() < MAX_STEP).then_some(blh);
-                    let brh = ((brh - height).abs() < MAX_STEP).then_some(brh);
-
-                    let tl = tlh.map(|tlh| tl.extend(tlh).xzy());
-                    let tr = trh.map(|trh| tr.extend(trh).xzy());
-                    let bl = blh.map(|blh| bl.extend(blh).xzy());
-                    let br = brh.map(|brh| br.extend(brh).xzy());
-
-                    let corners = [tl, tr, bl, br]
-                        .iter()
-                        .filter_map(|v| *v)
-                        .collect::<Vec<_>>();
-
-                    match corners.len() {
-                        4 => {
-                            let diag1 = corners[1] - corners[2];
-                            let diag2 = corners[3] - corners[0];
-
-                            if diag1.dot(glam::Vec3::Y).abs() > diag2.dot(glam::Vec3::Y).abs() {
-                                Some(vec![
-                                    [corners[3], corners[1], corners[0]],
-                                    [corners[0], corners[2], corners[3]],
-                                ])
-                            } else {
-                                Some(vec![
-                                    [corners[1], corners[2], corners[3]],
-                                    [corners[2], corners[1], corners[0]],
-                                ])
-                            }
-                        }
-                        // 3 => Some(vec![[corners[0], corners[1], corners[2]]]),
-                        _ => None,
-                    }
-                })
-                .flatten()
-                .collect::<Vec<_>>();
+                    // 3 => Some(vec![[corners[0], corners[1], corners[2]]]),
+                    _ => None,
+                }
+            })
+            .flatten()
+            .collect::<Vec<_>>();
 
         Self { triangles }
     }
@@ -207,6 +210,7 @@ impl NavMeshDebug {
                             0.0,
                             0.3,
                         );
+                        out.color = vec4<f32>(1.0, 0.0, 0.0, 1.0);
 
                         return out;
                     }
@@ -252,7 +256,7 @@ impl NavMeshDebug {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: input.depth.format(),
-                depth_write_enabled: None,
+                depth_write_enabled: Some(false),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState {
@@ -278,6 +282,10 @@ impl NavMeshDebug {
     }
 
     pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+        if self.vertices_count == 0 {
+            return;
+        }
+
         let mut rpass = ctx.encoder.scoped_render_pass(
             "NavMeshDebug",
             wgpu::RenderPassDescriptor {

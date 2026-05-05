@@ -5,7 +5,9 @@ use wesl::syntax::*;
 pub struct TileBuilder {
     depth: wgpu::Texture,
     depth_view: wgpu::TextureView,
-    pipeline: wgpu::RenderPipeline,
+
+    walls_pipeline: wgpu::RenderPipeline,
+    floor_pipeline: wgpu::RenderPipeline,
 }
 
 impl TileBuilder {
@@ -20,7 +22,7 @@ impl TileBuilder {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth16Unorm,
+            format: wgpu::TextureFormat::Depth32FloatStencil8,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -42,9 +44,9 @@ impl TileBuilder {
                     @vertex
                     fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {{
                         return vec4<f32>(
-                            pos.x / #tile_half_size,
+                             pos.x / #tile_half_size,
                             -pos.z / #tile_half_size,
-                            -(pos.y / #tile_max_height) * 0.5 + 0.5,
+                            -pos.y / #tile_max_height * 0.5 + 0.5,
                             1.0,
                         );
                     }}
@@ -54,8 +56,50 @@ impl TileBuilder {
             ),
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("TileBuilder render pipeline"),
+        let walls_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("TileBuilder wall pipeline"),
+            layout: Some(&pipeline_layout),
+            multiview_mask: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 3]>() as _,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                }],
+            },
+            fragment: None,
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: depth.format(),
+                depth_write_enabled: Some(false),
+                depth_compare: None,
+                stencil: wgpu::StencilState {
+                    front: wgpu::StencilFaceState {
+                        compare: wgpu::CompareFunction::Always,
+                        fail_op: wgpu::StencilOperation::Keep,
+                        depth_fail_op: wgpu::StencilOperation::Keep,
+                        pass_op: wgpu::StencilOperation::Replace,
+                    },
+                    back: wgpu::StencilFaceState {
+                        compare: wgpu::CompareFunction::Always,
+                        fail_op: wgpu::StencilOperation::Keep,
+                        depth_fail_op: wgpu::StencilOperation::Keep,
+                        pass_op: wgpu::StencilOperation::Replace,
+                    },
+                    read_mask: 0x00,
+                    write_mask: 0xFF,
+                },
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: Default::default(),
+            cache: None,
+        });
+
+        let floor_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("TileBuilder floor pipeline"),
             layout: Some(&pipeline_layout),
             multiview_mask: None,
             vertex: wgpu::VertexState {
@@ -74,7 +118,22 @@ impl TileBuilder {
                 format: depth.format(),
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
+                stencil: wgpu::StencilState {
+                    front: wgpu::StencilFaceState {
+                        compare: wgpu::CompareFunction::Equal,
+                        fail_op: wgpu::StencilOperation::Keep,
+                        depth_fail_op: wgpu::StencilOperation::Keep,
+                        pass_op: wgpu::StencilOperation::Keep,
+                    },
+                    back: wgpu::StencilFaceState {
+                        compare: wgpu::CompareFunction::Equal,
+                        fail_op: wgpu::StencilOperation::Keep,
+                        depth_fail_op: wgpu::StencilOperation::Keep,
+                        pass_op: wgpu::StencilOperation::Keep,
+                    },
+                    read_mask: 0xFF,
+                    write_mask: 0x00,
+                },
                 bias: Default::default(),
             }),
             multisample: Default::default(),
@@ -84,7 +143,8 @@ impl TileBuilder {
         Self {
             depth,
             depth_view,
-            pipeline,
+            walls_pipeline,
+            floor_pipeline,
         }
     }
 
@@ -99,30 +159,28 @@ impl TileBuilder {
             buffers.get(buffer.index()).map(std::ops::Deref::deref)
         };
 
-        let mut triangles = vec![];
+        let mut floor_triangles = vec![];
+        let mut walls_triangles = vec![];
         calva::gltf::traverse_nodes_tree::<glam::Mat4>(
             node.children(),
             &mut |parent_transform, node| {
-                let skip = node
-                    .extras()
-                    .as_ref()
-                    .and_then(|extras| {
-                        let extras =
-                            serde_json::from_str::<serde_json::Map<_, _>>(extras.get()).ok()?;
+                let get_flag = |flag: &str| {
+                    node.extras()
+                        .as_ref()
+                        .and_then(|extras| {
+                            serde_json::from_str::<serde_json::Map<_, _>>(extras.get())
+                                .ok()?
+                                .get(flag)
+                                .and_then(|value| value.as_bool())
+                        })
+                        .unwrap_or(false)
+                };
 
-                        Some(["partly_hidden", "prop"].iter().any(|&name| {
-                            extras
-                                .get(name)
-                                .and_then(|value| value.as_u64())
-                                .map(|i| i > 0)
-                                .unwrap_or(false)
-                        }))
-                    })
-                    .unwrap_or(false);
-
-                if skip {
-                    return None;
-                }
+                let triangles = match (get_flag("wall"), get_flag("floor")) {
+                    (true, _) => &mut walls_triangles,
+                    (_, true) => &mut floor_triangles,
+                    _ => return None,
+                };
 
                 let transform =
                     *parent_transform * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
@@ -160,39 +218,61 @@ impl TileBuilder {
             glam::Mat4::IDENTITY,
         );
 
-        if triangles.is_empty() {
+        if floor_triangles.is_empty() {
             return Some(Tile {
                 node_id: node.index(),
                 height_map: [[-Tile::MAX_HEIGHT; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
             });
         }
 
-        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("TileBuilder verts buffer"),
-            contents: bytemuck::cast_slice(&triangles),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let vertices_count = 3 * triangles.len() as u32;
-
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: node.name(),
-            size: (self.depth.width()
-                * self.depth.height()
-                * self
-                    .depth
-                    .format()
-                    .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))?) as _,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("TileBuilder command encoder"),
         });
 
-        {
+        if !walls_triangles.is_empty() {
+            let walls_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("TileBuilder[walls] verts buffer"),
+                contents: bytemuck::cast_slice(&walls_triangles),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let walls_vertices_count = 3 * walls_triangles.len() as u32;
+
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(&format!("TileBuilder {}", node.name().unwrap_or_default())),
+                label: Some(&format!(
+                    "TileBuilder[walls] {}",
+                    node.name().unwrap_or_default()
+                )),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                }),
+                ..Default::default()
+            });
+            rpass.set_stencil_reference(1);
+
+            rpass.set_pipeline(&self.walls_pipeline);
+            rpass.set_vertex_buffer(0, walls_vertices.slice(..));
+            rpass.draw(0..walls_vertices_count, 0..1);
+        }
+
+        {
+            let floor_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("TileBuilder[floor] verts buffer"),
+                contents: bytemuck::cast_slice(&floor_triangles),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let floor_vertices_count = 3 * floor_triangles.len() as u32;
+
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(&format!(
+                    "TileBuilder[floor] {}",
+                    node.name().unwrap_or_default()
+                )),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
@@ -200,15 +280,31 @@ impl TileBuilder {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
-                    stencil_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Discard, // prevent stencil re-use on future render
+                    }),
                 }),
                 ..Default::default()
             });
+            rpass.set_stencil_reference(0);
 
-            rpass.set_pipeline(&self.pipeline);
-            rpass.set_vertex_buffer(0, vertices.slice(..));
-            rpass.draw(0..vertices_count, 0..1);
+            rpass.set_pipeline(&self.floor_pipeline);
+            rpass.set_vertex_buffer(0, floor_vertices.slice(..));
+            rpass.draw(0..floor_vertices_count, 0..1);
         }
+
+        let depth_block_size = self
+            .depth
+            .format()
+            .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))?;
+
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: node.name(),
+            size: (self.depth.width() * self.depth.height() * depth_block_size) as _,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -248,13 +344,15 @@ impl TileBuilder {
 
         let buffer_view = buffer_slice.get_mapped_range();
 
-        let height_map = bytemuck::cast_slice::<u8, u16>(&buffer_view)
+        let height_map = bytemuck::cast_slice::<u8, f32>(&buffer_view)
             .iter()
-            .map(|depth| ((*depth as f32 / u16::MAX as f32) - 0.5) * -2.0 * Tile::MAX_HEIGHT)
+            .map(|depth| (depth - 0.5) * -2.0 * Tile::MAX_HEIGHT)
             .chunks(Tile::TEXTURE_SIZE)
             .into_iter()
-            .filter_map(|chunk| chunk.collect_array())
+            .filter_map(Itertools::collect_array)
             .collect_array()?;
+
+        dbg!(height_map[26][80]);
 
         Some(Tile {
             node_id: node.index(),

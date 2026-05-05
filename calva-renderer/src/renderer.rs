@@ -35,6 +35,7 @@ impl<'window> Renderer<'window> {
         .union(wgpu::Features::POLYGON_MODE_LINE) // Vulkan, DX12, Metal
         .union(wgpu::Features::FLOAT32_FILTERABLE) // Vulkan, DX12, Metal
         .union(wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY) // Vulkan, DX12
+        .union(wgpu::Features::DEPTH32FLOAT_STENCIL8) // Vulkan, DX12, Metal
         .union(GpuProfiler::ALL_WGPU_TIMER_FEATURES) // Vulkan, DX12
         ;
 
@@ -118,8 +119,7 @@ impl<'window> Renderer<'window> {
 
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
-            wgpu::CurrentSurfaceTexture::Suboptimal(texture) => {
-                drop(texture);
+            wgpu::CurrentSurfaceTexture::Suboptimal(_) => {
                 self.surface.configure(&self.device, &self.surface_config);
                 return Ok(());
             }

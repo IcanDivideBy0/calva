@@ -5,7 +5,7 @@ use async_std::task;
 use calva::{
     gltf::GltfModel,
     renderer::{
-        egui, CameraManager, EguiWinitPass, Engine, InstanceHandle, InstancesManager,
+        egui, Camera, CameraManager, EguiWinitPass, Engine, InstanceHandle, InstancesManager,
         PointLightHandle, PointLightsManager, Renderer, SkyboxManager,
     },
 };
@@ -19,13 +19,13 @@ use winit::{
 };
 
 pub mod camera;
+pub mod controls;
 pub mod fog;
 pub mod worldgen;
 
-use worldgen::{
-    navmesh::{NavMesh, NavMeshDebug},
-    Chunk, Tile,
-};
+use worldgen::{Chunk, Tile};
+
+use crate::worldgen::navgrid::{NavGrid, NavGridDebug, NavGridDebugInput};
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -42,7 +42,9 @@ async fn main() -> Result<()> {
 
 struct DemoState<'a> {
     window: Arc<Window>,
-    camera: camera::MyCamera,
+    camera: camera::PerspectiveCamera,
+    flying_camera: controls::FlyingCamera,
+    player_controller: controls::PlayerController,
     renderer: Renderer<'a>,
     engine: Engine,
     egui: EguiWinitPass,
@@ -55,8 +57,8 @@ struct DemoApp<'a> {
     worldgen_model: Option<GltfModel>,
     worldgen_chunks: HashMap<glam::IVec2, (Vec<InstanceHandle>, Vec<PointLightHandle>)>,
 
-    navmesh: Option<NavMesh>,
-    navmesh_debug: Option<NavMeshDebug>,
+    navgrid: Option<NavGrid>,
+    navgrid_debug: Option<NavGridDebug>,
 
     monsters_models: Vec<GltfModel>,
     monsters_instances: Vec<InstanceHandle>,
@@ -74,8 +76,8 @@ impl DemoApp<'_> {
             worldgen_model: None,
             worldgen_chunks: HashMap::new(),
 
-            navmesh: None,
-            navmesh_debug: None,
+            navgrid: None,
+            navgrid_debug: None,
 
             monsters_models: vec![],
             monsters_instances: vec![],
@@ -151,40 +153,42 @@ impl DemoApp<'_> {
         self.worldgen.set_tiles(&tiles);
 
         let tile = &tiles[7];
-        let navmesh = worldgen::navmesh::NavMesh::new(tile);
-        // let navmesh_debug = worldgen::navmesh::NavMeshDebug::new(
-        //     &state.renderer.device,
-        //     &state.engine.resources.get::<CameraManager>().get(),
-        //     &navmesh,
-        //     state.renderer.surface_config.format,
-        //     worldgen::navmesh::NavMeshDebugInput {
-        //         depth: &state.engine.geometry.outputs.depth,
-        //     },
-        // );
+        let navgrid = worldgen::navgrid::NavGrid::new(tile);
+        println!("{:?}", navgrid);
 
-        // {
-        //     let (instances, point_lights) = worldgen_model.node_instances(
-        //         worldgen_model.doc.nodes().nth(tile.node_id).unwrap(),
-        //         None,
-        //         None,
-        //     );
-        //     state
-        //         .engine
-        //         .resources
-        //         .get::<InstancesManager>()
-        //         .get_mut()
-        //         .add(&instances);
-        //     state
-        //         .engine
-        //         .resources
-        //         .get::<PointLightsManager>()
-        //         .get_mut()
-        //         .add(&state.renderer.queue, &point_lights);
-        // }
+        let navgrid_debug = worldgen::navgrid::NavGridDebug::new(
+            &state.renderer.device,
+            &state.engine.resources.get::<CameraManager>().get(),
+            &navgrid.triangles(tile),
+            state.renderer.surface_config.format,
+            worldgen::navgrid::NavGridDebugInput {
+                depth: &state.engine.geometry.outputs.depth,
+            },
+        );
+
+        {
+            let (instances, point_lights) = worldgen_model.node_instances(
+                worldgen_model.doc.nodes().nth(tile.node_id).unwrap(),
+                None,
+                None,
+            );
+            state
+                .engine
+                .resources
+                .get::<InstancesManager>()
+                .get_mut()
+                .add(&instances);
+            state
+                .engine
+                .resources
+                .get::<PointLightsManager>()
+                .get_mut()
+                .add(&state.renderer.queue, &point_lights);
+        }
 
         self.worldgen_model = Some(worldgen_model);
-        self.navmesh = Some(navmesh);
-        // self.navmesh_debug = Some(navmesh_debug);
+        self.navgrid = Some(navgrid);
+        self.navgrid_debug = Some(navgrid_debug);
 
         Ok(())
     }
@@ -213,7 +217,7 @@ impl DemoApp<'_> {
             "./demo/assets/demons/demon-imp.glb",
         ]
         .iter()
-        // .take(1)
+        .take(1)
         .map(|filepath| GltfModel::from_path(&state.renderer, &mut state.engine, filepath))
         .collect::<Result<Vec<_>>>()?;
 
@@ -229,13 +233,15 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 .unwrap(),
         );
 
-        let mut camera = camera::MyCamera::new(window.inner_size().into());
-        camera.controller.transform = glam::Mat4::look_at_rh(
+        let camera = camera::PerspectiveCamera::new(window.inner_size().into());
+
+        let flying_camera = controls::FlyingCamera::from_look_at(
             glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
             glam::Vec3::Y - glam::Vec3::Z,        // target
             glam::Vec3::Y,                        // up
-        )
-        .inverse();
+        );
+
+        let player_controller = controls::PlayerController::default();
 
         let renderer: Renderer<'a> = task::block_on(Renderer::new(
             Box::new(event_loop.owned_display_handle()),
@@ -253,6 +259,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         self.state = Some(DemoState {
             window,
             camera,
+            flying_camera,
+            player_controller,
             renderer,
             engine,
             egui,
@@ -272,8 +280,21 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             return;
         }
 
-        if state.camera.handle_event(&event) {
-            return;
+        if state.flying_camera.handle_event(&event) {
+            // return;
+        }
+
+        if state.player_controller.handle_event(
+            &event,
+            &self.navgrid,
+            state.flying_camera.transform,
+            state.camera.get_proj(),
+            glam::vec2(
+                state.renderer.surface_config.width as f32,
+                state.renderer.surface_config.height as f32,
+            ),
+        ) {
+            // return;
         }
 
         match event {
@@ -289,8 +310,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 // Worldgen
                 {
                     let (_, _, cam_pos) = state
-                        .camera
-                        .controller
+                        .flying_camera
                         .transform
                         .to_scale_rotation_translation();
 
@@ -327,20 +347,22 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         if let std::collections::hash_map::Entry::Vacant(entry) =
                             self.worldgen_chunks.entry(key)
                         {
-                            let (instances, point_lights) = self
-                                .worldgen
-                                .chunk(self.worldgen_model.as_ref().unwrap(), key);
+                            // let (instances, point_lights) = self
+                            //     .worldgen
+                            //     .chunk(self.worldgen_model.as_ref().unwrap(), key);
 
                             entry.insert((
-                                instances_manager.add(&instances),
-                                point_lights_manager.add(&state.renderer.queue, &point_lights),
+                                vec![],
+                                vec![],
+                                // instances_manager.add(&instances),
+                                // point_lights_manager.add(&state.renderer.queue, &point_lights),
                             ));
                         }
                     }
                 }
 
-                if let Some(navmesh_debug) = self.navmesh_debug.as_mut() {
-                    navmesh_debug.rebind(worldgen::navmesh::NavMeshDebugInput {
+                if let Some(navgrid_debug) = self.navgrid_debug.as_mut() {
+                    navgrid_debug.rebind(NavGridDebugInput {
                         depth: &state.engine.geometry.outputs.depth,
                     });
                 };
@@ -350,8 +372,11 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                 **state.engine.animate.uniform = dt;
 
-                state.camera.update(dt);
-                ***state.engine.resources.get::<CameraManager>().get_mut() = (&state.camera).into();
+                state.flying_camera.update(dt);
+                ***state.engine.resources.get::<CameraManager>().get_mut() = Camera {
+                    view: state.flying_camera.get_view(),
+                    proj: state.camera.get_proj(),
+                };
 
                 state.egui.update(&state.renderer, &state.window, |ui| {
                     egui::Panel::right("engine_panel")
@@ -432,8 +457,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 let result = state.renderer.render(|ctx| {
                     state.engine.render(ctx);
                     // fog.render(ctx, &engine.resources.camera, &time);
-                    if let Some(navmesh_debug) = self.navmesh_debug.as_ref() {
-                        navmesh_debug
+                    if let Some(navgrid_debug) = self.navgrid_debug.as_ref() {
+                        navgrid_debug
                             .render(ctx, &state.engine.resources.get::<CameraManager>().get())
                     }
                     state.egui.render(ctx);
@@ -487,8 +512,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     physical_key: PhysicalKey::Code(KeyCode::KeyT),
                     ..
                 } => {
-                    for (z, ennemy) in self.monsters_models.iter().enumerate() {
-                        for (x, animation) in ennemy.animations.values().enumerate() {
+                    for (z, monster) in self.monsters_models.iter().enumerate() {
+                        for (x, animation) in monster.animations.values().enumerate() {
                             for y in 0..1 {
                                 let transform = glam::Mat4::from_translation(glam::vec3(
                                     4.0 * x as f32,
@@ -502,7 +527,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                     .get::<InstancesManager>()
                                     .get_mut()
                                     .add(
-                                        &ennemy
+                                        &monster
                                             .scene_instances(
                                                 None,
                                                 Some(transform),
