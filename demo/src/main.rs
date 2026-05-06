@@ -9,6 +9,7 @@ use calva::{
         PointLightHandle, PointLightsManager, Renderer, SkyboxManager,
     },
 };
+use core::f32;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use winit::{
     application::ApplicationHandler,
@@ -20,12 +21,11 @@ use winit::{
 
 pub mod camera;
 pub mod controls;
+pub mod debug;
 pub mod fog;
 pub mod worldgen;
 
 use worldgen::{Chunk, Tile};
-
-use crate::worldgen::navgrid::{NavGrid, NavGridDebug, NavGridDebugInput};
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -42,6 +42,7 @@ async fn main() -> Result<()> {
 
 struct DemoState<'a> {
     window: Arc<Window>,
+    mouse_pos: glam::Vec2,
     camera: camera::PerspectiveCamera,
     flying_camera: controls::FlyingCamera,
     player_controller: controls::PlayerController,
@@ -57,8 +58,8 @@ struct DemoApp<'a> {
     worldgen_model: Option<GltfModel>,
     worldgen_chunks: HashMap<glam::IVec2, (Vec<InstanceHandle>, Vec<PointLightHandle>)>,
 
-    navgrid: Option<NavGrid>,
-    navgrid_debug: Option<NavGridDebug>,
+    navtile: Option<calva::nav::NavTile<{ Tile::TEXTURE_SIZE }>>,
+    navgrid_debug: Option<debug::Debug>,
 
     monsters_models: Vec<GltfModel>,
     monsters_instances: Vec<InstanceHandle>,
@@ -76,7 +77,7 @@ impl DemoApp<'_> {
             worldgen_model: None,
             worldgen_chunks: HashMap::new(),
 
-            navgrid: None,
+            navtile: None,
             navgrid_debug: None,
 
             monsters_models: vec![],
@@ -153,18 +154,16 @@ impl DemoApp<'_> {
         self.worldgen.set_tiles(&tiles);
 
         let tile = &tiles[7];
-        let navgrid = worldgen::navgrid::NavGrid::new(tile);
-        println!("{:?}", navgrid);
-
-        let navgrid_debug = worldgen::navgrid::NavGridDebug::new(
-            &state.renderer.device,
-            &state.engine.resources.get::<CameraManager>().get(),
-            &navgrid.triangles(tile),
-            state.renderer.surface_config.format,
-            worldgen::navgrid::NavGridDebugInput {
-                depth: &state.engine.geometry.outputs.depth,
-            },
-        );
+        let navtile = calva::nav::NavTile::new(&tile.height_map, Tile::PIXEL_SIZE);
+        // self.navgrid_debug = Some(debug::Debug::new(
+        //     &state.renderer.device,
+        //     &state.engine.resources.get::<CameraManager>().get(),
+        //     &navtile.triangles,
+        //     state.renderer.surface_config.format,
+        //     debug::DebugInput {
+        //         depth: &state.engine.geometry.outputs.depth,
+        //     },
+        // ));
 
         {
             let (instances, point_lights) = worldgen_model.node_instances(
@@ -187,8 +186,7 @@ impl DemoApp<'_> {
         }
 
         self.worldgen_model = Some(worldgen_model);
-        self.navgrid = Some(navgrid);
-        self.navgrid_debug = Some(navgrid_debug);
+        self.navtile = Some(navtile);
 
         Ok(())
     }
@@ -217,7 +215,7 @@ impl DemoApp<'_> {
             "./demo/assets/demons/demon-imp.glb",
         ]
         .iter()
-        .take(1)
+        // .take(1)
         .map(|filepath| GltfModel::from_path(&state.renderer, &mut state.engine, filepath))
         .collect::<Result<Vec<_>>>()?;
 
@@ -232,6 +230,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 .create_window(Window::default_attributes())
                 .unwrap(),
         );
+        let mouse_pos = Default::default();
 
         let camera = camera::PerspectiveCamera::new(window.inner_size().into());
 
@@ -258,6 +257,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
         self.state = Some(DemoState {
             window,
+            mouse_pos,
             camera,
             flying_camera,
             player_controller,
@@ -284,17 +284,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             // return;
         }
 
-        if state.player_controller.handle_event(
-            &event,
-            &self.navgrid,
-            state.flying_camera.transform,
-            state.camera.get_proj(),
-            glam::vec2(
-                state.renderer.surface_config.width as f32,
-                state.renderer.surface_config.height as f32,
-            ),
-        ) {
-            // return;
+        if state.player_controller.handle_event(&event) {
+            return;
         }
 
         match event {
@@ -362,7 +353,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 }
 
                 if let Some(navgrid_debug) = self.navgrid_debug.as_mut() {
-                    navgrid_debug.rebind(NavGridDebugInput {
+                    navgrid_debug.rebind(debug::DebugInput {
                         depth: &state.engine.geometry.outputs.depth,
                     });
                 };
@@ -491,6 +482,58 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
             WindowEvent::ModifiersChanged(modifiers) => self.kb_modifiers = modifiers.state(),
 
+            WindowEvent::CursorMoved { position, .. } => {
+                state.mouse_pos = glam::Vec2::new(position.x as f32, position.y as f32);
+            }
+
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                ..
+            } => {
+                if let Some(navtile) = self.navtile.as_ref() {
+                    let camera_ref = state.engine.resources.get::<CameraManager>();
+                    let camera = camera_ref.get();
+
+                    let (ro, rd) = camera.ray_cast(
+                        state.mouse_pos,
+                        glam::vec2(
+                            state.renderer.surface_config.width as f32,
+                            state.renderer.surface_config.height as f32,
+                        ),
+                    );
+
+                    if let Some(hit) = navtile.ray_cast(ro, rd) {
+                        let transform = glam::Mat4::from_rotation_translation(
+                            glam::Quat::from_rotation_y(rand::random::<f32>() * f32::consts::TAU),
+                            hit,
+                        );
+
+                        let monster = &self.monsters_models
+                            [rand::random::<u32>() as usize % self.monsters_models.len()];
+
+                        let animation_keys = monster.animations.keys().collect::<Vec<_>>();
+                        let animation = &monster.animations
+                            [animation_keys[rand::random::<u32>() as usize % animation_keys.len()]];
+
+                        let instances_handles = state
+                            .engine
+                            .resources
+                            .get::<InstancesManager>()
+                            .get_mut()
+                            .add(
+                                &monster
+                                    .scene_instances(None, Some(transform), Some(*animation))
+                                    .unwrap()
+                                    .0,
+                            );
+
+                        self.monsters_instances.extend(instances_handles);
+
+                        dbg!(hit);
+                    }
+                }
+            }
+
             WindowEvent::KeyboardInput { event, .. } => match event {
                 KeyEvent {
                     state: ElementState::Pressed,
@@ -520,6 +563,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                     8.0 + 4.0 * y as f32,
                                     4.0 * z as f32,
                                 ));
+                                // let transform = glam::Mat4::IDENTITY;
 
                                 let instances_handles = state
                                     .engine

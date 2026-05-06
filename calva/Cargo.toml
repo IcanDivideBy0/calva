@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2018"
 
 [features]
-default = ["egui", "winit", "gltf"]
+default = ["egui", "winit", "gltf", "nav"]
 winit = ["renderer/winit"]
 egui = ["renderer/egui"]
 
 [dependencies]
 gltf = { package = "calva-gltf", path = "../calva-gltf", optional = true }
+nav = { package = "calva-nav", path = "../calva-nav", optional = true }
 renderer = { package = "calva-renderer", path = "../calva-renderer" }

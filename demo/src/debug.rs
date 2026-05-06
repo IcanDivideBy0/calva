@@ -1,234 +1,162 @@
-use calva::{
+use bytemuck::NoUninit;
+use wesl::syntax::*;
+
+use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    RenderContext, Renderer,
+    CameraManager, RenderContext,
 };
 
-pub enum DebugShape {
-    Cube,
-    Sphere,
-}
-
-impl DebugShape {
-    fn buffers(&self, device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer, u32) {
-        match self {
-            Self::Cube => {
-                #[rustfmt::skip]
-                const POSITIONS: [f32; 24] = [
-                    -1.0, -1.0,  1.0,
-                     1.0, -1.0,  1.0,
-                     1.0,  1.0,  1.0,
-                    -1.0,  1.0,  1.0,
-                    -1.0, -1.0, -1.0,
-                     1.0, -1.0, -1.0,
-                     1.0,  1.0, -1.0,
-                    -1.0,  1.0, -1.0,
-                ];
-
-                #[rustfmt::skip]
-                const INDICES: [u16; 36] = [
-                    0, 1, 2,
-                    2, 3, 0,
-                    1, 5, 6,
-                    6, 2, 1,
-                    7, 6, 5,
-                    5, 4, 7,
-                    4, 0, 3,
-                    3, 7, 4,
-                    4, 5, 1,
-                    1, 0, 4,
-                    3, 2, 6,
-                    6, 7, 3,
-                ];
-
-                let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Debug[Cube] vertices"),
-                    contents: bytemuck::cast_slice(&POSITIONS),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-
-                let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Debug[Cube] indices"),
-                    contents: bytemuck::cast_slice(&INDICES),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
-
-                (vertices, indices, INDICES.len() as _)
-            }
-            Self::Sphere => {
-                let icosphere = calva::util::icosphere::Icosphere::new(2);
-
-                let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Debug[Sphere] vertices"),
-                    contents: bytemuck::cast_slice(&icosphere.vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-
-                let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Debug[Sphere] indices"),
-                    contents: bytemuck::cast_slice(&icosphere.indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
-
-                (vertices, indices, icosphere.indices.len() as _)
-            }
-        }
-    }
+pub struct DebugInput<'a> {
+    pub depth: &'a wgpu::Texture,
 }
 
 pub struct Debug {
-    cube: (wgpu::Buffer, wgpu::Buffer, u32),
-    sphere: (wgpu::Buffer, wgpu::Buffer, u32),
-    bind_group_layout: wgpu::BindGroupLayout,
+    depth_view: wgpu::TextureView,
+
+    vertices: wgpu::Buffer,
+    vertices_count: u32,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl Debug {
-    pub fn new(renderer: &Renderer) -> Self {
-        let cube = DebugShape::Cube.buffers(&renderer.device);
-        let sphere = DebugShape::Sphere.buffers(&renderer.device);
+    pub fn new<A: NoUninit>(
+        device: &wgpu::Device,
+        camera: &CameraManager,
+        triangles: &[A],
+        format: wgpu::TextureFormat,
+        input: DebugInput,
+    ) -> Self {
+        let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Debug vertices"),
+            contents: bytemuck::cast_slice(triangles),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
-        let bind_group_layout =
-            renderer
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Debug bind group layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                std::mem::size_of::<glam::Mat4>() as _,
-                            ),
-                        },
-                        count: None,
-                    }],
-                });
+        let vertices_count = triangles.len() as u32 * 3;
 
-        let pipeline_layout =
-            renderer
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Debug pipeline layout"),
-                    bind_group_layouts: &[&renderer.camera.bind_group_layout, &bind_group_layout],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStages::FRAGMENT,
-                        range: 0..(std::mem::size_of::<[f32; 4]>() as _),
-                    }],
-                });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Debug pipeline layout"),
+            bind_group_layouts: &[Some(&camera.bind_group_layout)],
+            immediate_size: 0,
+        });
 
-        let shader = renderer
-            .device
-            .create_shader_module(wgpu::include_wgsl!("debug.wgsl"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Debug shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                wesl_quote::quote_module! {
+                    struct Camera {
+                        view: mat4x4<f32>,
+                        proj: mat4x4<f32>,
+                        view_proj: mat4x4<f32>,
+                        inv_view: mat4x4<f32>,
+                        inv_proj: mat4x4<f32>,
+                        frustum: array<vec4<f32>, 6>,
+                    }
+                    @group(0) @binding(0) var<uniform> camera: Camera;
 
-        let pipeline = renderer
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Debug render pipeline"),
-                layout: Some(&pipeline_layout),
-                multiview_mask: None,
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 3]>() as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-                    }],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: Renderer::OUTPUT_FORMAT,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent::OVER,
-                            alpha: wgpu::BlendComponent::OVER,
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: Some(wgpu::Face::Front),
+                    @vertex
+                    fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
+                        return camera.view_proj * vec4<f32>(pos, 1.0);
+                    }
+
+                    @fragment
+                    fn fs_main() -> @location(0) vec4<f32> {
+                        return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+                    }
+                }
+                .to_string()
+                .into(),
+            ),
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Debug render pipeline"),
+            layout: Some(&pipeline_layout),
+            multiview_mask: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 3]>() as _,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                polygon_mode: wgpu::PolygonMode::Line,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: input.depth.format(),
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: -10,
                     ..Default::default()
                 },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: Renderer::DEPTH_FORMAT,
-                    depth_write_enabled: None,
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Renderer::MULTISAMPLE_STATE,
-            });
+            }),
+            multisample: Default::default(),
+            cache: None,
+        });
 
         Self {
-            cube,
-            sphere,
-            bind_group_layout,
+            depth_view: input.depth.create_view(&Default::default()),
+
+            vertices,
+            vertices_count,
             pipeline,
         }
     }
 
-    pub fn uniforms(&self, device: &wgpu::Device) -> (wgpu::Buffer, wgpu::BindGroup) {
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Debug uniforms"),
-            size: std::mem::size_of::<glam::Mat4>() as _,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Debug bind group"),
-            layout: &self.bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-        });
-
-        (buffer, bind_group)
+    pub fn rebind(&mut self, input: DebugInput) {
+        self.depth_view = input.depth.create_view(&Default::default());
     }
 
-    pub fn render(
-        &self,
-        ctx: &mut RenderContext,
-        uniforms: &wgpu::BindGroup,
-        shape: DebugShape,
-        color: &glam::Vec4,
-    ) {
-        let mut rpass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Debug"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: ctx.output.view,
-                resolve_target: ctx.output.resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: ctx.output.depth_stencil,
-                depth_ops: None,
-                stencil_ops: None,
-            }),
-        });
+    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+        if self.vertices_count == 0 {
+            return;
+        }
+
+        let mut rpass = ctx.encoder.scoped_render_pass(
+            "Debug",
+            wgpu::RenderPassDescriptor {
+                label: Some("Debug"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: ctx.frame,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: None,
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            },
+        );
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &ctx.camera.bind_group, &[]);
-        rpass.set_bind_group(1, uniforms, &[]);
+        rpass.set_bind_group(0, &camera.bind_group, &[]);
 
-        rpass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(color));
+        rpass.set_vertex_buffer(0, self.vertices.slice(..));
 
-        let (vertices, indices, count) = match shape {
-            DebugShape::Cube => &self.cube,
-            DebugShape::Sphere => &self.sphere,
-        };
-
-        rpass.set_vertex_buffer(0, vertices.slice(..));
-        rpass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint16);
-
-        rpass.draw_indexed(0..*count, 0, 0..1);
+        rpass.draw(0..self.vertices_count, 0..1);
     }
 }

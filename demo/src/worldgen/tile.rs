@@ -3,40 +3,21 @@ use itertools::Itertools;
 use wesl::syntax::*;
 
 pub struct TileBuilder {
-    depth: wgpu::Texture,
-    depth_view: wgpu::TextureView,
-
     walls_pipeline: wgpu::RenderPipeline,
     floor_pipeline: wgpu::RenderPipeline,
 }
 
 impl TileBuilder {
-    pub fn new(device: &wgpu::Device) -> Self {
-        let depth = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("TileBuilder depth"),
-            size: wgpu::Extent3d {
-                width: Tile::TEXTURE_SIZE as _,
-                height: Tile::TEXTURE_SIZE as _,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32FloatStencil8,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let depth_view = depth.create_view(&Default::default());
+    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32FloatStencil8;
 
+    pub fn new(device: &wgpu::Device) -> Self {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("TileBuilder pipeline layout"),
             bind_group_layouts: &[],
             immediate_size: 0,
         });
 
-        let tile_half_size = Tile::WORLD_SIZE / 2.0;
-        let tile_max_height = Tile::MAX_HEIGHT;
-
+        let tile_size = Tile::WORLD_SIZE;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("TileBuilder shader"),
             source: wgpu::ShaderSource::Wgsl(
@@ -44,9 +25,9 @@ impl TileBuilder {
                     @vertex
                     fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {{
                         return vec4<f32>(
-                             pos.x / #tile_half_size,
-                            -pos.z / #tile_half_size,
-                            -pos.y / #tile_max_height * 0.5 + 0.5,
+                             pos.x / #tile_size * 2.0,
+                            -pos.z / #tile_size * 2.0,
+                            -pos.y / #tile_size * 0.5 + 0.5,
                             1.0,
                         );
                     }}
@@ -73,7 +54,7 @@ impl TileBuilder {
             fragment: None,
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: depth.format(),
+                format: Self::DEPTH_FORMAT,
                 depth_write_enabled: Some(false),
                 depth_compare: None,
                 stencil: wgpu::StencilState {
@@ -115,7 +96,7 @@ impl TileBuilder {
             fragment: None,
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: depth.format(),
+                format: Self::DEPTH_FORMAT,
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState {
@@ -141,8 +122,6 @@ impl TileBuilder {
         });
 
         Self {
-            depth,
-            depth_view,
             walls_pipeline,
             floor_pipeline,
         }
@@ -158,6 +137,22 @@ impl TileBuilder {
         let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
             buffers.get(buffer.index()).map(std::ops::Deref::deref)
         };
+
+        let depth = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("TileBuilder depth"),
+            size: wgpu::Extent3d {
+                width: Tile::TEXTURE_SIZE as _,
+                height: Tile::TEXTURE_SIZE as _,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let depth_view = depth.create_view(&Default::default());
 
         let mut floor_triangles = vec![];
         let mut walls_triangles = vec![];
@@ -189,17 +184,12 @@ impl TileBuilder {
                     for primitive in mesh.primitives() {
                         let reader = primitive.reader(get_buffer_data);
 
-                        let vertices = reader
-                            .read_positions()
-                            .unwrap()
+                        let vertices: Vec<_> = reader
+                            .read_positions()?
                             .map(glam::Vec3::from_array)
-                            .collect::<Vec<_>>();
+                            .collect();
 
-                        let indices = reader
-                            .read_indices()
-                            .unwrap()
-                            .into_u32()
-                            .collect::<Vec<_>>();
+                        let indices: Vec<_> = reader.read_indices()?.into_u32().collect();
 
                         triangles.extend(indices.chunks_exact(3).filter_map(|chunk| {
                             let [i1, i2, i3] = <[u32; 3]>::try_from(chunk).ok()?;
@@ -221,7 +211,8 @@ impl TileBuilder {
         if floor_triangles.is_empty() {
             return Some(Tile {
                 node_id: node.index(),
-                height_map: [[-Tile::MAX_HEIGHT; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
+                depth,
+                height_map: [[-Tile::WORLD_SIZE; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
             });
         }
 
@@ -244,7 +235,7 @@ impl TileBuilder {
                 )),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: &depth_view,
                     depth_ops: None,
                     stencil_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(0),
@@ -275,15 +266,12 @@ impl TileBuilder {
                 )),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: &depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
-                    stencil_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Discard, // prevent stencil re-use on future render
-                    }),
+                    stencil_ops: None,
                 }),
                 ..Default::default()
             });
@@ -294,21 +282,20 @@ impl TileBuilder {
             rpass.draw(0..floor_vertices_count, 0..1);
         }
 
-        let depth_block_size = self
-            .depth
+        let depth_block_size = depth
             .format()
             .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))?;
 
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: node.name(),
-            size: (self.depth.width() * self.depth.height() * depth_block_size) as _,
+            size: (depth.width() * depth.height() * depth_block_size) as _,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &self.depth,
+                texture: &depth,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::DepthOnly,
@@ -318,16 +305,15 @@ impl TileBuilder {
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(
-                        self.depth.width()
-                            * self
-                                .depth
+                        depth.width()
+                            * depth
                                 .format()
                                 .block_copy_size(Some(wgpu::TextureAspect::DepthOnly))?,
                     ),
                     rows_per_image: None,
                 },
             },
-            self.depth.size(),
+            depth.size(),
         );
 
         let submission_index = queue.submit(std::iter::once(encoder.finish()));
@@ -346,16 +332,15 @@ impl TileBuilder {
 
         let height_map = bytemuck::cast_slice::<u8, f32>(&buffer_view)
             .iter()
-            .map(|depth| (depth - 0.5) * -2.0 * Tile::MAX_HEIGHT)
+            .map(|depth| (depth - 0.5) * -2.0 * Tile::WORLD_SIZE)
             .chunks(Tile::TEXTURE_SIZE)
             .into_iter()
             .filter_map(Itertools::collect_array)
             .collect_array()?;
 
-        dbg!(height_map[26][80]);
-
         Some(Tile {
             node_id: node.index(),
+            depth,
             height_map,
         })
     }
@@ -363,19 +348,28 @@ impl TileBuilder {
 
 pub struct Tile {
     pub node_id: usize,
+    pub depth: wgpu::Texture,
     pub height_map: [[f32; Self::TEXTURE_SIZE]; Self::TEXTURE_SIZE],
 }
 
 impl Tile {
     pub const WORLD_SIZE: f32 = 5.0 * 6.0;
 
-    pub const MAX_HEIGHT: f32 = 40.0;
-
     pub const TEXTURE_SIZE: usize =
-        wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize / std::mem::size_of::<u16>();
+        wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize / std::mem::size_of::<f32>();
+
     pub const PIXEL_SIZE: f32 = Self::WORLD_SIZE / Self::TEXTURE_SIZE as f32;
 
-    pub fn get_height(&self, pos: glam::Vec2) -> f32 {
+    pub fn get_height(&self, pos: glam::USizeVec2) -> f32 {
+        let coord = pos.min(glam::usizevec2(
+            Self::TEXTURE_SIZE - 1,
+            Self::TEXTURE_SIZE - 1,
+        ));
+
+        self.height_map[coord.y][coord.x]
+    }
+
+    pub fn world_get_height(&self, pos: glam::Vec2) -> f32 {
         let coord = (pos / Self::WORLD_SIZE * Self::TEXTURE_SIZE as f32).clamp(
             glam::vec2(0.0, 0.0),
             glam::vec2(

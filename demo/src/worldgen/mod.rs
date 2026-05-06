@@ -9,8 +9,6 @@ use calva::{
     renderer::{Instance, PointLight},
 };
 
-pub mod navgrid;
-pub mod navmesh;
 pub mod tile;
 
 pub use tile::{Face, Tile};
@@ -409,7 +407,7 @@ impl SlotOption {
             std::array::from_fn(|i| {
                 let reverse = |i: usize| Self::WFC_SAMPLES - 1 - i;
 
-                let height = tile.get_height(
+                let height = tile.world_get_height(
                     match face {
                         Face::North => [wfc_to_world(i), 0.0],
                         Face::East => [Tile::WORLD_SIZE, wfc_to_world(i)],

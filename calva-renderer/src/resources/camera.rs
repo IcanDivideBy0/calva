@@ -18,6 +18,32 @@ pub struct Camera {
     pub proj: glam::Mat4,
 }
 
+impl Camera {
+    pub fn ray_cast(
+        &self,
+        screen_pos: glam::Vec2,
+        viewport_size: glam::Vec2,
+    ) -> (glam::Vec3, glam::Vec3) {
+        let inv_view = self.view.inverse();
+        let inv_proj = self.proj.inverse();
+
+        let origin = inv_view.col(3).truncate();
+
+        let ndc = glam::vec2(
+            (2.0 * screen_pos.x) / viewport_size.x - 1.0,
+            1.0 - (2.0 * screen_pos.y) / viewport_size.y,
+        );
+
+        let mut ray_eye = inv_proj * glam::vec4(ndc.x, ndc.y, -1.0, 1.0);
+        ray_eye.z = -1.0;
+        ray_eye.w = 0.0;
+
+        let direction = (inv_view * ray_eye).truncate().normalize();
+
+        (origin, direction)
+    }
+}
+
 impl UniformData for Camera {
     type GpuType = GpuCamera;
 
