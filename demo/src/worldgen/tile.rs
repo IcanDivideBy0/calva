@@ -383,6 +383,15 @@ impl Tile {
 
         self.height_map[coord.y.floor() as usize][coord.x.floor() as usize]
     }
+
+    pub fn get_grid_coord(local_coord: &glam::Vec2) -> glam::USizeVec2 {
+        let coord = (local_coord / Self::PIXEL_SIZE).clamp(
+            glam::Vec2::ZERO,
+            glam::Vec2::splat((Self::TEXTURE_SIZE - 1) as f32),
+        );
+
+        glam::usizevec2(coord.x.floor() as usize, coord.y.floor() as usize)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

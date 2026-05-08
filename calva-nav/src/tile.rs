@@ -1,5 +1,5 @@
+use colored::{Colorize, CustomColor};
 use core::{f32, fmt};
-use inksac::{Color, Style, Styleable};
 use std::collections::VecDeque;
 
 use itertools::Itertools;
@@ -170,9 +170,9 @@ impl<const SIZE: usize> fmt::Debug for NavTile<SIZE> {
                     let height_norm = (height / max + 0.5) * (u8::MAX / 2) as f32;
                     let value = height_norm as u8;
 
-                    Color::new_rgb(value, value, value).unwrap()
+                    (value, value, value)
                 }
-                None => Color::new_rgb(0, 0, 0).unwrap(),
+                None => (0, 0, 0),
             })
         )
     }
@@ -203,7 +203,7 @@ impl<const SIZE: usize> FlowField<SIZE> {
                 } else {
                     f32::consts::SQRT_2
                 };
-                dist += heat_map[head.y][head.x].unwrap();
+                dist += heat_map[head.y][head.x].unwrap_or_default();
 
                 if let Some(ref mut d) = heat_map[y][x] {
                     *d = d.min(dist)
@@ -231,48 +231,43 @@ impl<const SIZE: usize> fmt::Debug for FlowField<SIZE> {
             f,
             "\n{}",
             debug_map(&self.heat_map, |heat| match heat {
-                Some(0.0) => Color::new_rgb(0, 255, 0).unwrap(),
+                Some(0.0) => (0, 255, 0),
                 Some(heat) => {
                     let heat_norm = heat / max * u8::MAX as f32;
 
                     let blue = heat_norm as u8;
                     let red = u8::MAX - blue;
 
-                    Color::new_rgb(red, 0, blue).unwrap()
+                    (red, 0, blue)
                 }
-                None => Color::new_rgb(0, 0, 0).unwrap(),
+                None => (0, 0, 0),
             })
         )
     }
 }
 
-fn debug_map<T, const W: usize, const H: usize>(
+fn debug_map<T, const W: usize, const H: usize, C: Into<CustomColor>>(
     map: &[[T; W]; H],
-    color: impl Fn(&T) -> Color,
+    color: impl Fn(&T) -> C,
 ) -> String {
     let (row_pairs, rest) = map.as_chunks::<2>();
-
-    let format = |style: Style| "▀".style(style).to_string();
 
     row_pairs
         .iter()
         .map(|[row_up, row_down]| {
             std::iter::zip(row_up, row_down)
                 .map(|(up, down)| {
-                    Style::builder()
-                        .foreground(color(up))
-                        .background(color(down))
-                        .build()
+                    "▀"
+                        .custom_color(color(up))
+                        .on_custom_color(color(down))
+                        .to_string()
                 })
-                .map(format)
                 .collect::<String>()
         })
         .chain(rest.iter().map(|row| {
             row.iter()
-                .map(|cell| Style::builder().foreground(color(cell)).build())
-                .map(format)
+                .map(|cell| "▀".custom_color(color(cell)).to_string())
                 .collect::<String>()
         }))
-        .collect::<Vec<_>>()
         .join("\n")
 }
