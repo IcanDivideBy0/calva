@@ -495,6 +495,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
+                button,
                 ..
             } => {
                 if let Some(nav_tile) = self.nav_tile.as_ref() {
@@ -510,33 +511,42 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     );
 
                     if let Some(hit) = nav_tile.ray_cast(ro, rd) {
-                        let transform = glam::Mat4::from_rotation_translation(
-                            glam::Quat::from_rotation_y(rand::random::<f32>() * f32::consts::TAU),
-                            hit,
-                        );
+                        if button == MouseButton::Left {
+                            let tile_pos = ((hit / Tile::WORLD_SIZE) + 0.5);
+                            let tile_pos = tile_pos * Tile::TEXTURE_SIZE as f32;
+                            let target = glam::usizevec2(tile_pos.x as usize, tile_pos.z as usize);
+                            dbg!(FlowField::new(nav_tile, target));
+                        }
 
-                        let monster = &self.monsters_models
-                            [rand::random::<u32>() as usize % self.monsters_models.len()];
-
-                        let animation_keys = monster.animations.keys().collect::<Vec<_>>();
-                        let animation = &monster.animations
-                            [animation_keys[rand::random::<u32>() as usize % animation_keys.len()]];
-
-                        let instances_handles = state
-                            .engine
-                            .resources
-                            .get::<InstancesManager>()
-                            .get_mut()
-                            .add(
-                                &monster
-                                    .scene_instances(None, Some(transform), Some(*animation))
-                                    .unwrap()
-                                    .0,
+                        if button == MouseButton::Right {
+                            let transform = glam::Mat4::from_rotation_translation(
+                                glam::Quat::from_rotation_y(
+                                    rand::random::<f32>() * f32::consts::TAU,
+                                ),
+                                hit,
                             );
 
-                        self.monsters_instances.extend(instances_handles);
+                            let monster = &self.monsters_models
+                                [rand::random::<u32>() as usize % self.monsters_models.len()];
 
-                        dbg!(hit);
+                            let animation_keys = monster.animations.keys().collect::<Vec<_>>();
+                            let animation = &monster.animations[animation_keys
+                                [rand::random::<u32>() as usize % animation_keys.len()]];
+
+                            let instances_handles = state
+                                .engine
+                                .resources
+                                .get::<InstancesManager>()
+                                .get_mut()
+                                .add(
+                                    &monster
+                                        .scene_instances(None, Some(transform), Some(*animation))
+                                        .unwrap()
+                                        .0,
+                                );
+
+                            self.monsters_instances.extend(instances_handles);
+                        }
                     }
                 }
             }
