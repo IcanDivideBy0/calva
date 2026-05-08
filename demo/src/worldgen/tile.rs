@@ -139,7 +139,10 @@ impl TileBuilder {
         };
 
         let depth = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("TileBuilder depth"),
+            label: Some(&format!(
+                "TileBuilder depth {}",
+                node.name().unwrap_or_default()
+            )),
             size: wgpu::Extent3d {
                 width: Tile::TEXTURE_SIZE as _,
                 height: Tile::TEXTURE_SIZE as _,

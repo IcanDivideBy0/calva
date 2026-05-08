@@ -1,4 +1,5 @@
-use core::f32;
+use core::{f32, fmt};
+use std::collections::VecDeque;
 
 use itertools::Itertools;
 use parry3d::{
@@ -9,13 +10,14 @@ use parry3d::{
 };
 
 pub struct NavTile<const SIZE: usize> {
+    pub grid: [[Option<f32>; SIZE]; SIZE],
     pub triangles: Vec<[glam::Vec3; 3]>,
     bvh: Bvh,
 }
 
 impl<const SIZE: usize> NavTile<SIZE> {
     pub fn new(height_map: &[[f32; SIZE]; SIZE], sample_size: f32) -> Self {
-        let get_tex_height = |x: usize, y: usize| {
+        let get_height = |x: usize, y: usize| {
             let y = y.min(SIZE - 1);
             let x = x.min(SIZE - 1);
 
@@ -25,6 +27,37 @@ impl<const SIZE: usize> NavTile<SIZE> {
         let tile_world_size = SIZE as f32 * sample_size;
         let min_height = -tile_world_size;
 
+        let mut grid = [[None; SIZE]; SIZE];
+        for (y, x) in itertools::iproduct!(0..SIZE, 0..SIZE) {
+            let height = get_height(x, y);
+
+            if height <= min_height {
+                continue;
+            }
+
+            let valid_neighbours = itertools::iproduct!(
+                y.saturating_sub(1)..=y.saturating_add(1),
+                x.saturating_sub(1)..=x.saturating_add(1),
+            )
+            .all(|(yy, xx)| {
+                let dist = if xx != x && yy != y {
+                    f32::consts::SQRT_2
+                } else {
+                    1.0
+                };
+
+                // This 2x factor on threshold is not logic to me, but omitting it
+                // produce different results than the triangles list where we're
+                // checking the dot product of the normal and the up axis.
+                (height - get_height(xx, yy)).abs() < dist * sample_size * 2.0
+            });
+            if !valid_neighbours {
+                continue;
+            }
+
+            grid[y][x] = Some(height);
+        }
+
         let transform = glam::Mat4::from_translation(glam::vec3(
             -tile_world_size / 2.0,
             0.0,
@@ -33,8 +66,8 @@ impl<const SIZE: usize> NavTile<SIZE> {
 
         let points: Vec<Vec<glam::Vec3>> = itertools::iproduct!(0..=SIZE, 0..=SIZE)
             .map(|(y, x)| {
-                let it = itertools::iproduct!(0..=1, 0..=1)
-                    .map(|(yy, xx)| get_tex_height(x.saturating_sub(xx), y.saturating_sub(yy)));
+                let it = itertools::iproduct!(0..=1, 0..=1,)
+                    .map(|(yy, xx)| get_height(x.saturating_sub(xx), y.saturating_sub(yy)));
 
                 let min = it.clone().fold(f32::INFINITY, f32::min);
 
@@ -56,20 +89,25 @@ impl<const SIZE: usize> NavTile<SIZE> {
             .collect();
 
         let triangles: Vec<_> = itertools::iproduct!(0..SIZE, 0..SIZE)
-            .flat_map(|(y, x)| {
+            .map(|(y, x)| {
                 [
                     [points[y][x], points[y + 1][x + 1], points[y][x + 1]],
                     [points[y][x], points[y + 1][x], points[y + 1][x + 1]],
                 ]
             })
-            .filter(|[a, b, c]| {
-                let normal = glam::Vec3::cross(b - a, a - c).normalize();
+            .filter(|[t1, t2]| {
+                let check_triangle = |[a, b, c]: &[glam::Vec3; 3]| -> bool {
+                    let normal = glam::Vec3::cross(b - a, a - c).normalize();
 
-                glam::Vec3::dot(normal, glam::Vec3::Y).abs() > 0.5
-                    && a.y > min_height
-                    && b.y > min_height
-                    && c.y > min_height
+                    glam::Vec3::dot(normal, glam::Vec3::Y).abs() > f32::consts::SQRT_2 / 2.0
+                        && a.y > min_height
+                        && b.y > min_height
+                        && c.y > min_height
+                };
+
+                check_triangle(t1) && check_triangle(t2)
             })
+            .flatten()
             .collect();
 
         let bvh = Bvh::from_iter(
@@ -78,34 +116,186 @@ impl<const SIZE: usize> NavTile<SIZE> {
                 .iter()
                 .map(|[a, b, c]| {
                     Triangle::new(
-                        Vector3::new(a.x, a.y, a.z),
-                        Vector3::new(b.x, b.y, b.z),
-                        Vector3::new(c.x, c.y, c.z),
+                        Vector3::from_array(a.to_array()),
+                        Vector3::from_array(b.to_array()),
+                        Vector3::from_array(c.to_array()),
                     )
                     .local_aabb()
                 })
                 .enumerate(),
         );
 
-        Self { triangles, bvh }
+        Self {
+            grid,
+            triangles,
+            bvh,
+        }
     }
 
     pub fn ray_cast(&self, ro: glam::Vec3, rd: glam::Vec3) -> Option<glam::Vec3> {
         let ray = Ray::new(
-            Vector3::new(ro.x, ro.y, ro.z),
-            Vector3::new(rd.x, rd.y, rd.z),
+            Vector3::from_array(ro.to_array()),
+            Vector3::from_array(rd.to_array()),
         );
 
         self.bvh
             .cast_ray(&ray, f32::MAX, |i, _| {
                 let [a, b, c] = self.triangles[i as usize];
                 Triangle::new(
-                    Vector3::new(a.x, a.y, a.z),
-                    Vector3::new(b.x, b.y, b.z),
-                    Vector3::new(c.x, c.y, c.z),
+                    Vector3::from_array(a.to_array()),
+                    Vector3::from_array(b.to_array()),
+                    Vector3::from_array(c.to_array()),
                 )
                 .cast_local_ray(&ray, f32::MAX, true)
             })
             .map(|(_, t)| ro + rd * t)
+    }
+}
+
+impl<const SIZE: usize> fmt::Debug for NavTile<SIZE> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f)?;
+
+        let (row_pairs, rest) = self.grid.as_chunks::<2>();
+
+        for [row_up, row_down] in row_pairs {
+            writeln!(
+                f,
+                "{}",
+                std::iter::zip(row_up, row_down)
+                    .map(|cells| match cells {
+                        (Some(_), Some(_)) => '█',
+                        (Some(_), None) => '▀',
+                        (None, Some(_)) => '▃',
+                        (None, None) => ' ',
+                    })
+                    .collect::<String>()
+            )?;
+        }
+
+        for row in rest {
+            writeln!(
+                f,
+                "{}",
+                row.iter()
+                    .map(|cell| match cell {
+                        Some(_) => '🮄',
+                        None => '🮎',
+                    })
+                    .collect::<String>()
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct FlowField<const SIZE: usize> {
+    pub heat_map: [[Option<f32>; SIZE]; SIZE],
+}
+
+impl<const SIZE: usize> FlowField<SIZE> {
+    pub fn new(nav_tile: &NavTile<SIZE>, target: glam::USizeVec2) -> Self {
+        let mut heat_map = [[None; SIZE]; SIZE];
+        heat_map[target.y][target.x] = Some(0.0);
+
+        let mut open_list = VecDeque::from([target]);
+
+        while let Some(head) = open_list.pop_front() {
+            for (y, x) in itertools::iproduct!(
+                head.y.saturating_sub(1)..=head.y.saturating_add(1).min(SIZE - 1),
+                head.x.saturating_sub(1)..=head.x.saturating_add(1).min(SIZE - 1),
+            ) {
+                if nav_tile.grid[y][x].is_none() {
+                    continue;
+                }
+
+                let mut dist = if head.x == x || head.y == y {
+                    1.0
+                } else {
+                    f32::consts::SQRT_2
+                };
+                dist += heat_map[head.y][head.x].unwrap();
+
+                if let Some(ref mut d) = heat_map[y][x] {
+                    *d = d.min(dist)
+                } else {
+                    heat_map[y][x] = Some(dist);
+                    open_list.push_back(glam::usizevec2(x, y));
+                }
+            }
+        }
+
+        Self { heat_map }
+    }
+}
+
+impl<const SIZE: usize> fmt::Debug for FlowField<SIZE> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use inksac::{Color, Style, Styleable};
+
+        let max = self
+            .heat_map
+            .iter()
+            .flatten()
+            .filter_map(|h| *h)
+            .fold(f32::MIN, f32::max);
+
+        let wall_color = Color::new_rgb(0, 0, 0).unwrap();
+        let fg_wall = Style::builder().background(wall_color).build();
+        let bg_wall = Style::builder().background(wall_color).build();
+
+        let target_color = Color::new_rgb(0, 255, 0).unwrap();
+        let fg_target = Style::builder().foreground(target_color).build();
+        let bg_target = Style::builder().background(target_color).build();
+
+        let heat_color = |heat: f32| {
+            let heat_norm = heat / max * u8::MAX as f32;
+            let red = 255 - heat_norm as u8;
+            let blue = 255 - red;
+
+            Color::new_rgb(red, 0, blue).unwrap()
+        };
+
+        let fg_heat = |heat: f32| Style::builder().foreground(heat_color(heat)).build();
+        let bg_heat = |heat: f32| Style::builder().background(heat_color(heat)).build();
+
+        writeln!(f)?;
+
+        let (row_pairs, rest) = self.heat_map.as_chunks::<2>();
+
+        for rows in row_pairs {
+            for cells in std::iter::zip(rows[0], rows[1]) {
+                write!(f, "{}", {
+                    match cells {
+                        (Some(0.0), Some(b)) => "▃".style(fg_heat(b).compose(bg_target)),
+                        (Some(a), Some(0.0)) => "▀".style(fg_heat(a).compose(bg_target)),
+                        (Some(a), Some(b)) => "▀".style(fg_heat(a).compose(bg_heat(b))),
+                        (Some(0.0), None) => "▀".style(fg_target.compose(bg_wall)),
+                        (Some(a), None) => "▀".style(fg_heat(a).compose(bg_wall)),
+                        (None, Some(0.0)) => "▃".style(fg_target.compose(bg_wall)),
+                        (None, Some(b)) => "▃".style(fg_heat(b).compose(bg_wall)),
+                        (None, None) => " ".style(bg_wall),
+                    }
+                })?;
+            }
+            writeln!(f)?;
+        }
+
+        for row in rest {
+            for cell in row {
+                write!(f, "{}", {
+                    match cell {
+                        Some(0.0) => "▀".style(fg_target),
+                        Some(a) => "▀".style(fg_heat(*a)),
+                        None => "▀".style(fg_wall),
+                    }
+                })?;
+            }
+
+            writeln!(f)?;
+        }
+
+        Ok(())
     }
 }

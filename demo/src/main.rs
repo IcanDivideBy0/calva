@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use async_std::task;
 use calva::{
     gltf::GltfModel,
+    nav::FlowField,
     renderer::{
         egui, Camera, CameraManager, EguiWinitPass, Engine, InstanceHandle, InstancesManager,
         PointLightHandle, PointLightsManager, Renderer, SkyboxManager,
@@ -58,7 +59,7 @@ struct DemoApp<'a> {
     worldgen_model: Option<GltfModel>,
     worldgen_chunks: HashMap<glam::IVec2, (Vec<InstanceHandle>, Vec<PointLightHandle>)>,
 
-    navtile: Option<calva::nav::NavTile<{ Tile::TEXTURE_SIZE }>>,
+    nav_tile: Option<calva::nav::NavTile<{ Tile::TEXTURE_SIZE }>>,
     navgrid_debug: Option<debug::Debug>,
 
     monsters_models: Vec<GltfModel>,
@@ -77,7 +78,7 @@ impl DemoApp<'_> {
             worldgen_model: None,
             worldgen_chunks: HashMap::new(),
 
-            navtile: None,
+            nav_tile: None,
             navgrid_debug: None,
 
             monsters_models: vec![],
@@ -153,17 +154,23 @@ impl DemoApp<'_> {
 
         self.worldgen.set_tiles(&tiles);
 
-        let tile = &tiles[7];
-        let navtile = calva::nav::NavTile::new(&tile.height_map, Tile::PIXEL_SIZE);
-        // self.navgrid_debug = Some(debug::Debug::new(
-        //     &state.renderer.device,
-        //     &state.engine.resources.get::<CameraManager>().get(),
-        //     &navtile.triangles,
-        //     state.renderer.surface_config.format,
-        //     debug::DebugInput {
-        //         depth: &state.engine.geometry.outputs.depth,
-        //     },
-        // ));
+        let tile = &tiles[5];
+        let nav_tile = calva::nav::NavTile::new(&tile.height_map, Tile::PIXEL_SIZE);
+        dbg!(&nav_tile);
+
+        let flowfield = FlowField::new(&nav_tile, glam::usizevec2(60, 32));
+
+        dbg!(&flowfield);
+
+        self.navgrid_debug = Some(debug::Debug::new(
+            &state.renderer.device,
+            &state.engine.resources.get::<CameraManager>().get(),
+            &nav_tile.triangles,
+            state.renderer.surface_config.format,
+            debug::DebugInput {
+                depth: &state.engine.geometry.outputs.depth,
+            },
+        ));
 
         {
             let (instances, point_lights) = worldgen_model.node_instances(
@@ -186,7 +193,7 @@ impl DemoApp<'_> {
         }
 
         self.worldgen_model = Some(worldgen_model);
-        self.navtile = Some(navtile);
+        self.nav_tile = Some(nav_tile);
 
         Ok(())
     }
@@ -490,7 +497,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 state: ElementState::Pressed,
                 ..
             } => {
-                if let Some(navtile) = self.navtile.as_ref() {
+                if let Some(nav_tile) = self.nav_tile.as_ref() {
                     let camera_ref = state.engine.resources.get::<CameraManager>();
                     let camera = camera_ref.get();
 
@@ -502,7 +509,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         ),
                     );
 
-                    if let Some(hit) = navtile.ray_cast(ro, rd) {
+                    if let Some(hit) = nav_tile.ray_cast(ro, rd) {
                         let transform = glam::Mat4::from_rotation_translation(
                             glam::Quat::from_rotation_y(rand::random::<f32>() * f32::consts::TAU),
                             hit,
