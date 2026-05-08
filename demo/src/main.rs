@@ -154,7 +154,7 @@ impl DemoApp<'_> {
 
         self.worldgen.set_tiles(&tiles);
 
-        let tile = &tiles[5];
+        let tile = &tiles[7];
         let nav_tile = calva::nav::NavTile::new(&tile.height_map, Tile::PIXEL_SIZE);
         dbg!(&nav_tile);
 
@@ -512,7 +512,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                     if let Some(hit) = nav_tile.ray_cast(ro, rd) {
                         if button == MouseButton::Left {
-                            let tile_pos = ((hit / Tile::WORLD_SIZE) + 0.5);
+                            let tile_pos = (hit / Tile::WORLD_SIZE) + 0.5;
                             let tile_pos = tile_pos * Tile::TEXTURE_SIZE as f32;
                             let target = glam::usizevec2(tile_pos.x as usize, tile_pos.z as usize);
                             dbg!(FlowField::new(nav_tile, target));

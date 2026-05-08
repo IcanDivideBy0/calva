@@ -1,4 +1,5 @@
 use core::{f32, fmt};
+use inksac::{Color, Style, Styleable};
 use std::collections::VecDeque;
 
 use itertools::Itertools;
@@ -154,39 +155,26 @@ impl<const SIZE: usize> NavTile<SIZE> {
 
 impl<const SIZE: usize> fmt::Debug for NavTile<SIZE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f)?;
+        let max = self
+            .grid
+            .iter()
+            .flatten()
+            .filter_map(|h| *h)
+            .fold(f32::MIN, f32::max);
 
-        let (row_pairs, rest) = self.grid.as_chunks::<2>();
+        write!(
+            f,
+            "\n{}",
+            debug_map(&self.grid, |height| match height {
+                Some(height) => {
+                    let height_norm = (height / max + 0.5) * (u8::MAX / 2) as f32;
+                    let value = height_norm as u8;
 
-        for [row_up, row_down] in row_pairs {
-            writeln!(
-                f,
-                "{}",
-                std::iter::zip(row_up, row_down)
-                    .map(|cells| match cells {
-                        (Some(_), Some(_)) => '█',
-                        (Some(_), None) => '▀',
-                        (None, Some(_)) => '▃',
-                        (None, None) => ' ',
-                    })
-                    .collect::<String>()
-            )?;
-        }
-
-        for row in rest {
-            writeln!(
-                f,
-                "{}",
-                row.iter()
-                    .map(|cell| match cell {
-                        Some(_) => '🮄',
-                        None => '🮎',
-                    })
-                    .collect::<String>()
-            )?;
-        }
-
-        Ok(())
+                    Color::new_rgb(value, value, value).unwrap()
+                }
+                None => Color::new_rgb(0, 0, 0).unwrap(),
+            })
+        )
     }
 }
 
@@ -232,8 +220,6 @@ impl<const SIZE: usize> FlowField<SIZE> {
 
 impl<const SIZE: usize> fmt::Debug for FlowField<SIZE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use inksac::{Color, Style, Styleable};
-
         let max = self
             .heat_map
             .iter()
@@ -241,61 +227,52 @@ impl<const SIZE: usize> fmt::Debug for FlowField<SIZE> {
             .filter_map(|h| *h)
             .fold(f32::MIN, f32::max);
 
-        let wall_color = Color::new_rgb(0, 0, 0).unwrap();
-        let fg_wall = Style::builder().background(wall_color).build();
-        let bg_wall = Style::builder().background(wall_color).build();
+        write!(
+            f,
+            "\n{}",
+            debug_map(&self.heat_map, |heat| match heat {
+                Some(0.0) => Color::new_rgb(0, 255, 0).unwrap(),
+                Some(heat) => {
+                    let heat_norm = heat / max * u8::MAX as f32;
 
-        let target_color = Color::new_rgb(0, 255, 0).unwrap();
-        let fg_target = Style::builder().foreground(target_color).build();
-        let bg_target = Style::builder().background(target_color).build();
+                    let blue = heat_norm as u8;
+                    let red = u8::MAX - blue;
 
-        let heat_color = |heat: f32| {
-            let heat_norm = heat / max * u8::MAX as f32;
-            let red = 255 - heat_norm as u8;
-            let blue = 255 - red;
-
-            Color::new_rgb(red, 0, blue).unwrap()
-        };
-
-        let fg_heat = |heat: f32| Style::builder().foreground(heat_color(heat)).build();
-        let bg_heat = |heat: f32| Style::builder().background(heat_color(heat)).build();
-
-        writeln!(f)?;
-
-        let (row_pairs, rest) = self.heat_map.as_chunks::<2>();
-
-        for rows in row_pairs {
-            for cells in std::iter::zip(rows[0], rows[1]) {
-                write!(f, "{}", {
-                    match cells {
-                        (Some(0.0), Some(b)) => "▃".style(fg_heat(b).compose(bg_target)),
-                        (Some(a), Some(0.0)) => "▀".style(fg_heat(a).compose(bg_target)),
-                        (Some(a), Some(b)) => "▀".style(fg_heat(a).compose(bg_heat(b))),
-                        (Some(0.0), None) => "▀".style(fg_target.compose(bg_wall)),
-                        (Some(a), None) => "▀".style(fg_heat(a).compose(bg_wall)),
-                        (None, Some(0.0)) => "▃".style(fg_target.compose(bg_wall)),
-                        (None, Some(b)) => "▃".style(fg_heat(b).compose(bg_wall)),
-                        (None, None) => " ".style(bg_wall),
-                    }
-                })?;
-            }
-            writeln!(f)?;
-        }
-
-        for row in rest {
-            for cell in row {
-                write!(f, "{}", {
-                    match cell {
-                        Some(0.0) => "▀".style(fg_target),
-                        Some(a) => "▀".style(fg_heat(*a)),
-                        None => "▀".style(fg_wall),
-                    }
-                })?;
-            }
-
-            writeln!(f)?;
-        }
-
-        Ok(())
+                    Color::new_rgb(red, 0, blue).unwrap()
+                }
+                None => Color::new_rgb(0, 0, 0).unwrap(),
+            })
+        )
     }
+}
+
+fn debug_map<T, const W: usize, const H: usize>(
+    map: &[[T; W]; H],
+    color: impl Fn(&T) -> Color,
+) -> String {
+    let (row_pairs, rest) = map.as_chunks::<2>();
+
+    let format = |style: Style| "▀".style(style).to_string();
+
+    row_pairs
+        .iter()
+        .map(|[row_up, row_down]| {
+            std::iter::zip(row_up, row_down)
+                .map(|(up, down)| {
+                    Style::builder()
+                        .foreground(color(up))
+                        .background(color(down))
+                        .build()
+                })
+                .map(format)
+                .collect::<String>()
+        })
+        .chain(rest.iter().map(|row| {
+            row.iter()
+                .map(|cell| Style::builder().foreground(color(cell)).build())
+                .map(format)
+                .collect::<String>()
+        }))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
