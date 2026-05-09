@@ -3,9 +3,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use anyhow::Result;
+
 use crate::{
     util::id_generator::IdGenerator, AnimationState, MaterialHandle, MeshHandle, MeshesManager,
-    RenderContext, Resource,
+    Resource,
 };
 
 #[repr(C)]
@@ -98,6 +100,7 @@ impl PartialEq for GpuMeshInstance {
 }
 
 pub struct MeshInstancesManager {
+    device: wgpu::Device,
     queue: wgpu::Queue,
 
     ids: IdGenerator,
@@ -234,6 +237,7 @@ impl MeshInstancesManager {
         });
 
         Self {
+            device: device.clone(),
             queue: queue.clone(),
 
             ids: IdGenerator::new(0),
@@ -300,7 +304,7 @@ impl MeshInstancesManager {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<()> {
         let updates_data = self.updates_data.iter().copied().collect::<Vec<_>>();
 
         self.queue.write_buffer(
@@ -322,12 +326,13 @@ impl MeshInstancesManager {
         // );
 
         self.updates_data.clear();
-    }
 
-    pub fn maintain(&self, ctx: &mut RenderContext) {
-        let mut cpass = ctx
-            .encoder
-            .scoped_compute_pass("MeshInstancesManager[maintain]");
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("MeshInstancesManager[update]"),
+            ..Default::default()
+        });
 
         const WORKGROUP_SIZE: u32 = 32;
 
@@ -337,6 +342,17 @@ impl MeshInstancesManager {
         cpass.set_pipeline(&self.maintain_pipeline);
         cpass.set_bind_group(0, &self.maintain_bind_group, &[]);
         cpass.dispatch_workgroups(updates_workgroups_count, 1, 1);
+
+        drop(cpass);
+
+        let submission_index = self.queue.submit(std::iter::once(encoder.finish()));
+
+        self.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission_index),
+            timeout: None,
+        })?;
+
+        Ok(())
     }
 }
 
@@ -345,7 +361,7 @@ impl Resource for MeshInstancesManager {
         Self::new(device, queue)
     }
 
-    fn update(&mut self) {
+    fn update(&mut self) -> Result<()> {
         self.update()
     }
 }

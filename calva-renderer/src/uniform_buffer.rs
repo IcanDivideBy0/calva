@@ -1,3 +1,4 @@
+use anyhow::Result;
 use wgpu::util::DeviceExt;
 
 use crate::Resource;
@@ -76,14 +77,16 @@ impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<()> {
         if self.gpu == self.cpu {
-            return;
+            return Ok(());
         }
 
         self.gpu = self.cpu;
         self.queue
             .write_buffer(&self.buffer, 0, bytemuck::bytes_of(&self.gpu.as_gpu_type()));
+
+        Ok(())
     }
 }
 
@@ -109,7 +112,7 @@ where
         Self::new(device, queue, Default::default())
     }
 
-    fn update(&mut self) {
+    fn update(&mut self) -> Result<()> {
         self.update()
     }
 }

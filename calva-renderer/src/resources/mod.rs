@@ -9,6 +9,7 @@ mod skybox;
 mod texture;
 
 pub use animation::*;
+use anyhow::Result;
 pub use camera::*;
 pub use material::*;
 pub use mesh::*;
@@ -33,7 +34,9 @@ pub trait Resource: DowncastSync + DowncastSend {
     where
         Self: Sized;
 
-    fn update(&mut self) {}
+    fn update(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 impl_downcast!(sync Resource);
 
@@ -87,10 +90,12 @@ impl ResourcesManager {
         }
     }
 
-    pub fn update(&self) {
+    pub(crate) fn update(&self) -> Result<()> {
         for (_ty_id, arc) in self.resources.write().iter() {
-            arc.write_arc().update();
+            arc.write_arc().update()?;
         }
+
+        Ok(())
     }
 
     fn get_arc<T: Resource>(&self) -> Arc<RwLock<Box<dyn Resource>>> {

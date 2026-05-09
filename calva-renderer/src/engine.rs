@@ -1,9 +1,11 @@
+use anyhow::Result;
+
 use crate::{
     AmbientLightPass, AmbientLightPassInputs, AnimatePass, DirectionalLightPass,
     DirectionalLightPassInputs, FxaaPass, FxaaPassInputs, GeometryPass, HierarchicalDepthPass,
-    HierarchicalDepthPassInputs, MeshInstancesManager, PointLightsPass, PointLightsPassInputs,
-    RenderContext, Renderer, ResourcesManager, SkyboxPass, SkyboxPassInputs, SsaoPass,
-    SsaoPassInputs, ToneMappingPass, ToneMappingPassInputs,
+    HierarchicalDepthPassInputs, PointLightsPass, PointLightsPassInputs, RenderContext, Renderer,
+    ResourcesManager, SkyboxPass, SkyboxPassInputs, SsaoPass, SsaoPassInputs, ToneMappingPass,
+    ToneMappingPassInputs,
 };
 
 pub struct Engine {
@@ -159,14 +161,14 @@ impl Engine {
         });
     }
 
-    pub fn update(&mut self) {
-        self.resources.update();
-        self.directional_light.update();
+    pub fn update(&mut self) -> Result<()> {
+        self.resources.update()?;
+        self.directional_light.update()?;
+
+        Ok(())
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        self.resources.read::<MeshInstancesManager>().maintain(ctx);
-
         self.animate.render(ctx);
         self.geometry.render(ctx);
         self.hierarchical_depth.render(ctx);

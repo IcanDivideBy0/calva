@@ -437,7 +437,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                 });
                         });
                 });
-                state.engine.update();
+
+                state.engine.update().unwrap();
 
                 let result = state.renderer.render(|ctx| {
                     state.engine.render(ctx);

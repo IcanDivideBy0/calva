@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{Resource, UniformBuffer, UniformData};
 
 #[repr(C)]
@@ -108,7 +110,7 @@ impl Resource for CameraManager {
         Self::new(device, queue)
     }
 
-    fn update(&mut self) {
-        self.0.update();
+    fn update(&mut self) -> Result<()> {
+        self.0.update()
     }
 }

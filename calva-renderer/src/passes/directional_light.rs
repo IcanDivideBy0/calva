@@ -321,9 +321,10 @@ impl DirectionalLightPass {
         self.output_view = inputs.output.create_view(&Default::default());
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<()> {
         self.uniform.camera = ***self.resources.read::<CameraManager>();
-        self.uniform.update();
+        self.uniform.update()?;
+        Ok(())
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -545,6 +546,7 @@ impl UniformData for DirectionalLightUniform {
     }
 }
 
+use anyhow::Result;
 use cull::*;
 mod cull {
     use crate::{
