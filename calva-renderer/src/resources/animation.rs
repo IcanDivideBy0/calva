@@ -1,5 +1,7 @@
 use wgpu::util::DeviceExt;
 
+use crate::Resource;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct AnimationHandle(u32);
@@ -21,6 +23,9 @@ impl From<AnimationHandle> for AnimationState {
 }
 
 pub struct AnimationsManager {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+
     views: Vec<wgpu::TextureView>,
     sampler: wgpu::Sampler,
 
@@ -34,7 +39,7 @@ impl AnimationsManager {
 
     const MAX_ANIMATIONS: u32 = 512;
 
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let mut views = Vec::with_capacity(Self::MAX_ANIMATIONS as _);
 
         views.push(
@@ -89,6 +94,9 @@ impl AnimationsManager {
         let bind_group = Self::create_bind_group(device, &bind_group_layout, &views, &sampler);
 
         Self {
+            device: device.clone(),
+            queue: queue.clone(),
+
             views,
             sampler,
 
@@ -97,12 +105,7 @@ impl AnimationsManager {
         }
     }
 
-    pub fn add(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        animation: Vec<Vec<glam::Mat4>>,
-    ) -> AnimationHandle {
+    pub fn add(&mut self, animation: Vec<Vec<glam::Mat4>>) -> AnimationHandle {
         let pixels = (0..4)
             .flat_map(|i| {
                 animation
@@ -112,9 +115,10 @@ impl AnimationsManager {
             })
             .collect::<Vec<_>>();
 
-        let view = device
+        let view = self
+            .device
             .create_texture_with_data(
-                queue,
+                &self.queue,
                 &wgpu::TextureDescriptor {
                     label: Some("Animations texture"),
                     size: wgpu::Extent3d {
@@ -135,8 +139,12 @@ impl AnimationsManager {
             .create_view(&Default::default());
 
         self.views.push(view);
-        self.bind_group =
-            Self::create_bind_group(device, &self.bind_group_layout, &self.views, &self.sampler);
+        self.bind_group = Self::create_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.views,
+            &self.sampler,
+        );
         AnimationHandle(self.views.len() as u32 - 1)
     }
 
@@ -165,8 +173,8 @@ impl AnimationsManager {
     }
 }
 
-impl From<&wgpu::Device> for AnimationsManager {
-    fn from(device: &wgpu::Device) -> Self {
-        Self::new(device)
+impl Resource for AnimationsManager {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::new(device, queue)
     }
 }

@@ -1,15 +1,21 @@
-use crate::{RenderContext, Renderer};
+use crate::{RenderContext, Renderer, ResourcesManager};
 
 pub struct EguiPass {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+
     paint_jobs: Vec<egui::ClippedPrimitive>,
     screen_descriptor: egui_wgpu::ScreenDescriptor,
     egui_renderer: egui_wgpu::Renderer,
 }
 
 impl EguiPass {
-    pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn new(resources: &ResourcesManager, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+        let device = resources.device.clone();
+        let queue = resources.queue.clone();
+
         let egui_renderer =
-            egui_wgpu::Renderer::new(device, surface_config.format, Default::default());
+            egui_wgpu::Renderer::new(&device, surface_config.format, Default::default());
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
@@ -17,6 +23,9 @@ impl EguiPass {
         };
 
         Self {
+            device,
+            queue,
+
             paint_jobs: vec![],
             screen_descriptor,
             egui_renderer,
@@ -42,26 +51,22 @@ impl EguiPass {
         self.paint_jobs = context.tessellate(shapes, self.screen_descriptor.pixels_per_point);
 
         for (texture_id, image_delta) in &textures_delta.set {
-            self.egui_renderer.update_texture(
-                &renderer.device,
-                &renderer.queue,
-                *texture_id,
-                image_delta,
-            );
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *texture_id, image_delta);
         }
         for texture_id in &textures_delta.free {
             self.egui_renderer.free_texture(texture_id);
         }
 
-        let mut encoder = renderer.device.create_command_encoder(&Default::default());
+        let mut encoder = self.device.create_command_encoder(&Default::default());
         self.egui_renderer.update_buffers(
-            &renderer.device,
-            &renderer.queue,
+            &self.device,
+            &self.queue,
             &mut encoder,
             &self.paint_jobs,
             &self.screen_descriptor,
         );
-        renderer.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -97,7 +102,7 @@ mod winit {
     use winit::window::Window;
 
     use super::EguiPass;
-    use crate::Renderer;
+    use crate::{Renderer, ResourcesManager};
 
     pub struct EguiWinitPass {
         pass: EguiPass,
@@ -106,11 +111,11 @@ mod winit {
 
     impl EguiWinitPass {
         pub fn new(
-            device: &wgpu::Device,
+            resources: &ResourcesManager,
             surface_config: &wgpu::SurfaceConfiguration,
             window: &Window,
         ) -> Self {
-            let pass = EguiPass::new(device, surface_config);
+            let pass = EguiPass::new(resources, surface_config);
 
             let state = egui_winit::State::new(
                 egui::Context::default(),

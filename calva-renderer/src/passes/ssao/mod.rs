@@ -92,10 +92,11 @@ pub struct SsaoPassInputs<'a> {
 }
 
 pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
-    pub config: UniformBuffer<SsaoConfig>,
-    random: UniformBuffer<SsaoRandom>,
-
+    device: wgpu::Device,
     camera: ResourceRef<CameraManager>,
+    config: ResourceRef<UniformBuffer<SsaoConfig>>,
+
+    random: UniformBuffer<SsaoRandom>,
 
     output_view: wgpu::TextureView,
 
@@ -109,20 +110,17 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 }
 
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
-    pub fn new(
-        device: &wgpu::Device,
-        resources: &ResourcesManager,
-        inputs: SsaoPassInputs,
-    ) -> Self {
-        let config = UniformBuffer::new(device, SsaoConfig::default());
-        let random = UniformBuffer::new(device, SsaoRandom::new());
-
+    pub fn new(resources: &ResourcesManager, inputs: SsaoPassInputs) -> Self {
+        let device = resources.device.clone();
         let camera = resources.get::<CameraManager>();
+        let config = resources.get::<UniformBuffer<SsaoConfig>>();
 
-        let output = Self::make_texture(device, Some("Ssao output"));
+        let random = UniformBuffer::new(&resources.device, &resources.queue, SsaoRandom::new());
+
+        let output = Self::make_texture(&resources.device, Some("Ssao output"));
         let output_view = output.create_view(&Default::default());
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = resources.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Ssao sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -131,93 +129,105 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             ..Default::default()
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Ssao bind group layout"),
-            entries: &[
-                // sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
+        let bind_group_layout =
+            resources
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Ssao bind group layout"),
+                    entries: &[
+                        // sampler
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        // normals
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        // depth
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Depth,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+
+        let bind_group =
+            Self::make_bind_group(&resources.device, &bind_group_layout, &sampler, &inputs);
+
+        let pipeline_layout =
+            resources
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Ssao pipeline layout"),
+                    bind_group_layouts: &[
+                        Some(&camera.get().bind_group_layout),
+                        Some(&config.get().bind_group_layout),
+                        Some(&random.bind_group_layout),
+                        Some(&bind_group_layout),
+                    ],
+                    immediate_size: 0,
+                });
+
+        let shader = resources
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Ssao shader"),
+                source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::ssao").into()),
+            });
+
+        let pipeline = resources
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Ssao pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
                 },
-                // normals
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // depth
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Depth,
-                    },
-                    count: None,
-                },
-            ],
-        });
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: output.format(),
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: Default::default(),
+                depth_stencil: None,
+                multiview_mask: None,
+                multisample: Default::default(),
+                cache: None,
+            });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Ssao pipeline layout"),
-            bind_group_layouts: &[
-                Some(&camera.get().bind_group_layout),
-                Some(&config.bind_group_layout),
-                Some(&random.bind_group_layout),
-                Some(&bind_group_layout),
-            ],
-            immediate_size: 0,
-        });
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Ssao shader"),
-            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::ssao").into()),
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Ssao pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: output.format(),
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multiview_mask: None,
-            multisample: Default::default(),
-            cache: None,
-        });
-
-        let blur = blur::SsaoBlurPass::new(device, &output);
-        let blit = blit::SsaoBlitPass::new(device, &output, inputs.output);
+        let blur = blur::SsaoBlurPass::new(resources, &output);
+        let blit = blit::SsaoBlitPass::new(resources, &output, inputs.output);
 
         Self {
+            device,
+            camera,
+
             config,
             random,
-
-            camera,
 
             sampler,
 
@@ -231,15 +241,19 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         }
     }
 
-    pub fn rebind(&mut self, device: &wgpu::Device, inputs: SsaoPassInputs) {
-        self.bind_group =
-            Self::make_bind_group(device, &self.bind_group_layout, &self.sampler, &inputs);
+    pub fn rebind(&mut self, inputs: SsaoPassInputs) {
+        self.bind_group = Self::make_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.sampler,
+            &inputs,
+        );
 
         self.blit.rebind(inputs.output);
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue) {
-        self.config.update(queue);
+    pub fn update(&mut self) {
+        self.config.get_mut().update();
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -267,7 +281,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &camera.bind_group, &[]);
-        rpass.set_bind_group(1, &self.config.bind_group, &[]);
+        rpass.set_bind_group(1, &self.config.get().bind_group, &[]);
         rpass.set_bind_group(2, &self.random.bind_group, &[]);
         rpass.set_bind_group(3, &self.bind_group, &[]);
 

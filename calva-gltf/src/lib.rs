@@ -2,9 +2,9 @@
 
 use anyhow::{anyhow, Result};
 use renderer::{
-    wgpu, AnimationHandle, AnimationsManager, Engine, Instance, Material, MaterialHandle,
-    MaterialsManager, MeshHandle, MeshesManager, PointLight, Renderer, SkinsManager, TextureHandle,
-    TexturesManager,
+    wgpu, AnimationHandle, AnimationsManager, Material, MaterialHandle, MaterialsManager,
+    MeshHandle, MeshInstance, MeshesManager, Object, PointLight, ResourcesManager, SkinsManager,
+    TextureHandle, TexturesManager,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -18,42 +18,38 @@ use animation::*;
 pub struct GltfModel {
     pub doc: gltf::Document,
 
-    meshes_instances: Vec<Vec<Instance>>,
+    resources: ResourcesManager,
+    meshes_instances: Vec<Vec<MeshInstance>>,
     pub animations: HashMap<String, AnimationHandle>,
 }
 
 impl GltfModel {
-    pub fn from_path(renderer: &Renderer, engine: &mut Engine, path: &str) -> Result<Self> {
-        Self::from_reader(renderer, engine, &mut std::fs::File::open(path)?)
+    pub fn from_path(resources: &ResourcesManager, path: &str) -> Result<Self> {
+        Self::from_reader(resources, &mut std::fs::File::open(path)?)
     }
 
-    pub fn from_reader(
-        renderer: &Renderer,
-        engine: &mut Engine,
-        reader: &mut dyn Read,
-    ) -> Result<Self> {
+    pub fn from_reader(resources: &ResourcesManager, reader: &mut dyn Read) -> Result<Self> {
         let mut gltf_buffer = Vec::new();
         reader.read_to_end(&mut gltf_buffer)?;
 
         let (doc, buffers, images) = gltf::import_slice(&gltf_buffer)?;
 
-        Self::new(renderer, engine, doc, &buffers, &images)
+        Self::new(resources, doc, &buffers, &images)
     }
 
     pub fn new(
-        renderer: &Renderer,
-        engine: &mut Engine,
+        resources: &ResourcesManager,
         doc: gltf::Document,
         buffers: &[gltf::buffer::Data],
         images: &[gltf::image::Data],
     ) -> Result<Self> {
-        let textures = Self::build_textures(renderer, engine, &doc, images)?;
+        let textures = Self::build_textures(resources, &doc, images)?;
 
-        let materials = Self::build_materials(renderer, engine, &doc, &textures);
+        let materials = Self::build_materials(resources, &doc, &textures);
 
-        let meshes = Self::build_meshes(renderer, engine, &doc, buffers)?;
+        let meshes = Self::build_meshes(resources, &doc, buffers)?;
 
-        let skins_animations = Self::build_skin_animations(renderer, engine, &doc, buffers);
+        let skins_animations = Self::build_skin_animations(resources, &doc, buffers);
 
         let meshes_instances = doc
             .meshes()
@@ -68,7 +64,7 @@ impl GltfModel {
                             .and_then(|index| materials.get(index).copied())
                             .unwrap_or_default();
 
-                        Instance {
+                        MeshInstance {
                             mesh: mesh_id,
                             material: material_id,
                             ..Default::default()
@@ -80,14 +76,14 @@ impl GltfModel {
 
         Ok(Self {
             doc,
+            resources: resources.clone(),
             meshes_instances,
             animations: skins_animations.first().cloned().unwrap_or_default(),
         })
     }
 
     fn build_textures(
-        renderer: &Renderer,
-        engine: &mut Engine,
+        resources: &ResourcesManager,
         doc: &gltf::Document,
         images: &[gltf::image::Data],
     ) -> Result<Vec<TextureHandle>> {
@@ -137,9 +133,9 @@ impl GltfModel {
                     view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
                 };
 
-                let texture = renderer.device.create_texture(&desc);
+                let texture = resources.device.create_texture(&desc);
 
-                renderer.queue.write_texture(
+                resources.queue.write_texture(
                     texture.as_image_copy(),
                     &buf.to_rgba8(),
                     wgpu::TexelCopyBufferLayout {
@@ -150,17 +146,15 @@ impl GltfModel {
                     size,
                 );
 
-                engine
-                    .resources
+                resources
                     .get::<TexturesManager>()
                     .get()
-                    .generate_mipmaps(&renderer.device, &renderer.queue, &texture, &desc)?;
+                    .generate_mipmaps(&texture, &desc)?;
 
-                Ok(engine
-                    .resources
+                Ok(resources
                     .get::<TexturesManager>()
                     .get_mut()
-                    .add(&renderer.device, texture.create_view(&Default::default())))
+                    .add(texture.create_view(&Default::default())))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -175,8 +169,7 @@ impl GltfModel {
     }
 
     fn build_materials(
-        renderer: &Renderer,
-        engine: &mut Engine,
+        resources: &ResourcesManager,
         doc: &gltf::Document,
         textures: &[TextureHandle],
     ) -> Vec<MaterialHandle> {
@@ -214,16 +207,14 @@ impl GltfModel {
             })
             .collect::<Vec<_>>();
 
-        engine
-            .resources
+        resources
             .get::<MaterialsManager>()
             .get_mut()
-            .add(&renderer.queue, &materials)
+            .add(&materials)
     }
 
     fn build_meshes(
-        renderer: &Renderer,
-        engine: &mut Engine,
+        resources: &ResourcesManager,
         doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
     ) -> Result<Vec<Vec<MeshHandle>>> {
@@ -292,15 +283,13 @@ impl GltfModel {
                             get_data(&gltf::Semantic::Weights(0)),
                         )
                         .map(|(joints, weights)| {
-                            engine.resources.get::<SkinsManager>().get_mut().add(
-                                &renderer.queue,
-                                joints,
-                                weights,
-                            )
+                            resources
+                                .get::<SkinsManager>()
+                                .get_mut()
+                                .add(joints, weights)
                         });
 
-                        let mesh = engine.resources.get::<MeshesManager>().get_mut().add(
-                            &renderer.queue,
+                        let mesh = resources.get::<MeshesManager>().get_mut().add(
                             bounding_sphere,
                             get_data_res(&gltf::Semantic::Positions)?,
                             get_data_res(&gltf::Semantic::Normals)?,
@@ -318,8 +307,7 @@ impl GltfModel {
     }
 
     fn build_skin_animations(
-        renderer: &Renderer,
-        engine: &mut Engine,
+        resources: &ResourcesManager,
         doc: &gltf::Document,
         buffers: &[gltf::buffer::Data],
     ) -> Vec<HashMap<String, AnimationHandle>> {
@@ -404,11 +392,10 @@ impl GltfModel {
                         time += Duration::from_secs_f32(1.0 / AnimationsManager::SAMPLES_PER_SEC);
                     }
 
-                    engine.resources.get::<AnimationsManager>().get_mut().add(
-                        &renderer.device,
-                        &renderer.queue,
-                        animation,
-                    )
+                    resources
+                        .get::<AnimationsManager>()
+                        .get_mut()
+                        .add(animation)
                 });
 
                 doc.animations()
@@ -419,12 +406,19 @@ impl GltfModel {
             .collect()
     }
 
-    fn nodes_data<'a>(
+    pub fn get_node(&self, name: &str) -> Option<gltf::Node<'_>> {
+        self.doc.nodes().find(|node| node.name() == Some(name))
+    }
+
+    pub fn get_animation(&self, name: &str) -> Option<AnimationHandle> {
+        self.animations.get(name).copied()
+    }
+
+    fn nodes_object<'a>(
         &self,
         nodes: impl Iterator<Item = gltf::Node<'a>>,
-        transform: glam::Mat4,
-        animation: Option<AnimationHandle>,
-    ) -> (Vec<Instance>, Vec<PointLight>) {
+        transform: Option<glam::Mat4>,
+    ) -> Object {
         let mut instances = vec![];
         let mut point_lights = vec![];
 
@@ -438,9 +432,8 @@ impl GltfModel {
                     .mesh()
                     .and_then(|mesh| self.meshes_instances.get(mesh.index()));
                 if let Some(mesh_instances) = mesh_instances {
-                    instances.extend(mesh_instances.iter().map(|&instance| Instance {
+                    instances.extend(mesh_instances.iter().map(|&instance| MeshInstance {
                         transform,
-                        animation: animation.unwrap_or_default().into(),
                         ..instance
                     }))
                 }
@@ -485,56 +478,27 @@ impl GltfModel {
 
                 Some(transform)
             },
-            transform,
+            transform.unwrap_or_default(),
         );
 
-        (instances, point_lights)
+        Object::new(&self.resources, instances, point_lights)
     }
 
-    pub fn node_instances(
-        &self,
-        node: gltf::Node,
-        transform: Option<glam::Mat4>,
-        animation: Option<AnimationHandle>,
-    ) -> (Vec<Instance>, Vec<PointLight>) {
-        let transform = transform.unwrap_or_default()
-            * glam::Mat4::from_cols_array_2d(&node.transform().matrix()).inverse();
-
-        self.nodes_data(std::iter::once(node), transform, animation)
+    pub fn node_object(&self, node: gltf::Node) -> Object {
+        let transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix()).inverse();
+        self.nodes_object(std::iter::once(node), Some(transform))
     }
 
-    fn scene_data(
-        &self,
-        scene: gltf::Scene,
-        transform: glam::Mat4,
-        animation: Option<AnimationHandle>,
-    ) -> (Vec<Instance>, Vec<PointLight>) {
-        self.nodes_data(scene.nodes(), transform, animation)
+    pub fn scene_object(&self, scene: gltf::Scene) -> Object {
+        self.nodes_object(scene.nodes(), None)
     }
 
-    pub fn scene_instances(
-        &self,
-        scene_name: Option<&str>,
-        transform: Option<glam::Mat4>,
-        animation: Option<AnimationHandle>,
-    ) -> Option<(Vec<Instance>, Vec<PointLight>)> {
-        let scene = if let Some(scene_name) = scene_name {
-            self.doc
-                .scenes()
-                .find(|scene| scene.name() == Some(scene_name))?
+    pub fn object(&self) -> Object {
+        if let Some(scene) = self.doc.default_scene() {
+            self.scene_object(scene)
         } else {
-            self.doc.default_scene()?
-        };
-
-        Some(self.scene_data(scene, transform.unwrap_or_default(), animation))
-    }
-
-    pub fn get_node(&self, name: &str) -> Option<gltf::Node<'_>> {
-        self.doc.nodes().find(|node| node.name() == Some(name))
-    }
-
-    pub fn get_animation(&self, name: &str) -> Option<AnimationHandle> {
-        self.animations.get(name).copied()
+            self.nodes_object(self.doc.nodes(), None)
+        }
     }
 }
 

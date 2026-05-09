@@ -1,4 +1,4 @@
-use crate::{util::id_generator::IdGenerator, SkinHandle};
+use crate::{util::id_generator::IdGenerator, Resource, SkinHandle};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -40,9 +40,12 @@ impl MeshInfo {
 }
 
 pub struct MeshesManager {
+    queue: wgpu::Queue,
+
+    ids: IdGenerator,
+
     vertex_offset: i32,
     base_index: u32,
-    ids: IdGenerator,
 
     pub(crate) meshes_info: wgpu::Buffer,
 
@@ -63,7 +66,7 @@ impl MeshesManager {
     pub const MAX_MESHES: usize = 1 << 16; // see MeshHandle
     pub const MAX_VERTS: usize = 1 << 22;
 
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let max_verts = Self::MAX_VERTS as wgpu::BufferAddress;
 
         let meshes_info = device.create_buffer(&wgpu::BufferDescriptor {
@@ -109,9 +112,11 @@ impl MeshesManager {
         });
 
         Self {
+            queue: queue.clone(),
+            ids: IdGenerator::new(0),
+
             vertex_offset: 0,
             base_index: 0,
-            ids: IdGenerator::new(0),
 
             meshes_info,
 
@@ -130,7 +135,6 @@ impl MeshesManager {
     #[allow(clippy::too_many_arguments)]
     pub fn add(
         &mut self,
-        queue: &wgpu::Queue,
         bounding_sphere: (glam::Vec3, f32),
         vertices: &[u8],
         normals: &[u8],
@@ -141,28 +145,28 @@ impl MeshesManager {
     ) -> MeshHandle {
         let handle = MeshHandle(self.ids.get());
 
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.vertices,
             self.vertex_offset as wgpu::BufferAddress * Self::VERTEX_SIZE,
             vertices,
         );
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.normals,
             self.vertex_offset as wgpu::BufferAddress * Self::NORMAL_SIZE,
             normals,
         );
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.tangents,
             self.vertex_offset as wgpu::BufferAddress * Self::TANGENT_SIZE,
             tangents,
         );
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.tex_coords0,
             self.vertex_offset as wgpu::BufferAddress * Self::TEX_COORD_SIZE,
             tex_coords0,
         );
 
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.indices,
             self.base_index as wgpu::BufferAddress * Self::INDEX_SIZE,
             indices,
@@ -171,7 +175,7 @@ impl MeshesManager {
         let vertex_len = (vertices.len() as i32) / (Self::VERTEX_SIZE as i32);
         let vertex_count = (indices.len() as u32) / (Self::INDEX_SIZE as u32);
 
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.meshes_info,
             MeshInfo::address(&handle),
             bytemuck::bytes_of(&MeshInfo {
@@ -195,8 +199,8 @@ impl MeshesManager {
     }
 }
 
-impl From<&wgpu::Device> for MeshesManager {
-    fn from(device: &wgpu::Device) -> Self {
-        Self::new(device)
+impl Resource for MeshesManager {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::new(device, queue)
     }
 }

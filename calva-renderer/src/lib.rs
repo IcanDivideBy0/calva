@@ -6,12 +6,14 @@ pub use wgpu;
 pub use egui;
 
 mod engine;
+mod object;
 mod passes;
 mod renderer;
 mod resources;
 mod uniform_buffer;
 
 pub use engine::*;
+pub use object::*;
 pub use passes::*;
 pub use renderer::*;
 pub use resources::*;

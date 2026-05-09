@@ -13,6 +13,7 @@ pub struct PointLightsPassInputs<'a> {
 }
 
 pub struct PointLightsPass {
+    device: wgpu::Device,
     camera: ResourceRef<CameraManager>,
     lights: ResourceRef<PointLightsManager>,
 
@@ -31,11 +32,8 @@ pub struct PointLightsPass {
 }
 
 impl PointLightsPass {
-    pub fn new(
-        device: &wgpu::Device,
-        resources: &ResourcesManager,
-        inputs: PointLightsPassInputs,
-    ) -> Self {
+    pub fn new(resources: &ResourcesManager, inputs: PointLightsPassInputs) -> Self {
+        let device = resources.device.clone();
         let camera = resources.get::<CameraManager>();
         let lights = resources.get::<PointLightsManager>();
 
@@ -188,7 +186,7 @@ impl PointLightsPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
 
         let lighting_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -260,6 +258,7 @@ impl PointLightsPass {
         };
 
         Self {
+            device,
             camera,
             lights,
 
@@ -278,9 +277,13 @@ impl PointLightsPass {
         }
     }
 
-    pub fn rebind(&mut self, device: &wgpu::Device, inputs: PointLightsPassInputs) {
-        self.bind_group =
-            Self::make_bind_group(device, &self.bind_group_layout, &self.sampler, &inputs);
+    pub fn rebind(&mut self, inputs: PointLightsPassInputs) {
+        self.bind_group = Self::make_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.sampler,
+            &inputs,
+        );
 
         self.output_view = inputs.output.create_view(&Default::default());
         self.depth_view = inputs.depth.create_view(&Default::default());

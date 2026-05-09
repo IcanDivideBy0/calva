@@ -4,7 +4,7 @@ struct Instance {
     /*
      * |                packed_data                    |
      * |-----------------------------------------------|
-     * | X | padding             | instance_id         |
+     * | X | instance_id         | update_mask         |
      * |   | u16                 | u16                 |
      * |---|-------------------------------------------|
      * | Y | active   | mat_id   | mesh_id             |
@@ -25,8 +25,12 @@ struct Instances {
 // Utils fn
 //
 
-fn instance_id(instance: Instance) -> u32 {
+fn instance_update_mask(instance: Instance) -> u32 {
     return instance.packed_data.x & 0xFFFF;
+}
+
+fn instance_id(instance: Instance) -> u32 {
+    return instance.packed_data.x >> 16;
 }
 
 fn instance_active(instance: Instance) -> bool {
@@ -80,5 +84,15 @@ fn maintain(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     atomicMax(&instances.count, instance_index + 1);
 
+    let prev_transform = instance.transform;
+    let prev_animation = instance.animation;
+
     *instance = update;
+
+    if (instance_update_mask(update) & 1u) == 0 {
+        instance.transform = prev_transform;
+    }
+    if (instance_update_mask(update) & 2u) == 0 {
+        instance.animation = prev_animation;
+    }
 }

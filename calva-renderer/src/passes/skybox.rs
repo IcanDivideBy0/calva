@@ -16,11 +16,8 @@ pub struct SkyboxPass {
 }
 
 impl SkyboxPass {
-    pub fn new(
-        device: &wgpu::Device,
-        resources: &ResourcesManager,
-        inputs: SkyboxPassInputs,
-    ) -> Self {
+    pub fn new(resources: &ResourcesManager, inputs: SkyboxPassInputs) -> Self {
+        let device = resources.device.clone();
         let camera = resources.get::<CameraManager>();
         let skybox = resources.get::<SkyboxManager>();
 

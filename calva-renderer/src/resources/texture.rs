@@ -3,11 +3,16 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use wesl::syntax::*;
 
+use crate::Resource;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TextureHandle(u32);
 
 pub struct TexturesManager {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+
     mipmaps: MipmapGenerator,
 
     views: Vec<wgpu::TextureView>,
@@ -18,7 +23,7 @@ pub struct TexturesManager {
 }
 
 impl TexturesManager {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let mipmaps = MipmapGenerator::new(device);
 
         let max_textures = device.limits().max_sampled_textures_per_shader_stage;
@@ -75,6 +80,9 @@ impl TexturesManager {
         let bind_group = Self::create_bind_group(device, &bind_group_layout, &views, &sampler);
 
         Self {
+            device: device.clone(),
+            queue: queue.clone(),
+
             mipmaps,
 
             views,
@@ -85,23 +93,26 @@ impl TexturesManager {
         }
     }
 
-    pub fn add(&mut self, device: &wgpu::Device, view: wgpu::TextureView) -> TextureHandle {
+    pub fn add(&mut self, view: wgpu::TextureView) -> TextureHandle {
         self.views.push(view);
 
-        self.bind_group =
-            Self::create_bind_group(device, &self.bind_group_layout, &self.views, &self.sampler);
+        self.bind_group = Self::create_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.views,
+            &self.sampler,
+        );
 
         TextureHandle(self.views.len() as u32 - 1)
     }
 
     pub fn generate_mipmaps(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
         texture: &wgpu::Texture,
         desc: &wgpu::TextureDescriptor,
     ) -> Result<()> {
-        self.mipmaps.generate_mipmaps(device, queue, texture, desc)
+        self.mipmaps
+            .generate_mipmaps(&self.device, &self.queue, texture, desc)
     }
 
     fn create_bind_group(
@@ -129,9 +140,9 @@ impl TexturesManager {
     }
 }
 
-impl From<&wgpu::Device> for TexturesManager {
-    fn from(device: &wgpu::Device) -> Self {
-        Self::new(device)
+impl Resource for TexturesManager {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::new(device, queue)
     }
 }
 

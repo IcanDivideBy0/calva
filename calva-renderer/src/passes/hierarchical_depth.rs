@@ -1,4 +1,4 @@
-use crate::RenderContext;
+use crate::{RenderContext, ResourcesManager};
 
 pub struct HierarchicalDepthPassInputs<'a> {
     pub depth: &'a wgpu::Texture,
@@ -9,6 +9,8 @@ pub struct HierarchicalDepthPassOutputs {
 }
 
 pub struct HierarchicalDepthPass {
+    device: wgpu::Device,
+
     pub outputs: HierarchicalDepthPassOutputs,
     output_view: wgpu::TextureView,
 
@@ -21,7 +23,9 @@ pub struct HierarchicalDepthPass {
 }
 
 impl HierarchicalDepthPass {
-    pub fn new(device: &wgpu::Device, inputs: HierarchicalDepthPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager, inputs: HierarchicalDepthPassInputs) -> Self {
+        let device = resources.device.clone();
+
         let size = (inputs.depth.width() / 16, inputs.depth.height() / 16);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -31,7 +35,7 @@ impl HierarchicalDepthPass {
             ..Default::default()
         });
 
-        let outputs = Self::make_outputs(device, &inputs);
+        let outputs = Self::make_outputs(&device, &inputs);
         let output_view = outputs.output.create_view(&Default::default());
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -70,7 +74,7 @@ impl HierarchicalDepthPass {
         });
 
         let bind_group =
-            Self::make_bind_group(device, &bind_group_layout, &sampler, &output_view, &inputs);
+            Self::make_bind_group(&device, &bind_group_layout, &sampler, &output_view, &inputs);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("HierarchicalDepth shader"),
@@ -95,6 +99,8 @@ impl HierarchicalDepthPass {
         });
 
         Self {
+            device,
+
             outputs,
             output_view,
 
@@ -107,14 +113,14 @@ impl HierarchicalDepthPass {
         }
     }
 
-    pub fn rebind(&mut self, device: &wgpu::Device, inputs: HierarchicalDepthPassInputs) {
+    pub fn rebind(&mut self, inputs: HierarchicalDepthPassInputs) {
         self.size = (inputs.depth.width() / 16, inputs.depth.height() / 16);
 
-        self.outputs = Self::make_outputs(device, &inputs);
+        self.outputs = Self::make_outputs(&self.device, &inputs);
         self.output_view = self.outputs.output.create_view(&Default::default());
 
         self.bind_group = Self::make_bind_group(
-            device,
+            &self.device,
             &self.bind_group_layout,
             &self.sampler,
             &self.output_view,

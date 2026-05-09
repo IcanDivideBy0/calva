@@ -1,6 +1,6 @@
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    CameraManager, RenderContext, Renderer,
+    CameraManager, RenderContext, ResourcesManager,
 };
 use noise::NoiseFn;
 
@@ -19,7 +19,13 @@ impl FogPass {
     const NOISE_SIZE: u32 = 128;
     const NOISE_SCALE: f64 = 1.0 / Self::NOISE_SIZE as f64;
 
-    pub fn new(renderer: &Renderer, camera: &CameraManager, input: FogPassInput) -> Self {
+    pub fn new(
+        resources: &ResourcesManager,
+        surface_config: wgpu::SurfaceConfiguration,
+        input: FogPassInput,
+    ) -> Self {
+        let camera = resources.get::<CameraManager>();
+
         let fbm = noise::Fbm::<noise::Perlin>::new(rand::random());
         let perlin = noise::Perlin::new(rand::random());
 
@@ -294,8 +300,8 @@ impl FogPass {
         })
         .collect::<Vec<_>>();
 
-        let noise_texture = renderer.device.create_texture_with_data(
-            &renderer.queue,
+        let noise_texture = resources.device.create_texture_with_data(
+            &resources.queue,
             &wgpu::TextureDescriptor {
                 label: Some("Fog perlin noise"),
                 size: wgpu::Extent3d {
@@ -314,7 +320,7 @@ impl FogPass {
             bytemuck::cast_slice(&noise_data),
         );
 
-        let sampler = renderer.device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = resources.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Fog sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -325,7 +331,7 @@ impl FogPass {
         });
 
         let bind_group_layout =
-            renderer
+            resources
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("Fog bind group layout"),
@@ -349,7 +355,7 @@ impl FogPass {
                     ],
                 });
 
-        let bind_group = renderer
+        let bind_group = resources
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Fog bind group"),
@@ -368,23 +374,23 @@ impl FogPass {
                 ],
             });
 
-        let shader = renderer
+        let shader = resources
             .device
             .create_shader_module(wgpu::include_wgsl!("fog.wgsl"));
 
         let pipeline_layout =
-            renderer
+            resources
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Fog pipeline layout"),
                     bind_group_layouts: &[
-                        Some(&camera.bind_group_layout),
+                        Some(&camera.get().bind_group_layout),
                         Some(&bind_group_layout),
                     ],
                     immediate_size: std::mem::size_of::<f32>() as _,
                 });
 
-        let pipeline = renderer
+        let pipeline = resources
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Fog pipeline"),
@@ -400,7 +406,7 @@ impl FogPass {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: renderer.surface_config.format,
+                        format: surface_config.format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],

@@ -49,14 +49,15 @@ pub struct GeometryPassOutputs {
 }
 
 pub struct GeometryPass {
-    pub outputs: GeometryPassOutputs,
-
+    device: wgpu::Device,
     camera: ResourceRef<CameraManager>,
     textures: ResourceRef<TexturesManager>,
     materials: ResourceRef<MaterialsManager>,
     meshes: ResourceRef<MeshesManager>,
     skins: ResourceRef<SkinsManager>,
     animations: ResourceRef<AnimationsManager>,
+
+    pub outputs: GeometryPassOutputs,
 
     cull: GeometryCull,
 
@@ -69,13 +70,8 @@ pub struct GeometryPass {
 }
 
 impl GeometryPass {
-    pub fn new(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
-        resources: &ResourcesManager,
-    ) -> Self {
-        let outputs = Self::make_outputs(device, surface_config);
-
+    pub fn new(surface_config: &wgpu::SurfaceConfiguration, resources: &ResourcesManager) -> Self {
+        let device = resources.device.clone();
         let camera = resources.get::<CameraManager>();
         let textures = resources.get::<TexturesManager>();
         let materials = resources.get::<MaterialsManager>();
@@ -83,12 +79,14 @@ impl GeometryPass {
         let skins = resources.get::<SkinsManager>();
         let animations = resources.get::<AnimationsManager>();
 
+        let outputs = Self::make_outputs(&device, surface_config);
+
         let albedo_metallic_view = outputs.albedo_metallic.create_view(&Default::default());
         let normal_roughness_view = outputs.normal_roughness.create_view(&Default::default());
         let emissive_view = outputs.emissive.create_view(&Default::default());
         let depth_view = outputs.depth.create_view(&Default::default());
 
-        let cull = GeometryCull::new(device, resources);
+        let cull = GeometryCull::new(&device, resources);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Geometry shader"),
@@ -181,14 +179,15 @@ impl GeometryPass {
         });
 
         Self {
-            outputs,
-
+            device,
             camera,
             textures,
             materials,
             meshes,
             skins,
             animations,
+
+            outputs,
 
             cull,
 
@@ -201,8 +200,8 @@ impl GeometryPass {
         }
     }
 
-    pub fn resize(&mut self, device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) {
-        self.outputs = Self::make_outputs(device, surface_config);
+    pub fn resize(&mut self, surface_config: &wgpu::SurfaceConfiguration) {
+        self.outputs = Self::make_outputs(&self.device, surface_config);
 
         self.albedo_metallic_view = self
             .outputs
@@ -355,7 +354,7 @@ impl GeometryPass {
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, GpuInstance, InstancesManager, MeshInfo, MeshesManager,
+        CameraManager, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
         ProfilerCommandEncoder, ResourceRef, ResourcesManager,
     };
 
@@ -364,7 +363,7 @@ mod cull {
     pub struct GeometryCull {
         camera: ResourceRef<CameraManager>,
         meshes: ResourceRef<MeshesManager>,
-        instances: ResourceRef<InstancesManager>,
+        mesh_instances: ResourceRef<MeshInstancesManager>,
 
         pub(crate) draw_instances: wgpu::Buffer,
         pub(crate) draw_indirects: wgpu::Buffer,
@@ -381,11 +380,12 @@ mod cull {
         pub fn new(device: &wgpu::Device, resources: &ResourcesManager) -> Self {
             let camera = resources.get::<CameraManager>();
             let meshes = resources.get::<MeshesManager>();
-            let instances = resources.get::<InstancesManager>();
+            let mesh_instances = resources.get::<MeshInstancesManager>();
 
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Geometry[cull] draw instances"),
-                size: (std::mem::size_of::<[DrawInstance; InstancesManager::MAX_INSTANCES]>()) as _,
+                size: (std::mem::size_of::<[DrawInstance; MeshInstancesManager::MAX_INSTANCES]>())
+                    as _,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::VERTEX,
@@ -445,7 +445,7 @@ mod cull {
                                 has_dynamic_offset: false,
                                 min_binding_size: wgpu::BufferSize::new(
                                     std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                        + GpuInstance::SIZE,
+                                        + GpuMeshInstance::SIZE,
                                 ),
                             },
                             count: None,
@@ -489,11 +489,11 @@ mod cull {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: instances.get().base_instances.as_entire_binding(),
+                        resource: mesh_instances.get().base_instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: instances.get().instances.as_entire_binding(),
+                        resource: mesh_instances.get().instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -552,7 +552,7 @@ mod cull {
             Self {
                 camera,
                 meshes,
-                instances,
+                mesh_instances,
 
                 draw_instances,
                 draw_indirects,
@@ -573,7 +573,7 @@ mod cull {
             let meshes_workgroups_count =
                 (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-            let instances_count = self.instances.get().count();
+            let instances_count = self.mesh_instances.get().count();
             let instances_workgroups_count =
                 (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 

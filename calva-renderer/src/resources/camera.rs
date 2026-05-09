@@ -1,4 +1,4 @@
-use crate::{UniformBuffer, UniformData};
+use crate::{Resource, UniformBuffer, UniformData};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -84,8 +84,8 @@ impl UniformData for Camera {
 pub struct CameraManager(UniformBuffer<Camera>);
 
 impl CameraManager {
-    pub fn new(device: &wgpu::Device) -> Self {
-        Self(UniformBuffer::new(device, Camera::default()))
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self(UniformBuffer::new(device, queue, Camera::default()))
     }
 }
 
@@ -103,8 +103,8 @@ impl std::ops::DerefMut for CameraManager {
     }
 }
 
-impl From<&wgpu::Device> for CameraManager {
-    fn from(device: &wgpu::Device) -> Self {
-        Self::new(device)
+impl Resource for CameraManager {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::new(device, queue)
     }
 }

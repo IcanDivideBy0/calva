@@ -1,4 +1,4 @@
-use crate::RenderContext;
+use crate::{RenderContext, ResourcesManager};
 
 pub struct FxaaPassInputs<'a> {
     pub input: &'a wgpu::Texture,
@@ -9,6 +9,8 @@ pub struct FxaaPassOutputs {
 }
 
 pub struct FxaaPass {
+    device: wgpu::Device,
+
     pub outputs: FxaaPassOutputs,
     output_view: wgpu::TextureView,
 
@@ -19,9 +21,11 @@ pub struct FxaaPass {
 }
 
 impl FxaaPass {
-    pub fn new(device: &wgpu::Device, inputs: FxaaPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager, inputs: FxaaPassInputs) -> Self {
+        let device = resources.device.clone();
+
         let outputs = FxaaPassOutputs {
-            output: Self::make_texture(device, &inputs),
+            output: Self::make_texture(&device, &inputs),
         };
         let output_view = outputs.output.create_view(&Default::default());
 
@@ -57,7 +61,7 @@ impl FxaaPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Fxaa pipeline layout"),
@@ -97,6 +101,8 @@ impl FxaaPass {
         });
 
         Self {
+            device,
+
             outputs,
             output_view,
 
@@ -107,14 +113,18 @@ impl FxaaPass {
         }
     }
 
-    pub fn rebind(&mut self, device: &wgpu::Device, inputs: FxaaPassInputs) {
+    pub fn rebind(&mut self, inputs: FxaaPassInputs) {
         self.outputs = FxaaPassOutputs {
-            output: Self::make_texture(device, &inputs),
+            output: Self::make_texture(&self.device, &inputs),
         };
         self.output_view = self.outputs.output.create_view(&Default::default());
 
-        self.bind_group =
-            Self::make_bind_group(device, &self.bind_group_layout, &self.sampler, &inputs);
+        self.bind_group = Self::make_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.sampler,
+            &inputs,
+        );
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {

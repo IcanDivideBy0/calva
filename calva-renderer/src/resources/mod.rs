@@ -1,8 +1,8 @@
 mod animation;
 mod camera;
-mod instance;
 mod material;
 mod mesh;
+mod mesh_instance;
 mod point_light;
 mod skin;
 mod skybox;
@@ -10,9 +10,9 @@ mod texture;
 
 pub use animation::*;
 pub use camera::*;
-pub use instance::*;
 pub use material::*;
 pub use mesh::*;
+pub use mesh_instance::*;
 pub use point_light::*;
 pub use skin::*;
 pub use skybox::*;
@@ -22,42 +22,44 @@ use parking_lot::RwLock;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    ops::{Deref, DerefMut},
     sync::Arc,
 };
 
-#[derive(Clone)]
-pub struct ResourceRef<T>(Arc<RwLock<T>>);
+pub trait Resource: Send + Sync + 'static {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self;
+}
 
-impl<T> ResourceRef<T>
-where
-    T: for<'a> From<&'a wgpu::Device>,
-{
-    pub fn get(&self) -> impl std::ops::Deref<Target = T> + '_ {
+#[derive(Clone)]
+pub struct ResourceRef<T: Resource>(Arc<RwLock<T>>);
+
+impl<T: Resource> ResourceRef<T> {
+    pub fn get(&self) -> impl Deref<Target = T> + '_ {
         self.0.as_ref().read()
     }
 
-    pub fn get_mut(&self) -> impl std::ops::DerefMut<Target = T> + '_ {
+    pub fn get_mut(&self) -> impl DerefMut<Target = T> + '_ {
         self.0.as_ref().write()
     }
 }
 
+#[derive(Clone)]
 pub struct ResourcesManager {
-    device: wgpu::Device,
-    resources: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    resources: Arc<RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>,
 }
 
 impl ResourcesManager {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         Self {
             device: device.clone(),
+            queue: queue.clone(),
             resources: Default::default(),
         }
     }
 
-    pub fn get<T>(&self) -> ResourceRef<T>
-    where
-        T: for<'a> From<&'a wgpu::Device> + Send + Sync + 'static,
-    {
+    pub fn get<T: Resource>(&self) -> ResourceRef<T> {
         let read = self.resources.read();
 
         let arc = match read.get(&TypeId::of::<T>()) {
@@ -69,7 +71,7 @@ impl ResourcesManager {
                     .write()
                     .entry(TypeId::of::<T>())
                     .or_insert_with(|| {
-                        let resource = <T as From<&wgpu::Device>>::from(&self.device);
+                        let resource = <T as Resource>::instanciate(&self.device, &self.queue);
                         Arc::new(RwLock::new(resource))
                     })
                     .clone()

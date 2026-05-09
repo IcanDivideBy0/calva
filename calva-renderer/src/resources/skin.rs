@@ -1,4 +1,4 @@
-use crate::MeshesManager;
+use crate::{MeshesManager, Resource};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -11,6 +11,8 @@ impl SkinHandle {
 }
 
 pub struct SkinsManager {
+    queue: wgpu::Queue,
+
     offset: u32,
     joints: wgpu::Buffer,
     weights: wgpu::Buffer,
@@ -23,7 +25,7 @@ impl SkinsManager {
     pub const JOINTS_SIZE: wgpu::BufferAddress = std::mem::size_of::<[u8; 4]>() as _;
     pub const WEIGHTS_SIZE: wgpu::BufferAddress = std::mem::size_of::<[f32; 4]>() as _;
 
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let max_verts: wgpu::BufferAddress = MeshesManager::MAX_VERTS as wgpu::BufferAddress;
 
         let joints = device.create_buffer(&wgpu::BufferDescriptor {
@@ -84,6 +86,8 @@ impl SkinsManager {
         });
 
         Self {
+            queue: queue.clone(),
+
             offset: 1,
             joints,
             weights,
@@ -93,16 +97,16 @@ impl SkinsManager {
         }
     }
 
-    pub fn add(&mut self, queue: &wgpu::Queue, joints: &[u8], weights: &[u8]) -> SkinHandle {
+    pub fn add(&mut self, joints: &[u8], weights: &[u8]) -> SkinHandle {
         let handle = SkinHandle(self.offset);
 
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.joints,
             handle.0 as wgpu::BufferAddress * Self::JOINTS_SIZE,
             joints,
         );
 
-        queue.write_buffer(
+        self.queue.write_buffer(
             &self.weights,
             handle.0 as wgpu::BufferAddress * Self::WEIGHTS_SIZE,
             weights,
@@ -114,8 +118,8 @@ impl SkinsManager {
     }
 }
 
-impl From<&wgpu::Device> for SkinsManager {
-    fn from(device: &wgpu::Device) -> Self {
-        Self::new(device)
+impl Resource for SkinsManager {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::new(device, queue)
     }
 }

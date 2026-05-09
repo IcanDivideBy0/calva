@@ -1,13 +1,11 @@
+use calva::renderer::Object;
 use noise::NoiseFn;
 use rand::prelude::*;
 use rand_seeder::SipHasher;
 use std::fmt;
 use std::{cell::RefCell, collections::BTreeSet, hash::Hash};
 
-use calva::{
-    gltf::GltfModel,
-    renderer::{Instance, PointLight},
-};
+use calva::gltf::GltfModel;
 
 pub mod tile;
 
@@ -43,33 +41,26 @@ impl WorldGenerator {
         self.options = tiles.iter().flat_map(SlotOption::permutations).collect();
     }
 
-    pub fn chunk(&self, model: &GltfModel, coord: glam::IVec2) -> (Vec<Instance>, Vec<PointLight>) {
+    pub fn chunk(&self, model: &GltfModel, coord: glam::IVec2) -> Vec<Object> {
         let chunk = Chunk::new(self.seed, coord, self.noise.as_ref(), &self.options);
 
         // dbg!(&chunk);
 
-        let mut instances = vec![];
-        let mut point_lights = vec![];
-
         let offset = coord * (Chunk::SIZE as i32);
 
         itertools::iproduct!(0..Chunk::SIZE, 0..Chunk::SIZE)
-            .filter_map(|(x, y)| -> Option<(Vec<Instance>, Vec<PointLight>)> {
+            .filter_map(|(x, y)| -> Option<Object> {
                 let slot = chunk.grid[y][x].borrow();
                 let opt = slot.options.first()?;
+                let transform = opt.transform(offset + glam::ivec2(x as _, y as _));
 
-                Some(model.node_instances(
-                    model.doc.nodes().nth(opt.id)?,
-                    Some(opt.transform(offset + glam::ivec2(x as _, y as _))),
-                    None,
-                ))
+                Some(
+                    model
+                        .node_object(model.doc.nodes().nth(opt.id)?)
+                        .with_transform(transform),
+                )
             })
-            .for_each(|res| {
-                instances.extend(res.0);
-                point_lights.extend(res.1);
-            });
-
-        (instances, point_lights)
+            .collect()
     }
 }
 
@@ -444,12 +435,13 @@ impl SlotOption {
     }
 
     fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
-        let quat = glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
+        let rotation =
+            glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
 
         let translation = glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32)
             * glam::vec3(Tile::WORLD_SIZE, Self::FLOOR_HEIGHT, Tile::WORLD_SIZE);
 
-        glam::Mat4::from_rotation_translation(quat, translation)
+        glam::Mat4::from_rotation_translation(rotation, translation)
     }
 }
 

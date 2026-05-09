@@ -4,6 +4,8 @@ use anyhow::{anyhow, Result};
 
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult};
 
+use crate::ResourcesManager;
+
 pub struct Renderer<'window> {
     pub surface: wgpu::Surface<'window>,
     pub surface_config: wgpu::SurfaceConfiguration,
@@ -11,8 +13,10 @@ pub struct Renderer<'window> {
     pub adapter: wgpu::Adapter,
     pub adapter_info: wgpu::AdapterInfo,
 
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub resources: ResourcesManager,
+
+    device: wgpu::Device,
+    queue: wgpu::Queue,
 
     profiler: RefCell<GpuProfiler>,
     profiler_results: RefCell<Vec<GpuTimerQueryResult>>,
@@ -99,6 +103,8 @@ impl<'window> Renderer<'window> {
 
             adapter,
             adapter_info,
+
+            resources: ResourcesManager::new(&device, &queue),
 
             device,
             queue,

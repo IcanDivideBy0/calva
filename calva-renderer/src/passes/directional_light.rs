@@ -63,12 +63,13 @@ pub struct DirectionalLightPassInputs<'a> {
 }
 
 pub struct DirectionalLightPass {
-    pub uniform: UniformBuffer<DirectionalLightUniform>,
-
+    device: wgpu::Device,
     camera: ResourceRef<CameraManager>,
     meshes: ResourceRef<MeshesManager>,
     skins: ResourceRef<SkinsManager>,
     animations: ResourceRef<AnimationsManager>,
+
+    pub uniform: UniformBuffer<DirectionalLightUniform>,
 
     output_view: wgpu::TextureView,
     cull: DirectionalLightCull,
@@ -93,19 +94,20 @@ impl DirectionalLightPass {
         depth_or_array_layers: 1,
     };
 
-    pub fn new(
-        device: &wgpu::Device,
-        resources: &ResourcesManager,
-        inputs: DirectionalLightPassInputs,
-    ) -> Self {
-        let uniform = UniformBuffer::new(device, DirectionalLightUniform::default());
-
+    pub fn new(resources: &ResourcesManager, inputs: DirectionalLightPassInputs) -> Self {
+        let device = resources.device.clone();
         let camera = resources.get::<CameraManager>();
         let meshes = resources.get::<MeshesManager>();
         let skins = resources.get::<SkinsManager>();
         let animations = resources.get::<AnimationsManager>();
 
-        let cull = DirectionalLightCull::new(device, resources, &uniform);
+        let uniform = UniformBuffer::new(
+            &device,
+            &resources.queue,
+            DirectionalLightUniform::default(),
+        );
+
+        let cull = DirectionalLightCull::new(resources, &uniform);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("DirectionalLight sampler"),
@@ -116,7 +118,7 @@ impl DirectionalLightPass {
 
         let output_view = inputs.output.create_view(&Default::default());
 
-        let light_depth = Self::make_depth_texture(device, Some("DirectionalLight depth texture"));
+        let light_depth = Self::make_depth_texture(&device, Some("DirectionalLight depth texture"));
         let light_depth_view = light_depth.create_view(&Default::default());
 
         let light_depth_pipeline = {
@@ -172,7 +174,7 @@ impl DirectionalLightPass {
             })
         };
 
-        let blur_pass = blur::DirectionalLightBlur::new(device, &light_depth);
+        let blur_pass = blur::DirectionalLightBlur::new(resources, &light_depth);
 
         let (lighting_bind_group_layout, lighting_bind_group, lighting_pipeline) = {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -241,7 +243,7 @@ impl DirectionalLightPass {
                 });
 
             let bind_group = Self::make_lighting_bind_group(
-                device,
+                &device,
                 &bind_group_layout,
                 &light_depth_view,
                 &sampler,
@@ -295,12 +297,13 @@ impl DirectionalLightPass {
         };
 
         Self {
-            uniform,
-
+            device,
             camera,
             meshes,
             skins,
             animations,
+
+            uniform,
 
             cull,
 
@@ -317,9 +320,9 @@ impl DirectionalLightPass {
         }
     }
 
-    pub fn rebind(&mut self, device: &wgpu::Device, inputs: DirectionalLightPassInputs) {
+    pub fn rebind(&mut self, inputs: DirectionalLightPassInputs) {
         self.lighting_bind_group = Self::make_lighting_bind_group(
-            device,
+            &self.device,
             &self.lighting_bind_group_layout,
             &self.light_depth_view,
             &self.sampler,
@@ -329,9 +332,9 @@ impl DirectionalLightPass {
         self.output_view = inputs.output.create_view(&Default::default());
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue) {
+    pub fn update(&mut self) {
         self.uniform.camera = ***self.camera.get();
-        self.uniform.update(queue);
+        self.uniform.update();
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -556,7 +559,7 @@ impl UniformData for DirectionalLightUniform {
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, GpuInstance, InstancesManager, MeshInfo, MeshesManager,
+        CameraManager, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
         ProfilerCommandEncoder, ResourceRef, ResourcesManager, UniformBuffer,
     };
 
@@ -565,7 +568,7 @@ mod cull {
     pub struct DirectionalLightCull {
         camera: ResourceRef<CameraManager>,
         meshes: ResourceRef<MeshesManager>,
-        instances: ResourceRef<InstancesManager>,
+        mesh_instances: ResourceRef<MeshInstancesManager>,
 
         pub(crate) draw_instances: wgpu::Buffer,
         pub(crate) draw_indirects: wgpu::Buffer,
@@ -580,17 +583,18 @@ mod cull {
 
     impl DirectionalLightCull {
         pub fn new(
-            device: &wgpu::Device,
             resources: &ResourcesManager,
             uniform: &UniformBuffer<DirectionalLightUniform>,
         ) -> Self {
+            let device = resources.device.clone();
             let camera = resources.get::<CameraManager>();
             let meshes = resources.get::<MeshesManager>();
-            let instances = resources.get::<InstancesManager>();
+            let mesh_instances = resources.get::<MeshInstancesManager>();
 
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("DirectionalLight[cull] draw instances"),
-                size: (std::mem::size_of::<[DrawInstance; InstancesManager::MAX_INSTANCES]>()) as _,
+                size: (std::mem::size_of::<[DrawInstance; MeshInstancesManager::MAX_INSTANCES]>())
+                    as _,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::VERTEX,
@@ -650,7 +654,7 @@ mod cull {
                                 has_dynamic_offset: false,
                                 min_binding_size: wgpu::BufferSize::new(
                                     std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                        + GpuInstance::SIZE,
+                                        + GpuMeshInstance::SIZE,
                                 ),
                             },
                             count: None,
@@ -694,11 +698,11 @@ mod cull {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: instances.get().base_instances.as_entire_binding(),
+                        resource: mesh_instances.get().base_instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: instances.get().instances.as_entire_binding(),
+                        resource: mesh_instances.get().instances.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -758,7 +762,7 @@ mod cull {
             Self {
                 camera,
                 meshes,
-                instances,
+                mesh_instances,
 
                 draw_instances,
                 draw_indirects,
@@ -783,7 +787,7 @@ mod cull {
             let meshes_workgroups_count =
                 (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-            let instances_count = self.instances.get().count();
+            let instances_count = self.mesh_instances.get().count();
             let instances_workgroups_count =
                 (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
@@ -810,7 +814,7 @@ mod cull {
 
 use blur::*;
 mod blur {
-    use crate::ProfilerCommandEncoder;
+    use crate::{ProfilerCommandEncoder, ResourcesManager};
 
     use super::DirectionalLightPass;
 
@@ -838,7 +842,9 @@ mod blur {
     }
 
     impl DirectionalLightBlur {
-        pub fn new(device: &wgpu::Device, output: &wgpu::Texture) -> Self {
+        pub fn new(resources: &ResourcesManager, output: &wgpu::Texture) -> Self {
+            let device = resources.device.clone();
+
             let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("DirectionalLightBlur sampler"),
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -848,7 +854,7 @@ mod blur {
             });
 
             let temp = DirectionalLightPass::make_depth_texture(
-                device,
+                &device,
                 Some("DirectionalLightBlur temp texture"),
             );
             let temp_view = temp.create_view(&Default::default());

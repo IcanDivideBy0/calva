@@ -4,14 +4,19 @@ use anyhow::{anyhow, Result};
 use async_std::task;
 use calva::{
     gltf::GltfModel,
-    nav::FlowField,
+    nav::HeatMap,
     renderer::{
-        egui, Camera, CameraManager, EguiWinitPass, Engine, InstanceHandle, InstancesManager,
-        PointLightHandle, PointLightsManager, Renderer, SkyboxManager,
+        egui, AmbientLightConfig, Camera, CameraManager, EguiWinitPass, Engine, Object, Renderer,
+        SkyboxManager, SsaoConfig, ToneMappingConfig, UniformBuffer,
     },
 };
 use core::f32;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use glam::Vec3Swizzles;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+    time::Instant,
+};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -50,6 +55,8 @@ struct DemoState<'a> {
     renderer: Renderer<'a>,
     engine: Engine,
     egui: EguiWinitPass,
+
+    monster_objects: Vec<Object>,
 }
 
 struct DemoApp<'a> {
@@ -57,13 +64,13 @@ struct DemoApp<'a> {
 
     worldgen: worldgen::WorldGenerator,
     worldgen_model: Option<GltfModel>,
-    worldgen_chunks: HashMap<glam::IVec2, (Vec<InstanceHandle>, Vec<PointLightHandle>)>,
+    worldgen_chunks: HashMap<glam::IVec2, Vec<Object>>,
 
-    nav_tile: Option<calva::nav::NavTile<{ Tile::TEXTURE_SIZE }>>,
+    height_map: Option<calva::nav::HeightMap<{ Tile::TEXTURE_SIZE }>>,
+    heat_map: Option<calva::nav::HeatMap<{ Tile::TEXTURE_SIZE }>>,
     navgrid_debug: Option<debug::Debug>,
 
     monsters_models: Vec<GltfModel>,
-    monsters_instances: Vec<InstanceHandle>,
 
     kb_modifiers: ModifiersState,
     render_time: Instant,
@@ -78,11 +85,11 @@ impl DemoApp<'_> {
             worldgen_model: None,
             worldgen_chunks: HashMap::new(),
 
-            nav_tile: None,
+            height_map: None,
+            heat_map: None,
             navgrid_debug: None,
 
             monsters_models: vec![],
-            monsters_instances: vec![],
 
             kb_modifiers: ModifiersState::empty(),
             render_time: Instant::now(),
@@ -115,7 +122,7 @@ impl DemoApp<'_> {
             .resources
             .get::<SkyboxManager>()
             .get_mut()
-            .set_skybox(&state.renderer.device, &state.renderer.queue, &pixels);
+            .set_skybox(&pixels);
 
         Ok(())
     }
@@ -131,10 +138,9 @@ impl DemoApp<'_> {
         let mut dungeon_buffer = Vec::new();
         std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
         let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
-        let worldgen_model =
-            GltfModel::new(&state.renderer, &mut state.engine, doc, &buffers, &images)?;
+        let worldgen_model = GltfModel::new(&state.engine.resources, doc, &buffers, &images)?;
 
-        let tile_builder = worldgen::tile::TileBuilder::new(&state.renderer.device);
+        let tile_builder = worldgen::tile::TileBuilder::new(&state.engine.resources.device);
 
         let tiles = [
             "module01", "module03", "module07", "module08", "module09", "module10", "module11",
@@ -144,8 +150,8 @@ impl DemoApp<'_> {
         .iter()
         .filter_map(|node_name| {
             tile_builder.build(
-                &state.renderer.device,
-                &state.renderer.queue,
+                &state.engine.resources.device,
+                &state.engine.resources.queue,
                 &buffers,
                 worldgen_model.get_node(node_name)?,
             )
@@ -155,45 +161,25 @@ impl DemoApp<'_> {
         self.worldgen.set_tiles(&tiles);
 
         let tile = &tiles[7];
-        let nav_tile = calva::nav::NavTile::new(&tile.height_map, Tile::PIXEL_SIZE);
-        dbg!(&nav_tile);
-
-        let flowfield = FlowField::new(&nav_tile, glam::usizevec2(60, 32));
-
-        dbg!(&flowfield);
+        let height_map = calva::nav::HeightMap::new(&tile.height_map, Tile::PIXEL_SIZE);
+        dbg!(&height_map);
 
         self.navgrid_debug = Some(debug::Debug::new(
-            &state.renderer.device,
+            &state.engine.resources.device,
             &state.engine.resources.get::<CameraManager>().get(),
-            &nav_tile.triangles,
+            &height_map.triangles,
             state.renderer.surface_config.format,
             debug::DebugInput {
                 depth: &state.engine.geometry.outputs.depth,
             },
         ));
 
-        {
-            let (instances, point_lights) = worldgen_model.node_instances(
-                worldgen_model.doc.nodes().nth(tile.node_id).unwrap(),
-                None,
-                None,
-            );
-            state
-                .engine
-                .resources
-                .get::<InstancesManager>()
-                .get_mut()
-                .add(&instances);
-            state
-                .engine
-                .resources
-                .get::<PointLightsManager>()
-                .get_mut()
-                .add(&state.renderer.queue, &point_lights);
-        }
+        worldgen_model
+            .node_object(worldgen_model.doc.nodes().nth(tile.node_id).unwrap())
+            .with_static(true);
 
         self.worldgen_model = Some(worldgen_model);
-        self.nav_tile = Some(nav_tile);
+        self.height_map = Some(height_map);
 
         Ok(())
     }
@@ -223,7 +209,7 @@ impl DemoApp<'_> {
         ]
         .iter()
         // .take(1)
-        .map(|filepath| GltfModel::from_path(&state.renderer, &mut state.engine, filepath))
+        .map(|filepath| GltfModel::from_path(&state.engine.resources, filepath))
         .collect::<Result<Vec<_>>>()?;
 
         Ok(())
@@ -255,12 +241,14 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             window.inner_size().into(),
         ))
         .unwrap();
-        let mut engine = Engine::new(&renderer);
+        let engine = Engine::new(&renderer);
 
-        engine.ambient_light.config.color = [0.106535, 0.061572, 0.037324];
-        engine.ambient_light.config.strength = 0.1;
+        let ambient_light_config = engine.resources.get::<UniformBuffer<AmbientLightConfig>>();
+        let mut ambient_light_config = ambient_light_config.get_mut();
+        ambient_light_config.color = [0.106535, 0.061572, 0.037324];
+        ambient_light_config.strength = 0.1;
 
-        let egui = EguiWinitPass::new(&renderer.device, &renderer.surface_config, &window);
+        let egui = EguiWinitPass::new(&engine.resources, &renderer.surface_config, &window);
 
         self.state = Some(DemoState {
             window,
@@ -271,6 +259,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             renderer,
             engine,
             egui,
+            monster_objects: vec![],
         });
 
         self.init_skybox().unwrap();
@@ -318,44 +307,38 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
                     let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
 
-                    let instances_manager_resource =
-                        state.engine.resources.get::<InstancesManager>();
-                    let mut instances_manager = instances_manager_resource.get_mut();
-
-                    let point_lights_manager_resource =
-                        state.engine.resources.get::<PointLightsManager>();
-                    let mut point_lights_manager = point_lights_manager_resource.get_mut();
-
                     self.worldgen_chunks
-                        .retain(|pos, (instances, point_lights)| {
-                            let should_remove =
-                                !chunk_x.contains(&pos.x) || !chunk_y.contains(&pos.y);
-
-                            if should_remove {
-                                instances_manager.remove(instances);
-                                point_lights_manager.remove(&state.renderer.queue, point_lights);
-                            }
-
-                            !should_remove
-                        });
+                        .retain(|pos, _| chunk_x.contains(&pos.x) && chunk_y.contains(&pos.y));
 
                     for key in
                         itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y))
                     {
-                        if let std::collections::hash_map::Entry::Vacant(entry) =
-                            self.worldgen_chunks.entry(key)
-                        {
-                            // let (instances, point_lights) = self
-                            //     .worldgen
-                            //     .chunk(self.worldgen_model.as_ref().unwrap(), key);
-
-                            entry.insert((
-                                vec![],
-                                vec![],
-                                // instances_manager.add(&instances),
-                                // point_lights_manager.add(&state.renderer.queue, &point_lights),
-                            ));
+                        if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
+                            let model = self.worldgen_model.as_ref().unwrap();
+                            entry.insert(self.worldgen.chunk(model, key));
                         }
+                    }
+                }
+
+                // Update monster pos
+                if let (Some(height_map), Some(heat_map)) = (&self.height_map, &self.heat_map) {
+                    for monster in &mut state.monster_objects {
+                        let mut transform = monster.transform();
+                        let (_, _, translation) = transform.to_scale_rotation_translation();
+
+                        let grid_coord = Tile::get_grid_coord(&translation.xz());
+
+                        let dir = heat_map.apply_kernel(grid_coord) * Tile::PIXEL_SIZE / 4.0;
+
+                        let new_grid_coord = Tile::get_grid_coord(&(translation.xz() + dir));
+
+                        let dh = height_map.get_height(&new_grid_coord).unwrap_or_default()
+                            - height_map.get_height(&grid_coord).unwrap_or_default();
+
+                        transform =
+                            glam::Mat4::from_translation(glam::vec3(dir.x, dh, dir.y)) * transform;
+
+                        monster.set_transform(transform);
                     }
                 }
 
@@ -387,9 +370,19 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         .show_inside(ui, |ui| {
                             ui.add(&state.renderer);
 
-                            ui.add(&mut *state.engine.ambient_light.config);
-                            ui.add(&mut *state.engine.ssao.config);
-                            ui.add(&mut *state.engine.tone_mapping.config);
+                            let resources = &state.engine.resources;
+
+                            ui.add(
+                                &mut **resources
+                                    .get::<UniformBuffer<AmbientLightConfig>>()
+                                    .get_mut(),
+                            );
+                            ui.add(&mut **resources.get::<UniformBuffer<SsaoConfig>>().get_mut());
+                            ui.add(
+                                &mut **resources
+                                    .get::<UniformBuffer<ToneMappingConfig>>()
+                                    .get_mut(),
+                            );
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)
@@ -449,8 +442,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                 });
                         });
                 });
-
-                state.engine.update(&state.renderer);
+                state.engine.update();
 
                 let result = state.renderer.render(|ctx| {
                     state.engine.render(ctx);
@@ -498,7 +490,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 button,
                 ..
             } => {
-                if let Some(nav_tile) = self.nav_tile.as_ref() {
+                if let Some(height_map) = self.height_map.as_ref() {
                     let camera_ref = state.engine.resources.get::<CameraManager>();
                     let camera = camera_ref.get();
 
@@ -510,42 +502,35 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         ),
                     );
 
-                    if let Some(hit) = nav_tile.ray_cast(ro, rd) {
+                    if let Some(hit) = height_map.ray_cast(ro, rd) {
                         if button == MouseButton::Left {
-                            let tile_pos = (hit / Tile::WORLD_SIZE) + 0.5;
-                            let tile_pos = tile_pos * Tile::TEXTURE_SIZE as f32;
-                            let target = glam::usizevec2(tile_pos.x as usize, tile_pos.z as usize);
-                            dbg!(FlowField::new(nav_tile, target));
+                            let grid_coord = Tile::get_grid_coord(&hit.xz());
+                            let heat_map = HeatMap::new(height_map, grid_coord);
+                            dbg!(&heat_map);
+                            self.heat_map = Some(heat_map);
                         }
 
                         if button == MouseButton::Right {
-                            let transform = glam::Mat4::from_rotation_translation(
-                                glam::Quat::from_rotation_y(
+                            let transform = glam::Mat4::from_translation(hit)
+                                * glam::Mat4::from_axis_angle(
+                                    glam::Vec3::Y,
                                     rand::random::<f32>() * f32::consts::TAU,
-                                ),
-                                hit,
-                            );
-
-                            let monster = &self.monsters_models
-                                [rand::random::<u32>() as usize % self.monsters_models.len()];
-
-                            let animation_keys = monster.animations.keys().collect::<Vec<_>>();
-                            let animation = &monster.animations[animation_keys
-                                [rand::random::<u32>() as usize % animation_keys.len()]];
-
-                            let instances_handles = state
-                                .engine
-                                .resources
-                                .get::<InstancesManager>()
-                                .get_mut()
-                                .add(
-                                    &monster
-                                        .scene_instances(None, Some(transform), Some(*animation))
-                                        .unwrap()
-                                        .0,
                                 );
 
-                            self.monsters_instances.extend(instances_handles);
+                            let monster_model = &self.monsters_models
+                                [rand::random::<u32>() as usize % self.monsters_models.len()];
+
+                            let animation_keys =
+                                monster_model.animations.keys().collect::<Vec<_>>();
+                            let animation = &monster_model.animations[animation_keys
+                                [rand::random::<u32>() as usize % animation_keys.len()]];
+
+                            state.monster_objects.push(
+                                monster_model
+                                    .object()
+                                    .with_transform(transform)
+                                    .with_animation((*animation).into()),
+                            );
                         }
                     }
                 }
@@ -557,14 +542,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     physical_key: PhysicalKey::Code(KeyCode::KeyR),
                     ..
                 } => {
-                    if let Some(handle) = self.monsters_instances.pop() {
-                        state
-                            .engine
-                            .resources
-                            .get::<InstancesManager>()
-                            .get_mut()
-                            .remove(&mut [handle])
-                    }
+                    state.monster_objects.pop();
                 }
 
                 KeyEvent {
@@ -572,33 +550,21 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     physical_key: PhysicalKey::Code(KeyCode::KeyT),
                     ..
                 } => {
-                    for (z, monster) in self.monsters_models.iter().enumerate() {
-                        for (x, animation) in monster.animations.values().enumerate() {
+                    for (z, monster_model) in self.monsters_models.iter().enumerate() {
+                        for (x, animation) in monster_model.animations.values().enumerate() {
                             for y in 0..1 {
                                 let transform = glam::Mat4::from_translation(glam::vec3(
                                     4.0 * x as f32,
                                     8.0 + 4.0 * y as f32,
                                     4.0 * z as f32,
                                 ));
-                                // let transform = glam::Mat4::IDENTITY;
 
-                                let instances_handles = state
-                                    .engine
-                                    .resources
-                                    .get::<InstancesManager>()
-                                    .get_mut()
-                                    .add(
-                                        &monster
-                                            .scene_instances(
-                                                None,
-                                                Some(transform),
-                                                Some(*animation),
-                                            )
-                                            .unwrap()
-                                            .0,
-                                    );
-
-                                self.monsters_instances.extend(instances_handles);
+                                state.monster_objects.push(
+                                    monster_model
+                                        .object()
+                                        .with_transform(transform)
+                                        .with_animation((*animation).into()),
+                                );
                             }
                         }
                     }

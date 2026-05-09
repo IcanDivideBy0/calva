@@ -1,4 +1,4 @@
-use crate::{RenderContext, UniformBuffer};
+use crate::{RenderContext, ResourceRef, ResourcesManager, UniformBuffer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -47,7 +47,9 @@ pub struct AmbientLightPassOutputs {
 }
 
 pub struct AmbientLightPass {
-    pub config: UniformBuffer<AmbientLightConfig>,
+    device: wgpu::Device,
+    config: ResourceRef<UniformBuffer<AmbientLightConfig>>,
+
     pub outputs: AmbientLightPassOutputs,
     output_view: wgpu::TextureView,
 
@@ -57,10 +59,11 @@ pub struct AmbientLightPass {
 }
 
 impl AmbientLightPass {
-    pub fn new(device: &wgpu::Device, inputs: AmbientLightPassInputs) -> Self {
-        let config = UniformBuffer::new(device, AmbientLightConfig::default());
+    pub fn new(resources: &ResourcesManager, inputs: AmbientLightPassInputs) -> Self {
+        let device = resources.device.clone();
+        let config = resources.get::<UniformBuffer<AmbientLightConfig>>();
 
-        let outputs = Self::make_outputs(device, &inputs);
+        let outputs = Self::make_outputs(&device, &inputs);
         let output_view = outputs.output.create_view(&Default::default());
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -91,7 +94,7 @@ impl AmbientLightPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &inputs);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("AmbientLight shader"),
@@ -100,7 +103,10 @@ impl AmbientLightPass {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("AmbientLight pipeline layout"),
-            bind_group_layouts: &[Some(&config.bind_group_layout), Some(&bind_group_layout)],
+            bind_group_layouts: &[
+                Some(&config.get().bind_group_layout),
+                Some(&bind_group_layout),
+            ],
             immediate_size: 0,
         });
 
@@ -131,6 +137,8 @@ impl AmbientLightPass {
         });
 
         Self {
+            device,
+
             config,
             outputs,
             output_view,
@@ -141,15 +149,15 @@ impl AmbientLightPass {
         }
     }
 
-    pub fn rebind(&mut self, device: &wgpu::Device, inputs: AmbientLightPassInputs) {
-        self.outputs = Self::make_outputs(device, &inputs);
+    pub fn rebind(&mut self, inputs: AmbientLightPassInputs) {
+        self.outputs = Self::make_outputs(&self.device, &inputs);
         self.output_view = self.outputs.output.create_view(&Default::default());
 
-        self.bind_group = Self::make_bind_group(device, &self.bind_group_layout, &inputs);
+        self.bind_group = Self::make_bind_group(&self.device, &self.bind_group_layout, &inputs);
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue) {
-        self.config.update(queue);
+    pub fn update(&mut self) {
+        self.config.get_mut().update();
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -172,7 +180,7 @@ impl AmbientLightPass {
         );
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.config.bind_group, &[]);
+        rpass.set_bind_group(0, &self.config.get().bind_group, &[]);
         rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);

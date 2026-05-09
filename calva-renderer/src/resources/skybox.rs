@@ -1,6 +1,11 @@
 use wgpu::util::DeviceExt;
 
+use crate::Resource;
+
 pub struct SkyboxManager {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+
     sampler: wgpu::Sampler,
 
     pub bind_group_layout: wgpu::BindGroupLayout,
@@ -8,7 +13,7 @@ pub struct SkyboxManager {
 }
 
 impl SkyboxManager {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Skybox sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -38,6 +43,9 @@ impl SkyboxManager {
         });
 
         Self {
+            device: device.clone(),
+            queue: queue.clone(),
+
             sampler,
 
             bind_group_layout,
@@ -45,12 +53,13 @@ impl SkyboxManager {
         }
     }
 
-    pub fn set_skybox(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, pixels: &[u8]) {
+    pub fn set_skybox(&mut self, pixels: &[u8]) {
         let size = (pixels.len() as f32 / (4.0 * 6.0)).sqrt() as _;
 
-        let view = device
+        let view = self
+            .device
             .create_texture_with_data(
-                queue,
+                &self.queue,
                 &wgpu::TextureDescriptor {
                     label: Some("Skybox texture"),
                     size: wgpu::Extent3d {
@@ -75,7 +84,7 @@ impl SkyboxManager {
                 ..Default::default()
             });
 
-        self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+        self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Skybox bind group"),
             layout: &self.bind_group_layout,
             entries: &[
@@ -92,8 +101,8 @@ impl SkyboxManager {
     }
 }
 
-impl From<&wgpu::Device> for SkyboxManager {
-    fn from(device: &wgpu::Device) -> Self {
-        Self::new(device)
+impl Resource for SkyboxManager {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::new(device, queue)
     }
 }

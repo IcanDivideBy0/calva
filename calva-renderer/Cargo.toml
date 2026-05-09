@@ -10,8 +10,10 @@ egui-winit = ["dep:egui-winit"]
 
 [dependencies]
 anyhow = "1.0"
+bitflags = { version = "2.11", features = ["bytemuck"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = { version = "0.32", features = ["bytemuck"] }
+itertools = "0.14"
 parking_lot = "0.12"
 raw-window-handle = "0.6"
 rand = "0.10"

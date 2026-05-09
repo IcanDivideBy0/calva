@@ -385,12 +385,13 @@ impl Tile {
     }
 
     pub fn get_grid_coord(local_coord: &glam::Vec2) -> glam::USizeVec2 {
-        let coord = (local_coord / Self::PIXEL_SIZE).clamp(
+        let coord_norm = local_coord / Self::WORLD_SIZE + 0.5;
+        let grid_coord = (coord_norm * Self::TEXTURE_SIZE as f32).clamp(
             glam::Vec2::ZERO,
             glam::Vec2::splat((Self::TEXTURE_SIZE - 1) as f32),
         );
 
-        glam::usizevec2(coord.x.floor() as usize, coord.y.floor() as usize)
+        glam::usizevec2(grid_coord.x as usize, grid_coord.y as usize)
     }
 }
 
