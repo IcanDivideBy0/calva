@@ -20,16 +20,14 @@ impl Object {
         point_lights: Vec<PointLight>,
     ) -> Self {
         let mesh_instances = {
-            let mesh_instances_manager = resources.get::<MeshInstancesManager>();
-
-            let handles = mesh_instances_manager.get_mut().add(&mesh_instances);
+            let handles = resources
+                .write::<MeshInstancesManager>()
+                .add(&mesh_instances);
             std::iter::zip(handles, mesh_instances).collect()
         };
 
         let point_lights = {
-            let point_lights_manager = resources.get::<PointLightsManager>();
-
-            let handles = point_lights_manager.get_mut().add(&point_lights);
+            let handles = resources.write::<PointLightsManager>().add(&point_lights);
             std::iter::zip(handles, point_lights).collect()
         };
 
@@ -64,8 +62,7 @@ impl Object {
     }
 
     pub fn set_transform(&mut self, transform: glam::Mat4) {
-        let mesh_instances_manager = self.resources.get::<MeshInstancesManager>();
-        mesh_instances_manager.get_mut().replace(
+        self.resources.write::<MeshInstancesManager>().replace(
             &self
                 .mesh_instances
                 .iter()
@@ -83,8 +80,7 @@ impl Object {
                 .collect::<Vec<_>>(),
         );
 
-        let point_lights_manager = self.resources.get::<PointLightsManager>();
-        point_lights_manager.get_mut().replace(
+        self.resources.write::<PointLightsManager>().replace(
             &mut self
                 .point_lights
                 .iter()
@@ -105,8 +101,7 @@ impl Object {
     }
 
     pub fn set_animation(&mut self, animation: AnimationState) {
-        let mesh_instances_manager = self.resources.get::<MeshInstancesManager>();
-        mesh_instances_manager.get_mut().replace(
+        self.resources.write::<MeshInstancesManager>().replace(
             &self
                 .mesh_instances
                 .iter_mut()
@@ -134,8 +129,7 @@ impl Drop for Object {
             return;
         }
 
-        let mesh_instances_manager = self.resources.get::<MeshInstancesManager>();
-        mesh_instances_manager.get_mut().remove(
+        self.resources.write::<MeshInstancesManager>().remove(
             &mut self
                 .mesh_instances
                 .iter()
@@ -144,8 +138,7 @@ impl Drop for Object {
                 .collect::<Vec<_>>(),
         );
 
-        let point_lights_manager = self.resources.get::<PointLightsManager>();
-        point_lights_manager.get_mut().remove(
+        self.resources.write::<PointLightsManager>().remove(
             &mut self
                 .point_lights
                 .iter()

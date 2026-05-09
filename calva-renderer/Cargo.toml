@@ -14,13 +14,14 @@ bitflags = { version = "2.11", features = ["bytemuck"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = { version = "0.32", features = ["bytemuck"] }
 itertools = "0.14"
-parking_lot = "0.12"
+parking_lot = { version = "0.12", features = ["arc_lock"] }
 raw-window-handle = "0.6"
 rand = "0.10"
 wgpu = { version = "29.0" }
 wgpu-profiler = { version = "0.27" }
 wesl = { version = "0.3" }
 wesl-quote = { version = "0.3" }
+downcast-rs = { version = "2.0" }
 
 # Egui
 egui = { version = "0.34", optional = true }

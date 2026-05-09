@@ -24,7 +24,7 @@ impl FogPass {
         surface_config: wgpu::SurfaceConfiguration,
         input: FogPassInput,
     ) -> Self {
-        let camera = resources.get::<CameraManager>();
+        let camera = resources.read::<CameraManager>();
 
         let fbm = noise::Fbm::<noise::Perlin>::new(rand::random());
         let perlin = noise::Perlin::new(rand::random());
@@ -384,7 +384,7 @@ impl FogPass {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Fog pipeline layout"),
                     bind_group_layouts: &[
-                        Some(&camera.get().bind_group_layout),
+                        Some(&camera.bind_group_layout),
                         Some(&bind_group_layout),
                     ],
                     immediate_size: std::mem::size_of::<f32>() as _,

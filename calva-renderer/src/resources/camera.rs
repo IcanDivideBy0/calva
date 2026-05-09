@@ -107,4 +107,8 @@ impl Resource for CameraManager {
     fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         Self::new(device, queue)
     }
+
+    fn update(&mut self) {
+        self.0.update();
+    }
 }

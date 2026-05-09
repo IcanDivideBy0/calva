@@ -9,7 +9,7 @@ pub struct FxaaPassOutputs {
 }
 
 pub struct FxaaPass {
-    device: wgpu::Device,
+    resources: ResourcesManager,
 
     pub outputs: FxaaPassOutputs,
     output_view: wgpu::TextureView,
@@ -22,10 +22,11 @@ pub struct FxaaPass {
 
 impl FxaaPass {
     pub fn new(resources: &ResourcesManager, inputs: FxaaPassInputs) -> Self {
-        let device = resources.device.clone();
+        let resources = resources.clone();
+        let device = &resources.device;
 
         let outputs = FxaaPassOutputs {
-            output: Self::make_texture(&device, &inputs),
+            output: Self::make_texture(device, &inputs),
         };
         let output_view = outputs.output.create_view(&Default::default());
 
@@ -61,7 +62,7 @@ impl FxaaPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Fxaa pipeline layout"),
@@ -101,7 +102,7 @@ impl FxaaPass {
         });
 
         Self {
-            device,
+            resources,
 
             outputs,
             output_view,
@@ -115,12 +116,12 @@ impl FxaaPass {
 
     pub fn rebind(&mut self, inputs: FxaaPassInputs) {
         self.outputs = FxaaPassOutputs {
-            output: Self::make_texture(&self.device, &inputs),
+            output: Self::make_texture(&self.resources.device, &inputs),
         };
         self.output_view = self.outputs.output.create_view(&Default::default());
 
         self.bind_group = Self::make_bind_group(
-            &self.device,
+            &self.resources.device,
             &self.bind_group_layout,
             &self.sampler,
             &inputs,

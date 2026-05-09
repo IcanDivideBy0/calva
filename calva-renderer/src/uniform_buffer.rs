@@ -108,4 +108,8 @@ where
     fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         Self::new(device, queue, Default::default())
     }
+
+    fn update(&mut self) {
+        self.update()
+    }
 }

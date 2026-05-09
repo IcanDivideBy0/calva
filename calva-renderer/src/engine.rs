@@ -1,5 +1,5 @@
 use crate::{
-    AmbientLightPass, AmbientLightPassInputs, AnimatePass, CameraManager, DirectionalLightPass,
+    AmbientLightPass, AmbientLightPassInputs, AnimatePass, DirectionalLightPass,
     DirectionalLightPassInputs, FxaaPass, FxaaPassInputs, GeometryPass, HierarchicalDepthPass,
     HierarchicalDepthPassInputs, MeshInstancesManager, PointLightsPass, PointLightsPassInputs,
     RenderContext, Renderer, ResourcesManager, SkyboxPass, SkyboxPassInputs, SsaoPass,
@@ -160,25 +160,12 @@ impl Engine {
     }
 
     pub fn update(&mut self) {
-        self.resources.get::<CameraManager>().get_mut().update();
-
-        self.resources
-            .get::<MeshInstancesManager>()
-            .get_mut()
-            .update();
-
-        self.animate.update();
+        self.resources.update();
         self.directional_light.update();
-        self.ambient_light.update();
-        self.ssao.update();
-        self.tone_mapping.update();
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        self.resources
-            .get::<MeshInstancesManager>()
-            .get_mut()
-            .maintain(ctx);
+        self.resources.read::<MeshInstancesManager>().maintain(ctx);
 
         self.animate.render(ctx);
         self.geometry.render(ctx);

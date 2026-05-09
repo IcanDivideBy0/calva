@@ -1,8 +1,7 @@
 use crate::{RenderContext, Renderer, ResourcesManager};
 
 pub struct EguiPass {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    resources: ResourcesManager,
 
     paint_jobs: Vec<egui::ClippedPrimitive>,
     screen_descriptor: egui_wgpu::ScreenDescriptor,
@@ -11,11 +10,11 @@ pub struct EguiPass {
 
 impl EguiPass {
     pub fn new(resources: &ResourcesManager, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let device = resources.device.clone();
-        let queue = resources.queue.clone();
+        let resources = resources.clone();
+        let device = &resources.device;
 
         let egui_renderer =
-            egui_wgpu::Renderer::new(&device, surface_config.format, Default::default());
+            egui_wgpu::Renderer::new(device, surface_config.format, Default::default());
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
@@ -23,8 +22,7 @@ impl EguiPass {
         };
 
         Self {
-            device,
-            queue,
+            resources,
 
             paint_jobs: vec![],
             screen_descriptor,
@@ -51,22 +49,31 @@ impl EguiPass {
         self.paint_jobs = context.tessellate(shapes, self.screen_descriptor.pixels_per_point);
 
         for (texture_id, image_delta) in &textures_delta.set {
-            self.egui_renderer
-                .update_texture(&self.device, &self.queue, *texture_id, image_delta);
+            self.egui_renderer.update_texture(
+                &self.resources.device,
+                &self.resources.queue,
+                *texture_id,
+                image_delta,
+            );
         }
         for texture_id in &textures_delta.free {
             self.egui_renderer.free_texture(texture_id);
         }
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self
+            .resources
+            .device
+            .create_command_encoder(&Default::default());
         self.egui_renderer.update_buffers(
-            &self.device,
-            &self.queue,
+            &self.resources.device,
+            &self.resources.queue,
             &mut encoder,
             &self.paint_jobs,
             &self.screen_descriptor,
         );
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.resources
+            .queue
+            .submit(std::iter::once(encoder.finish()));
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {

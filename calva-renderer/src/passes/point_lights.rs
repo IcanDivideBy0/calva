@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     util::icosphere::Icosphere, CameraManager, PointLight, PointLightsManager, RenderContext,
-    ResourceRef, ResourcesManager,
+    ResourcesManager,
 };
 
 pub struct PointLightsPassInputs<'a> {
@@ -13,9 +13,7 @@ pub struct PointLightsPassInputs<'a> {
 }
 
 pub struct PointLightsPass {
-    device: wgpu::Device,
-    camera: ResourceRef<CameraManager>,
-    lights: ResourceRef<PointLightsManager>,
+    resources: ResourcesManager,
 
     vertex_count: u32,
     vertices: wgpu::Buffer,
@@ -33,9 +31,9 @@ pub struct PointLightsPass {
 
 impl PointLightsPass {
     pub fn new(resources: &ResourcesManager, inputs: PointLightsPassInputs) -> Self {
-        let device = resources.device.clone();
-        let camera = resources.get::<CameraManager>();
-        let lights = resources.get::<PointLightsManager>();
+        let resources = resources.clone();
+        let device = &resources.device;
+        let camera = resources.read::<CameraManager>();
 
         let icosphere = Icosphere::new(1);
 
@@ -78,7 +76,7 @@ impl PointLightsPass {
         let stencil_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights[stencil] pipeline layout"),
-                bind_group_layouts: &[Some(&camera.get().bind_group_layout)],
+                bind_group_layouts: &[Some(&camera.bind_group_layout)],
                 immediate_size: 0,
             });
 
@@ -186,15 +184,12 @@ impl PointLightsPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
 
         let lighting_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("PointLights[lighting] pipeline layout"),
-                bind_group_layouts: &[
-                    Some(&camera.get().bind_group_layout),
-                    Some(&bind_group_layout),
-                ],
+                bind_group_layouts: &[Some(&camera.bind_group_layout), Some(&bind_group_layout)],
                 immediate_size: 0,
             });
 
@@ -258,9 +253,7 @@ impl PointLightsPass {
         };
 
         Self {
-            device,
-            camera,
-            lights,
+            resources,
 
             vertex_count: icosphere.count,
             vertices,
@@ -279,7 +272,7 @@ impl PointLightsPass {
 
     pub fn rebind(&mut self, inputs: PointLightsPassInputs) {
         self.bind_group = Self::make_bind_group(
-            &self.device,
+            &self.resources.device,
             &self.bind_group_layout,
             &self.sampler,
             &inputs,
@@ -292,8 +285,8 @@ impl PointLightsPass {
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut encoder = ctx.encoder.scope("PointLights");
 
-        let camera = self.camera.get();
-        let lights = self.lights.get();
+        let camera = self.resources.read::<CameraManager>();
+        let lights = self.resources.read::<PointLightsManager>();
 
         let mut stencil_pass = encoder.scoped_render_pass(
             "PointLights[stencil]",

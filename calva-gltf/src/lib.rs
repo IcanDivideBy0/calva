@@ -147,13 +147,11 @@ impl GltfModel {
                 );
 
                 resources
-                    .get::<TexturesManager>()
-                    .get()
+                    .read::<TexturesManager>()
                     .generate_mipmaps(&texture, &desc)?;
 
                 Ok(resources
-                    .get::<TexturesManager>()
-                    .get_mut()
+                    .write::<TexturesManager>()
                     .add(texture.create_view(&Default::default())))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -207,10 +205,7 @@ impl GltfModel {
             })
             .collect::<Vec<_>>();
 
-        resources
-            .get::<MaterialsManager>()
-            .get_mut()
-            .add(&materials)
+        resources.write::<MaterialsManager>().add(&materials)
     }
 
     fn build_meshes(
@@ -283,13 +278,10 @@ impl GltfModel {
                             get_data(&gltf::Semantic::Weights(0)),
                         )
                         .map(|(joints, weights)| {
-                            resources
-                                .get::<SkinsManager>()
-                                .get_mut()
-                                .add(joints, weights)
+                            resources.write::<SkinsManager>().add(joints, weights)
                         });
 
-                        let mesh = resources.get::<MeshesManager>().get_mut().add(
+                        let mesh = resources.write::<MeshesManager>().add(
                             bounding_sphere,
                             get_data_res(&gltf::Semantic::Positions)?,
                             get_data_res(&gltf::Semantic::Normals)?,
@@ -392,10 +384,7 @@ impl GltfModel {
                         time += Duration::from_secs_f32(1.0 / AnimationsManager::SAMPLES_PER_SEC);
                     }
 
-                    resources
-                        .get::<AnimationsManager>()
-                        .get_mut()
-                        .add(animation)
+                    resources.write::<AnimationsManager>().add(animation)
                 });
 
                 doc.animations()

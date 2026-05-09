@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crate::{
-    GpuMeshInstance, MeshInstancesManager, RenderContext, ResourceRef, ResourcesManager,
-    UniformBuffer, UniformData,
+    GpuMeshInstance, MeshInstancesManager, RenderContext, ResourcesManager, UniformBuffer,
+    UniformData,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -31,9 +31,7 @@ impl UniformData for AnimateUniform {
 }
 
 pub struct AnimatePass {
-    pub uniform: UniformBuffer<AnimateUniform>,
-
-    mesh_instances: ResourceRef<MeshInstancesManager>,
+    resources: ResourcesManager,
 
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::ComputePipeline,
@@ -41,99 +39,80 @@ pub struct AnimatePass {
 
 impl AnimatePass {
     pub fn new(resources: &ResourcesManager) -> Self {
-        let uniform = UniformBuffer::new(
-            &resources.device,
-            &resources.queue,
-            AnimateUniform::default(),
-        );
+        let resources = resources.clone();
+        let device = &resources.device;
+        let uniform = resources.read::<UniformBuffer<AnimateUniform>>();
 
-        let mesh_instances = resources.get::<MeshInstancesManager>();
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Animate bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
+                            + GpuMeshInstance::SIZE,
+                    ),
+                },
+                count: None,
+            }],
+        });
 
-        let bind_group_layout =
-            resources
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Animate bind group layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
-                                    + GpuMeshInstance::SIZE,
-                            ),
-                        },
-                        count: None,
-                    }],
-                });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Animate bind group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: resources
+                    .read::<MeshInstancesManager>()
+                    .instances
+                    .as_entire_binding(),
+            }],
+        });
 
-        let bind_group = resources
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Animate bind group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: mesh_instances.get().instances.as_entire_binding(),
-                }],
-            });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Animate shader"),
+            source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::animate").into()),
+        });
 
-        let shader = resources
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Animate shader"),
-                source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("passes::animate").into()),
-            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Animate pipeline layout"),
+            bind_group_layouts: &[Some(&bind_group_layout), Some(&uniform.bind_group_layout)],
+            immediate_size: 0,
+        });
 
-        let pipeline_layout =
-            resources
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Animate pipeline layout"),
-                    bind_group_layouts: &[
-                        Some(&bind_group_layout),
-                        Some(&uniform.bind_group_layout),
-                    ],
-                    immediate_size: 0,
-                });
-
-        let pipeline = resources
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Animate pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Animate pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
 
         Self {
-            uniform,
-
-            mesh_instances,
+            resources,
 
             bind_group,
             pipeline,
         }
     }
 
-    pub fn update(&mut self) {
-        self.uniform.update();
-    }
-
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut cpass = ctx.encoder.scoped_compute_pass("AnimatePass");
 
+        let uniform = self.resources.read::<UniformBuffer<AnimateUniform>>();
+
         cpass.set_pipeline(&self.pipeline);
         cpass.set_bind_group(0, &self.bind_group, &[]);
-        cpass.set_bind_group(1, &self.uniform.bind_group, &[]);
+        cpass.set_bind_group(1, &uniform.bind_group, &[]);
 
         const WORKGROUP_SIZE: usize = 256;
-        let workgroups_count =
-            (self.mesh_instances.get().count() as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+        let workgroups_count = (self.resources.read::<MeshInstancesManager>().count() as f32
+            / WORKGROUP_SIZE as f32)
+            .ceil() as u32;
 
         cpass.dispatch_workgroups(workgroups_count, 1, 1);
     }

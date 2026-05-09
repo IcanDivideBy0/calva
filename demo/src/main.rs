@@ -6,8 +6,8 @@ use calva::{
     gltf::GltfModel,
     nav::HeatMap,
     renderer::{
-        egui, AmbientLightConfig, Camera, CameraManager, EguiWinitPass, Engine, Object, Renderer,
-        SkyboxManager, SsaoConfig, ToneMappingConfig, UniformBuffer,
+        egui, AmbientLightConfig, AnimateUniform, Camera, CameraManager, EguiWinitPass, Engine,
+        Object, Renderer, SkyboxManager, SsaoConfig, ToneMappingConfig, UniformBuffer,
     },
 };
 use core::f32;
@@ -120,8 +120,7 @@ impl DemoApp<'_> {
         state
             .engine
             .resources
-            .get::<SkyboxManager>()
-            .get_mut()
+            .write::<SkyboxManager>()
             .set_skybox(&pixels);
 
         Ok(())
@@ -166,7 +165,7 @@ impl DemoApp<'_> {
 
         self.navgrid_debug = Some(debug::Debug::new(
             &state.engine.resources.device,
-            &state.engine.resources.get::<CameraManager>().get(),
+            &state.engine.resources.read::<CameraManager>(),
             &height_map.triangles,
             state.renderer.surface_config.format,
             debug::DebugInput {
@@ -243,8 +242,9 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         .unwrap();
         let engine = Engine::new(&renderer);
 
-        let ambient_light_config = engine.resources.get::<UniformBuffer<AmbientLightConfig>>();
-        let mut ambient_light_config = ambient_light_config.get_mut();
+        let mut ambient_light_config = engine
+            .resources
+            .write::<UniformBuffer<AmbientLightConfig>>();
         ambient_light_config.color = [0.106535, 0.061572, 0.037324];
         ambient_light_config.strength = 0.1;
 
@@ -351,10 +351,13 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 let dt = self.render_time.elapsed();
                 self.render_time = Instant::now();
 
-                **state.engine.animate.uniform = dt;
+                ***state
+                    .engine
+                    .resources
+                    .write::<UniformBuffer<AnimateUniform>>() = dt;
 
                 state.flying_camera.update(dt);
-                ***state.engine.resources.get::<CameraManager>().get_mut() = Camera {
+                ***state.engine.resources.write::<CameraManager>() = Camera {
                     view: state.flying_camera.get_view(),
                     proj: state.camera.get_proj(),
                 };
@@ -372,17 +375,9 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                             let resources = &state.engine.resources;
 
-                            ui.add(
-                                &mut **resources
-                                    .get::<UniformBuffer<AmbientLightConfig>>()
-                                    .get_mut(),
-                            );
-                            ui.add(&mut **resources.get::<UniformBuffer<SsaoConfig>>().get_mut());
-                            ui.add(
-                                &mut **resources
-                                    .get::<UniformBuffer<ToneMappingConfig>>()
-                                    .get_mut(),
-                            );
+                            ui.add(&mut **resources.write::<UniformBuffer<AmbientLightConfig>>());
+                            ui.add(&mut **resources.write::<UniformBuffer<SsaoConfig>>());
+                            ui.add(&mut **resources.write::<UniformBuffer<ToneMappingConfig>>());
 
                             egui::CollapsingHeader::new("Directional light")
                                 .default_open(true)
@@ -448,8 +443,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     state.engine.render(ctx);
                     // fog.render(ctx, &engine.resources.camera, &time);
                     if let Some(navgrid_debug) = self.navgrid_debug.as_ref() {
-                        navgrid_debug
-                            .render(ctx, &state.engine.resources.get::<CameraManager>().get())
+                        navgrid_debug.render(ctx, &state.engine.resources.read::<CameraManager>())
                     }
                     state.egui.render(ctx);
                 });
@@ -491,8 +485,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 ..
             } => {
                 if let Some(height_map) = self.height_map.as_ref() {
-                    let camera_ref = state.engine.resources.get::<CameraManager>();
-                    let camera = camera_ref.get();
+                    let camera = state.engine.resources.read::<CameraManager>();
 
                     let (ro, rd) = camera.ray_cast(
                         state.mouse_pos,

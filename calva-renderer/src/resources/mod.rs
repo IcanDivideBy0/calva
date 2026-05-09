@@ -18,28 +18,54 @@ pub use skin::*;
 pub use skybox::*;
 pub use texture::*;
 
-use parking_lot::RwLock;
+use downcast_rs::{impl_downcast, DowncastSend, DowncastSync};
+use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock};
 use std::{
-    any::{Any, TypeId},
+    any::TypeId,
     collections::HashMap,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
 
-pub trait Resource: Send + Sync + 'static {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self;
+pub trait Resource: DowncastSync + DowncastSend {
+    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self
+    where
+        Self: Sized;
+
+    fn update(&mut self) {}
+}
+impl_downcast!(sync Resource);
+
+pub struct ResourceReadLock<T: Resource>(
+    ArcRwLockReadGuard<RawRwLock, Box<dyn Resource>>,
+    PhantomData<T>,
+);
+
+impl<T: Resource> Deref for ResourceReadLock<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.downcast_ref::<T>().unwrap()
+    }
 }
 
-#[derive(Clone)]
-pub struct ResourceRef<T: Resource>(Arc<RwLock<T>>);
+pub struct ResourceWriteLock<T: Resource>(
+    ArcRwLockWriteGuard<RawRwLock, Box<dyn Resource>>,
+    PhantomData<T>,
+);
 
-impl<T: Resource> ResourceRef<T> {
-    pub fn get(&self) -> impl Deref<Target = T> + '_ {
-        self.0.as_ref().read()
+impl<T: Resource> Deref for ResourceWriteLock<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.downcast_ref::<T>().unwrap()
     }
+}
 
-    pub fn get_mut(&self) -> impl DerefMut<Target = T> + '_ {
-        self.0.as_ref().write()
+impl<T: Resource> DerefMut for ResourceWriteLock<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.downcast_mut::<T>().unwrap()
     }
 }
 
@@ -47,7 +73,9 @@ impl<T: Resource> ResourceRef<T> {
 pub struct ResourcesManager {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    resources: Arc<RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>,
+    // resources: Arc<RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>,
+    #[allow(clippy::type_complexity)]
+    resources: Arc<RwLock<HashMap<TypeId, Arc<RwLock<Box<dyn Resource>>>>>>,
 }
 
 impl ResourcesManager {
@@ -59,25 +87,33 @@ impl ResourcesManager {
         }
     }
 
-    pub fn get<T: Resource>(&self) -> ResourceRef<T> {
-        let read = self.resources.read();
+    pub fn update(&self) {
+        for (_ty_id, arc) in self.resources.write().iter() {
+            arc.write_arc().update();
+        }
+    }
 
-        let arc = match read.get(&TypeId::of::<T>()) {
-            Some(arc) => arc.clone(),
-            None => {
-                drop(read); // prevent deadlock
+    fn get_arc<T: Resource>(&self) -> Arc<RwLock<Box<dyn Resource>>> {
+        let mut read = self.resources.upgradable_read();
 
-                self.resources
-                    .write()
+        read.get(&TypeId::of::<T>()).cloned().unwrap_or_else(|| {
+            read.with_upgraded(|resources| {
+                resources
                     .entry(TypeId::of::<T>())
                     .or_insert_with(|| {
                         let resource = <T as Resource>::instanciate(&self.device, &self.queue);
-                        Arc::new(RwLock::new(resource))
+                        Arc::new(RwLock::new(Box::new(resource)))
                     })
                     .clone()
-            }
-        };
+            })
+        })
+    }
 
-        ResourceRef(arc.downcast::<RwLock<T>>().unwrap())
+    pub fn read<T: Resource>(&self) -> ResourceReadLock<T> {
+        ResourceReadLock(self.get_arc::<T>().read_arc(), PhantomData)
+    }
+
+    pub fn write<T: Resource>(&self) -> ResourceWriteLock<T> {
+        ResourceWriteLock(self.get_arc::<T>().write_arc(), PhantomData)
     }
 }
