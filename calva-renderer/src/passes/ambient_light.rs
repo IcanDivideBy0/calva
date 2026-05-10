@@ -1,4 +1,4 @@
-use crate::{RenderContext, ResourcesManager, UniformBuffer};
+use crate::{RenderContext, Resource, ResourcesManager, UniformBuffer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -7,8 +7,8 @@ pub struct AmbientLightConfig {
     pub strength: f32,
 }
 
-impl Default for AmbientLightConfig {
-    fn default() -> Self {
+impl Resource for AmbientLightConfig {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
         // Blender defaults
         Self {
             color: [0.05; 3],
@@ -60,9 +60,9 @@ pub struct AmbientLightPass {
 impl AmbientLightPass {
     pub fn new(resources: &ResourcesManager, inputs: AmbientLightPassInputs) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
+        let device = resources.read::<wgpu::Device>();
 
-        let outputs = Self::make_outputs(device, &inputs);
+        let outputs = Self::make_outputs(&device, &inputs);
         let output_view = outputs.output.create_view(&Default::default());
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -93,7 +93,7 @@ impl AmbientLightPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &inputs);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("AmbientLight shader"),
@@ -152,11 +152,12 @@ impl AmbientLightPass {
     }
 
     pub fn rebind(&mut self, inputs: AmbientLightPassInputs) {
-        self.outputs = Self::make_outputs(&self.resources.device, &inputs);
+        let device = self.resources.read::<wgpu::Device>();
+
+        self.outputs = Self::make_outputs(&device, &inputs);
         self.output_view = self.outputs.output.create_view(&Default::default());
 
-        self.bind_group =
-            Self::make_bind_group(&self.resources.device, &self.bind_group_layout, &inputs);
+        self.bind_group = Self::make_bind_group(&device, &self.bind_group_layout, &inputs);
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {

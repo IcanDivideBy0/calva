@@ -3,14 +3,12 @@ use wesl::syntax::*;
 
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    CameraManager, RenderContext,
+    Camera, GeometryPassOutputs, RenderContext, ResourcesManager, UniformBuffer,
 };
 
-pub struct DebugInput<'a> {
-    pub depth: &'a wgpu::Texture,
-}
-
 pub struct Debug {
+    resources: ResourcesManager,
+
     depth_view: wgpu::TextureView,
 
     vertices: wgpu::Buffer,
@@ -20,12 +18,15 @@ pub struct Debug {
 
 impl Debug {
     pub fn new<A: NoUninit>(
-        device: &wgpu::Device,
-        camera: &CameraManager,
+        resources: &ResourcesManager,
         triangles: &[A],
         format: wgpu::TextureFormat,
-        input: DebugInput,
     ) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
+        let geometry_outputs = resources.read::<GeometryPassOutputs>();
+
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Debug vertices"),
             contents: bytemuck::cast_slice(triangles),
@@ -100,7 +101,7 @@ impl Debug {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: input.depth.format(),
+                format: geometry_outputs.depth.format(),
                 depth_write_enabled: Some(false),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
@@ -114,7 +115,9 @@ impl Debug {
         });
 
         Self {
-            depth_view: input.depth.create_view(&Default::default()),
+            resources,
+
+            depth_view: geometry_outputs.depth.create_view(&Default::default()),
 
             vertices,
             vertices_count,
@@ -122,14 +125,18 @@ impl Debug {
         }
     }
 
-    pub fn rebind(&mut self, input: DebugInput) {
-        self.depth_view = input.depth.create_view(&Default::default());
+    pub fn rebind(&mut self) {
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
+
+        self.depth_view = geometry_outputs.depth.create_view(&Default::default());
     }
 
-    pub fn render(&self, ctx: &mut RenderContext, camera: &CameraManager) {
+    pub fn render(&self, ctx: &mut RenderContext) {
         if self.vertices_count == 0 {
             return;
         }
+
+        let camera = self.resources.read::<UniformBuffer<Camera>>();
 
         let mut rpass = ctx.encoder.scoped_render_pass(
             "Debug",

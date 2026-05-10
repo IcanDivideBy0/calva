@@ -1,6 +1,6 @@
 use calva::renderer::{
     wgpu::{self, util::DeviceExt},
-    CameraManager, RenderContext, ResourcesManager,
+    Camera, RenderContext, ResourcesManager, UniformBuffer,
 };
 use noise::NoiseFn;
 
@@ -24,7 +24,9 @@ impl FogPass {
         surface_config: wgpu::SurfaceConfiguration,
         input: FogPassInput,
     ) -> Self {
-        let camera = resources.read::<CameraManager>();
+        let device = resources.read::<wgpu::Device>();
+        let queue = resources.read::<wgpu::Queue>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
 
         let fbm = noise::Fbm::<noise::Perlin>::new(rand::random());
         let perlin = noise::Perlin::new(rand::random());
@@ -300,8 +302,8 @@ impl FogPass {
         })
         .collect::<Vec<_>>();
 
-        let noise_texture = resources.device.create_texture_with_data(
-            &resources.queue,
+        let noise_texture = device.create_texture_with_data(
+            &queue,
             &wgpu::TextureDescriptor {
                 label: Some("Fog perlin noise"),
                 size: wgpu::Extent3d {
@@ -320,7 +322,7 @@ impl FogPass {
             bytemuck::cast_slice(&noise_data),
         );
 
-        let sampler = resources.device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Fog sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -330,99 +332,84 @@ impl FogPass {
             ..Default::default()
         });
 
-        let bind_group_layout =
-            resources
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Fog bind group layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D3,
-                                multisampled: false,
-                            },
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            count: None,
-                        },
-                    ],
-                });
-
-        let bind_group = resources
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Fog bind group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(
-                            &noise_texture.create_view(&Default::default()),
-                        ),
-                    },
-                ],
-            });
-
-        let shader = resources
-            .device
-            .create_shader_module(wgpu::include_wgsl!("fog.wgsl"));
-
-        let pipeline_layout =
-            resources
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Fog pipeline layout"),
-                    bind_group_layouts: &[
-                        Some(&camera.bind_group_layout),
-                        Some(&bind_group_layout),
-                    ],
-                    immediate_size: std::mem::size_of::<f32>() as _,
-                });
-
-        let pipeline = resources
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Fog pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Fog bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    count: None,
                 },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: surface_config.format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: Default::default(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: input.depth.format(),
-                    depth_write_enabled: None,
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
-            });
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    count: None,
+                },
+            ],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Fog bind group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        &noise_texture.create_view(&Default::default()),
+                    ),
+                },
+            ],
+        });
+
+        let shader = device.create_shader_module(wgpu::include_wgsl!("fog.wgsl"));
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Fog pipeline layout"),
+            bind_group_layouts: &[Some(&camera.bind_group_layout), Some(&bind_group_layout)],
+            immediate_size: std::mem::size_of::<f32>() as _,
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Fog pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: input.depth.format(),
+                depth_write_enabled: None,
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
 
         Self {
             depth_view: input.depth.create_view(&Default::default()),
@@ -435,7 +422,7 @@ impl FogPass {
     pub fn render(
         &self,
         ctx: &mut RenderContext,
-        camera: &CameraManager,
+        camera: &UniformBuffer<Camera>,
         time: &std::time::Instant,
     ) {
         let mut rpass = ctx.encoder.scoped_render_pass(

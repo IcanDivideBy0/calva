@@ -3,8 +3,7 @@ use wgpu::util::DeviceExt;
 use crate::{Resource, ResourcesManager};
 
 pub struct SkyboxManager {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    resources: ResourcesManager,
 
     sampler: wgpu::Sampler,
 
@@ -13,7 +12,10 @@ pub struct SkyboxManager {
 }
 
 impl SkyboxManager {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    fn new(resources: &ResourcesManager) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Skybox sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -43,8 +45,7 @@ impl SkyboxManager {
         });
 
         Self {
-            device: device.clone(),
-            queue: queue.clone(),
+            resources,
 
             sampler,
 
@@ -54,12 +55,14 @@ impl SkyboxManager {
     }
 
     pub fn set_skybox(&mut self, pixels: &[u8]) {
+        let device = self.resources.read::<wgpu::Device>();
+        let queue = self.resources.read::<wgpu::Queue>();
+
         let size = (pixels.len() as f32 / (4.0 * 6.0)).sqrt() as _;
 
-        let view = self
-            .device
+        let view = device
             .create_texture_with_data(
-                &self.queue,
+                &queue,
                 &wgpu::TextureDescriptor {
                     label: Some("Skybox texture"),
                     size: wgpu::Extent3d {
@@ -84,7 +87,7 @@ impl SkyboxManager {
                 ..Default::default()
             });
 
-        self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Skybox bind group"),
             layout: &self.bind_group_layout,
             entries: &[
@@ -103,6 +106,6 @@ impl SkyboxManager {
 
 impl Resource for SkyboxManager {
     fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(&resources.device, &resources.queue)
+        Self::new(resources)
     }
 }

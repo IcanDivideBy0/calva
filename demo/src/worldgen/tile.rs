@@ -1,8 +1,13 @@
-use calva::renderer::wgpu::{self, util::DeviceExt};
+use calva::renderer::{
+    wgpu::{self, util::DeviceExt},
+    ResourcesManager,
+};
 use itertools::Itertools;
 use wesl::syntax::*;
 
 pub struct TileBuilder {
+    resources: ResourcesManager,
+
     walls_pipeline: wgpu::RenderPipeline,
     floor_pipeline: wgpu::RenderPipeline,
 }
@@ -10,7 +15,10 @@ pub struct TileBuilder {
 impl TileBuilder {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32FloatStencil8;
 
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("TileBuilder pipeline layout"),
             bind_group_layouts: &[],
@@ -122,18 +130,17 @@ impl TileBuilder {
         });
 
         Self {
+            resources,
+
             walls_pipeline,
             floor_pipeline,
         }
     }
 
-    pub fn build(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        buffers: &[gltf::buffer::Data],
-        node: gltf::Node,
-    ) -> Option<Tile> {
+    pub fn build(&self, buffers: &[gltf::buffer::Data], node: gltf::Node) -> Option<Tile> {
+        let device = self.resources.read::<wgpu::Device>();
+        let queue = self.resources.read::<wgpu::Queue>();
+
         let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
             buffers.get(buffer.index()).map(std::ops::Deref::deref)
         };

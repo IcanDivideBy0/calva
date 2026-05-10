@@ -3,8 +3,8 @@
 use anyhow::{anyhow, Result};
 use renderer::{
     wgpu, AnimationHandle, AnimationsManager, Material, MaterialHandle, MaterialsManager,
-    MeshHandle, MeshInstance, MeshesManager, Object, PointLight, ResourcesManager, SkinsManager,
-    TextureHandle, TexturesManager,
+    MeshHandle, MeshInstance, MeshesManager, MipmapGenerator, Object, PointLight, ResourcesManager,
+    SkinsManager, TextureHandle, TexturesManager,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -87,6 +87,12 @@ impl GltfModel {
         doc: &gltf::Document,
         images: &[gltf::image::Data],
     ) -> Result<Vec<TextureHandle>> {
+        let device = resources.read::<wgpu::Device>();
+        let queue = resources.read::<wgpu::Queue>();
+        let mipmap = resources.read::<MipmapGenerator>();
+
+        let mut textures_manager = resources.write::<TexturesManager>();
+
         let textures = doc
             .images()
             .map(|image| {
@@ -133,9 +139,9 @@ impl GltfModel {
                     view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
                 };
 
-                let texture = resources.device.create_texture(&desc);
+                let texture = device.create_texture(&desc);
 
-                resources.queue.write_texture(
+                queue.write_texture(
                     texture.as_image_copy(),
                     &buf.to_rgba8(),
                     wgpu::TexelCopyBufferLayout {
@@ -146,13 +152,9 @@ impl GltfModel {
                     size,
                 );
 
-                resources
-                    .read::<TexturesManager>()
-                    .generate_mipmaps(&texture, &desc)?;
+                mipmap.generate_mipmaps(&texture, &desc)?;
 
-                Ok(resources
-                    .write::<TexturesManager>()
-                    .add(texture.create_view(&Default::default())))
+                Ok(textures_manager.add(texture.create_view(&Default::default())))
             })
             .collect::<Result<Vec<_>>>()?;
 

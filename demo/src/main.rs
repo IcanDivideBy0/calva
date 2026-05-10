@@ -6,8 +6,8 @@ use calva::{
     gltf::GltfModel,
     nav::HeatMap,
     renderer::{
-        egui, AmbientLightConfig, AnimateUniform, Camera, CameraManager, EguiWinitPass, Engine,
-        Object, Renderer, SkyboxManager, SsaoConfig, ToneMappingConfig, UniformBuffer,
+        egui, AmbientLightConfig, AnimateUniform, Camera, DirectionalLight, EguiWinitPass, Engine,
+        Object, Renderer, SkyboxManager, SsaoConfig, ToneMappingConfig,
     },
 };
 use core::f32;
@@ -139,7 +139,7 @@ impl DemoApp<'_> {
         let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
         let worldgen_model = GltfModel::new(&state.engine.resources, doc, &buffers, &images)?;
 
-        let tile_builder = worldgen::tile::TileBuilder::new(&state.engine.resources.device);
+        let tile_builder = worldgen::tile::TileBuilder::new(&state.engine.resources);
 
         let tiles = [
             "module01", "module03", "module07", "module08", "module09", "module10", "module11",
@@ -147,14 +147,7 @@ impl DemoApp<'_> {
             "module19",
         ]
         .iter()
-        .filter_map(|node_name| {
-            tile_builder.build(
-                &state.engine.resources.device,
-                &state.engine.resources.queue,
-                &buffers,
-                worldgen_model.get_node(node_name)?,
-            )
-        })
+        .filter_map(|node_name| tile_builder.build(&buffers, worldgen_model.get_node(node_name)?))
         .collect::<Vec<_>>();
 
         self.worldgen.set_tiles(&tiles);
@@ -164,13 +157,9 @@ impl DemoApp<'_> {
         dbg!(&height_map);
 
         self.navgrid_debug = Some(debug::Debug::new(
-            &state.engine.resources.device,
-            &state.engine.resources.read::<CameraManager>(),
+            &state.engine.resources,
             &height_map.triangles,
             state.renderer.surface_config.format,
-            debug::DebugInput {
-                depth: &state.engine.geometry.outputs.depth,
-            },
         ));
 
         worldgen_model
@@ -242,9 +231,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         .unwrap();
         let engine = Engine::new(&renderer);
 
-        let mut ambient_light_config = engine
-            .resources
-            .write::<UniformBuffer<AmbientLightConfig>>();
+        let mut ambient_light_config = engine.resources.write::<AmbientLightConfig>();
         ambient_light_config.color = [0.106535, 0.061572, 0.037324];
         ambient_light_config.strength = 0.1;
 
@@ -343,21 +330,16 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 }
 
                 if let Some(navgrid_debug) = self.navgrid_debug.as_mut() {
-                    navgrid_debug.rebind(debug::DebugInput {
-                        depth: &state.engine.geometry.outputs.depth,
-                    });
+                    navgrid_debug.rebind();
                 };
 
                 let dt = self.render_time.elapsed();
                 self.render_time = Instant::now();
 
-                ***state
-                    .engine
-                    .resources
-                    .write::<UniformBuffer<AnimateUniform>>() = dt;
+                **state.engine.resources.write::<AnimateUniform>() = dt;
 
                 state.flying_camera.update(dt);
-                ***state.engine.resources.write::<CameraManager>() = Camera {
+                *state.engine.resources.write::<Camera>() = Camera {
                     view: state.flying_camera.get_view(),
                     proj: state.camera.get_proj(),
                 };
@@ -375,66 +357,10 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
                             let resources = &state.engine.resources;
 
-                            ui.add(&mut **resources.write::<UniformBuffer<AmbientLightConfig>>());
-                            ui.add(&mut **resources.write::<UniformBuffer<SsaoConfig>>());
-                            ui.add(&mut **resources.write::<UniformBuffer<ToneMappingConfig>>());
-
-                            egui::CollapsingHeader::new("Directional light")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        egui::color_picker::color_edit_button_rgb(
-                                            ui,
-                                            &mut state.engine.directional_light.uniform.light.color,
-                                        );
-                                        ui.add(
-                                            egui::Label::new(egui::WidgetText::from("Color"))
-                                                .wrap_mode(egui::TextWrapMode::Truncate),
-                                        );
-                                    });
-
-                                    ui.add(
-                                        egui::Slider::new(
-                                            &mut state
-                                                .engine
-                                                .directional_light
-                                                .uniform
-                                                .light
-                                                .intensity,
-                                            0.0..=50.0,
-                                        )
-                                        .text("Intensity"),
-                                    );
-
-                                    ui.columns(2, |columns| {
-                                        columns[0].add(
-                                            egui::Slider::new(
-                                                &mut state
-                                                    .engine
-                                                    .directional_light
-                                                    .uniform
-                                                    .light
-                                                    .direction
-                                                    .x,
-                                                -1.5..=1.5,
-                                            )
-                                            .text("X"),
-                                        );
-                                        columns[1].add(
-                                            egui::Slider::new(
-                                                &mut state
-                                                    .engine
-                                                    .directional_light
-                                                    .uniform
-                                                    .light
-                                                    .direction
-                                                    .z,
-                                                -1.5..=1.5,
-                                            )
-                                            .text("Z"),
-                                        );
-                                    });
-                                });
+                            ui.add(&mut *resources.write::<AmbientLightConfig>());
+                            ui.add(&mut *resources.write::<SsaoConfig>());
+                            ui.add(&mut *resources.write::<ToneMappingConfig>());
+                            ui.add(&mut *resources.write::<DirectionalLight>());
                         });
                 });
 
@@ -444,7 +370,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     state.engine.render(ctx);
                     // fog.render(ctx, &engine.resources.camera, &time);
                     if let Some(navgrid_debug) = self.navgrid_debug.as_ref() {
-                        navgrid_debug.render(ctx, &state.engine.resources.read::<CameraManager>())
+                        navgrid_debug.render(ctx)
                     }
                     state.egui.render(ctx);
                 });
@@ -486,7 +412,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 ..
             } => {
                 if let Some(height_map) = self.height_map.as_ref() {
-                    let camera = state.engine.resources.read::<CameraManager>();
+                    let camera = state.engine.resources.read::<Camera>();
 
                     let (ro, rd) = camera.ray_cast(
                         state.mouse_pos,

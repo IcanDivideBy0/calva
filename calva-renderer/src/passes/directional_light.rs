@@ -1,5 +1,5 @@
 use crate::{
-    AnimationState, AnimationsManager, Camera, CameraManager, MeshesManager, RenderContext,
+    AnimationState, AnimationsManager, Camera, MeshesManager, RenderContext, Resource,
     ResourcesManager, SkinsManager, UniformBuffer, UniformData,
 };
 
@@ -45,13 +45,38 @@ pub struct DirectionalLight {
     pub intensity: f32,
 }
 
-impl Default for DirectionalLight {
-    fn default() -> Self {
+impl Resource for DirectionalLight {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
         Self {
             direction: glam::vec3(0.5, -1.0, 0.5),
             color: [1.0; 3],
             intensity: 5.0,
         }
+    }
+}
+
+#[cfg(feature = "egui")]
+impl egui::Widget for &mut DirectionalLight {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        egui::CollapsingHeader::new("Directional light")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    egui::color_picker::color_edit_button_rgb(ui, &mut self.color);
+                    ui.add(
+                        egui::Label::new(egui::WidgetText::from("Color"))
+                            .wrap_mode(egui::TextWrapMode::Truncate),
+                    );
+                });
+
+                ui.add(egui::Slider::new(&mut self.intensity, 0.0..=50.0).text("Intensity"));
+
+                ui.columns(2, |columns| {
+                    columns[0].add(egui::Slider::new(&mut self.direction.x, -1.5..=1.5).text("X"));
+                    columns[1].add(egui::Slider::new(&mut self.direction.z, -1.5..=1.5).text("Z"));
+                });
+            })
+            .header_response
     }
 }
 
@@ -64,8 +89,6 @@ pub struct DirectionalLightPassInputs<'a> {
 
 pub struct DirectionalLightPass {
     resources: ResourcesManager,
-
-    pub uniform: UniformBuffer<DirectionalLightUniform>,
 
     output_view: wgpu::TextureView,
     cull: DirectionalLightCull,
@@ -92,15 +115,13 @@ impl DirectionalLightPass {
 
     pub fn new(resources: &ResourcesManager, inputs: DirectionalLightPassInputs) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
-        let camera = resources.read::<CameraManager>();
+        let device = resources.read::<wgpu::Device>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
         let skins = resources.read::<SkinsManager>();
         let animations = resources.read::<AnimationsManager>();
+        let uniform = resources.read::<UniformBuffer<DirectionalLightUniform>>();
 
-        let uniform =
-            UniformBuffer::new(device, &resources.queue, DirectionalLightUniform::default());
-
-        let cull = DirectionalLightCull::new(&resources, &uniform);
+        let cull = DirectionalLightCull::new(&resources);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("DirectionalLight sampler"),
@@ -111,7 +132,7 @@ impl DirectionalLightPass {
 
         let output_view = inputs.output.create_view(&Default::default());
 
-        let light_depth = Self::make_depth_texture(device, Some("DirectionalLight depth texture"));
+        let light_depth = Self::make_depth_texture(&device, Some("DirectionalLight depth texture"));
         let light_depth_view = light_depth.create_view(&Default::default());
 
         let light_depth_pipeline = {
@@ -236,7 +257,7 @@ impl DirectionalLightPass {
                 });
 
             let bind_group = Self::make_lighting_bind_group(
-                device,
+                &device,
                 &bind_group_layout,
                 &light_depth_view,
                 &sampler,
@@ -292,8 +313,6 @@ impl DirectionalLightPass {
         Self {
             resources,
 
-            uniform,
-
             cull,
 
             output_view,
@@ -310,8 +329,10 @@ impl DirectionalLightPass {
     }
 
     pub fn rebind(&mut self, inputs: DirectionalLightPassInputs) {
+        let device = self.resources.read::<wgpu::Device>();
+
         self.lighting_bind_group = Self::make_lighting_bind_group(
-            &self.resources.device,
+            &device,
             &self.lighting_bind_group_layout,
             &self.light_depth_view,
             &self.sampler,
@@ -321,25 +342,23 @@ impl DirectionalLightPass {
         self.output_view = inputs.output.create_view(&Default::default());
     }
 
-    pub fn update(&mut self) -> Result<()> {
-        self.uniform.camera = ***self.resources.read::<CameraManager>();
-        self.uniform.update()?;
-        Ok(())
-    }
-
     pub fn render(&self, ctx: &mut RenderContext) {
-        if self.uniform.light.intensity <= 0.0 {
+        if self.resources.read::<DirectionalLight>().intensity <= 0.0 {
             return;
         }
 
+        let uniform = self
+            .resources
+            .read::<UniformBuffer<DirectionalLightUniform>>();
+
         let mut encoder = ctx.encoder.scope("DirectionalLight");
 
-        let camera = self.resources.read::<CameraManager>();
+        let camera = self.resources.read::<UniformBuffer<Camera>>();
         let meshes = self.resources.read::<MeshesManager>();
         let skins = self.resources.read::<SkinsManager>();
         let animations = self.resources.read::<AnimationsManager>();
 
-        self.cull.cull(&mut encoder, &self.uniform);
+        self.cull.cull(&mut encoder, &uniform);
 
         let mut depth_pass = encoder.scoped_render_pass(
             "DirectionalLight[depth]",
@@ -360,7 +379,7 @@ impl DirectionalLightPass {
 
         depth_pass.set_pipeline(&self.light_depth_pipeline);
 
-        depth_pass.set_bind_group(0, &self.uniform.bind_group, &[]);
+        depth_pass.set_bind_group(0, &uniform.bind_group, &[]);
         depth_pass.set_bind_group(1, &skins.bind_group, &[]);
         depth_pass.set_bind_group(2, &animations.bind_group, &[]);
 
@@ -402,7 +421,7 @@ impl DirectionalLightPass {
         lighting_pass.set_pipeline(&self.lighting_pipeline);
 
         lighting_pass.set_bind_group(0, &camera.bind_group, &[]);
-        lighting_pass.set_bind_group(1, &self.uniform.bind_group, &[]);
+        lighting_pass.set_bind_group(1, &uniform.bind_group, &[]);
         lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
 
         lighting_pass.draw(0..3, 0..1);
@@ -477,9 +496,9 @@ pub struct GpuDirectionalLightUniform {
     view_proj: glam::Mat4,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DirectionalLightUniform {
-    pub light: DirectionalLight,
+    light: DirectionalLight,
     camera: Camera,
 }
 
@@ -546,11 +565,27 @@ impl UniformData for DirectionalLightUniform {
     }
 }
 
+impl Resource for DirectionalLightUniform {
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        let light = *resources.read::<DirectionalLight>();
+        let camera = *resources.read::<Camera>();
+
+        Self { light, camera }
+    }
+
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        self.light = *resources.read::<DirectionalLight>();
+        self.camera = *resources.read::<Camera>();
+
+        Ok(())
+    }
+}
+
 use anyhow::Result;
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
+        Camera, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
         ProfilerCommandEncoder, ResourcesManager, UniformBuffer,
     };
 
@@ -571,15 +606,13 @@ mod cull {
     }
 
     impl DirectionalLightCull {
-        pub fn new(
-            resources: &ResourcesManager,
-            uniform: &UniformBuffer<DirectionalLightUniform>,
-        ) -> Self {
+        pub fn new(resources: &ResourcesManager) -> Self {
             let resources = resources.clone();
-            let device = &resources.device;
-            let camera = resources.read::<CameraManager>();
+            let device = resources.read::<wgpu::Device>();
+            let camera = resources.read::<UniformBuffer<Camera>>();
             let meshes = resources.read::<MeshesManager>();
             let mesh_instances = resources.read::<MeshInstancesManager>();
+            let uniform = resources.read::<UniformBuffer<DirectionalLightUniform>>();
 
             let draw_instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("DirectionalLight[cull] draw instances"),
@@ -765,7 +798,7 @@ mod cull {
             encoder: &mut ProfilerCommandEncoder,
             uniform: &UniformBuffer<DirectionalLightUniform>,
         ) {
-            let camera = self.resources.read::<CameraManager>();
+            let camera = self.resources.read::<UniformBuffer<Camera>>();
 
             let mut cpass = encoder.scoped_compute_pass("DirectionalLight[cull]");
 
@@ -831,7 +864,7 @@ mod blur {
 
     impl DirectionalLightBlur {
         pub fn new(resources: &ResourcesManager, output: &wgpu::Texture) -> Self {
-            let device = resources.device.clone();
+            let device = resources.read::<wgpu::Device>();
 
             let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("DirectionalLightBlur sampler"),

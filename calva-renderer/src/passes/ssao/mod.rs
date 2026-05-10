@@ -1,4 +1,4 @@
-use crate::{CameraManager, RenderContext, ResourcesManager, UniformBuffer};
+use crate::{Camera, RenderContext, Resource, ResourcesManager, UniformBuffer};
 
 mod blit;
 mod blur;
@@ -11,8 +11,8 @@ pub struct SsaoConfig {
     pub power: f32,
 }
 
-impl Default for SsaoConfig {
-    fn default() -> Self {
+impl Resource for SsaoConfig {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
         Self {
             radius: 0.3,
             bias: 0.025,
@@ -85,6 +85,12 @@ impl SsaoRandom {
     }
 }
 
+impl Resource for SsaoRandom {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        Self::new()
+    }
+}
+
 pub struct SsaoPassInputs<'a> {
     pub normal: &'a wgpu::Texture,
     pub depth: &'a wgpu::Texture,
@@ -93,8 +99,6 @@ pub struct SsaoPassInputs<'a> {
 
 pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
     resources: ResourcesManager,
-
-    random: UniformBuffer<SsaoRandom>,
 
     output_view: wgpu::TextureView,
 
@@ -110,13 +114,12 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     pub fn new(resources: &ResourcesManager, inputs: SsaoPassInputs) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
-        let camera = resources.read::<CameraManager>();
+        let device = resources.read::<wgpu::Device>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
         let config = resources.read::<UniformBuffer<SsaoConfig>>();
+        let random = resources.read::<UniformBuffer<SsaoRandom>>();
 
-        let random = UniformBuffer::new(device, &resources.queue, SsaoRandom::new());
-
-        let output = Self::make_texture(device, Some("Ssao output"));
+        let output = Self::make_texture(&device, Some("Ssao output"));
         let output_view = output.create_view(&Default::default());
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -163,7 +166,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Ssao pipeline layout"),
@@ -213,8 +216,6 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         Self {
             resources,
 
-            random,
-
             sampler,
 
             bind_group_layout,
@@ -228,12 +229,10 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     }
 
     pub fn rebind(&mut self, inputs: SsaoPassInputs) {
-        self.bind_group = Self::make_bind_group(
-            &self.resources.device,
-            &self.bind_group_layout,
-            &self.sampler,
-            &inputs,
-        );
+        let device = self.resources.read::<wgpu::Device>();
+
+        self.bind_group =
+            Self::make_bind_group(&device, &self.bind_group_layout, &self.sampler, &inputs);
 
         self.blit.rebind(inputs.output);
     }
@@ -241,8 +240,9 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut encoder = ctx.encoder.scope("Ssao");
 
+        let camera = self.resources.read::<UniformBuffer<Camera>>();
         let config = self.resources.read::<UniformBuffer<SsaoConfig>>();
-        let camera = self.resources.read::<CameraManager>();
+        let random = self.resources.read::<UniformBuffer<SsaoRandom>>();
 
         let mut rpass = encoder.scoped_render_pass(
             "Ssao[render]",
@@ -265,7 +265,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &camera.bind_group, &[]);
         rpass.set_bind_group(1, &config.bind_group, &[]);
-        rpass.set_bind_group(2, &self.random.bind_group, &[]);
+        rpass.set_bind_group(2, &random.bind_group, &[]);
         rpass.set_bind_group(3, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);

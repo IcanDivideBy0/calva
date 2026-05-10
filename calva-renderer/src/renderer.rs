@@ -87,6 +87,8 @@ impl<'window> Renderer<'window> {
 
         surface.configure(&device, &surface_config);
 
+        let resources = ResourcesManager::new(&device, &queue, &surface_config);
+
         let profiler = RefCell::new(GpuProfiler::new(
             &device,
             GpuProfilerSettings {
@@ -104,7 +106,7 @@ impl<'window> Renderer<'window> {
             adapter,
             adapter_info,
 
-            resources: ResourcesManager::new(&device, &queue),
+            resources,
 
             device,
             queue,
@@ -118,6 +120,8 @@ impl<'window> Renderer<'window> {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
+
+        *self.resources.write::<wgpu::SurfaceConfiguration>() = self.surface_config.clone();
     }
 
     pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<()> {

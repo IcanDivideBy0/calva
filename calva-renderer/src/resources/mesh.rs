@@ -40,7 +40,7 @@ impl MeshInfo {
 }
 
 pub struct MeshesManager {
-    queue: wgpu::Queue,
+    resources: ResourcesManager,
 
     ids: IdGenerator,
 
@@ -66,7 +66,10 @@ impl MeshesManager {
     pub const MAX_MESHES: usize = 1 << 16; // see MeshHandle
     pub const MAX_VERTS: usize = 1 << 22;
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    fn new(resources: &ResourcesManager) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
+
         let max_verts = Self::MAX_VERTS as wgpu::BufferAddress;
 
         let meshes_info = device.create_buffer(&wgpu::BufferDescriptor {
@@ -112,7 +115,8 @@ impl MeshesManager {
         });
 
         Self {
-            queue: queue.clone(),
+            resources,
+
             ids: IdGenerator::new(0),
 
             vertex_offset: 0,
@@ -145,28 +149,30 @@ impl MeshesManager {
     ) -> MeshHandle {
         let handle = MeshHandle(self.ids.get());
 
-        self.queue.write_buffer(
+        let queue = self.resources.read::<wgpu::Queue>();
+
+        queue.write_buffer(
             &self.vertices,
             self.vertex_offset as wgpu::BufferAddress * Self::VERTEX_SIZE,
             vertices,
         );
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.normals,
             self.vertex_offset as wgpu::BufferAddress * Self::NORMAL_SIZE,
             normals,
         );
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.tangents,
             self.vertex_offset as wgpu::BufferAddress * Self::TANGENT_SIZE,
             tangents,
         );
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.tex_coords0,
             self.vertex_offset as wgpu::BufferAddress * Self::TEX_COORD_SIZE,
             tex_coords0,
         );
 
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.indices,
             self.base_index as wgpu::BufferAddress * Self::INDEX_SIZE,
             indices,
@@ -175,7 +181,7 @@ impl MeshesManager {
         let vertex_len = (vertices.len() as i32) / (Self::VERTEX_SIZE as i32);
         let vertex_count = (indices.len() as u32) / (Self::INDEX_SIZE as u32);
 
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.meshes_info,
             MeshInfo::address(&handle),
             bytemuck::bytes_of(&MeshInfo {
@@ -201,6 +207,6 @@ impl MeshesManager {
 
 impl Resource for MeshesManager {
     fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(&resources.device, &resources.queue)
+        Self::new(resources)
     }
 }

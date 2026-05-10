@@ -1,10 +1,19 @@
-use crate::{RenderContext, ResourcesManager, UniformBuffer};
+use crate::{RenderContext, Resource, ResourcesManager, UniformBuffer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ToneMappingConfig {
     pub exposure: f32,
     pub gamma: f32,
+}
+
+impl Resource for ToneMappingConfig {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        Self {
+            exposure: 0.0,
+            gamma: 1.0,
+        }
+    }
 }
 
 #[cfg(feature = "egui")]
@@ -17,15 +26,6 @@ impl egui::Widget for &mut ToneMappingConfig {
                 ui.add(egui::Slider::new(&mut self.gamma, 0.0..=5.0).text("Gamma"));
             })
             .header_response
-    }
-}
-
-impl Default for ToneMappingConfig {
-    fn default() -> Self {
-        Self {
-            exposure: 0.0,
-            gamma: 1.0,
-        }
     }
 }
 
@@ -45,7 +45,7 @@ pub struct ToneMappingPass {
 impl ToneMappingPass {
     pub fn new(resources: &ResourcesManager, inputs: ToneMappingPassInputs) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
+        let device = resources.read::<wgpu::Device>();
         let config = resources.read::<UniformBuffer<ToneMappingConfig>>();
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -65,7 +65,7 @@ impl ToneMappingPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &inputs);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ToneMapping shader"),
@@ -114,8 +114,9 @@ impl ToneMappingPass {
     }
 
     pub fn rebind(&mut self, input: ToneMappingPassInputs) {
-        self.bind_group =
-            Self::make_bind_group(&self.resources.device, &self.bind_group_layout, &input);
+        let device = self.resources.read::<wgpu::Device>();
+
+        self.bind_group = Self::make_bind_group(&device, &self.bind_group_layout, &input);
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {

@@ -1,6 +1,6 @@
 use crate::{
-    AnimationState, AnimationsManager, CameraManager, MaterialsManager, MeshesManager,
-    RenderContext, ResourcesManager, SkinsManager, TexturesManager,
+    AnimationState, AnimationsManager, Camera, MaterialsManager, MeshesManager, RenderContext,
+    Resource, ResourcesManager, SkinsManager, TexturesManager, UniformBuffer,
 };
 
 #[repr(C)]
@@ -41,45 +41,24 @@ impl DrawInstance {
     };
 }
 
-pub struct GeometryPassOutputs {
-    pub albedo_metallic: wgpu::Texture,
-    pub normal_roughness: wgpu::Texture,
-    pub emissive: wgpu::Texture,
-    pub depth: wgpu::Texture,
-}
-
 pub struct GeometryPass {
     resources: ResourcesManager,
 
-    pub outputs: GeometryPassOutputs,
-
     cull: GeometryCull,
-
-    albedo_metallic_view: wgpu::TextureView,
-    normal_roughness_view: wgpu::TextureView,
-    emissive_view: wgpu::TextureView,
-    depth_view: wgpu::TextureView,
 
     pipeline: wgpu::RenderPipeline,
 }
 
 impl GeometryPass {
-    pub fn new(surface_config: &wgpu::SurfaceConfiguration, resources: &ResourcesManager) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
-
-        let device = &resources.device;
-        let camera = resources.read::<CameraManager>();
+        let device = resources.read::<wgpu::Device>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
         let textures = resources.read::<TexturesManager>();
         let materials = resources.read::<MaterialsManager>();
         let skins = resources.read::<SkinsManager>();
         let animations = resources.read::<AnimationsManager>();
-
-        let outputs = Self::make_outputs(device, surface_config);
-
-        let albedo_metallic_view = outputs.albedo_metallic.create_view(&Default::default());
-        let normal_roughness_view = outputs.normal_roughness.create_view(&Default::default());
-        let emissive_view = outputs.emissive.create_view(&Default::default());
-        let depth_view = outputs.depth.create_view(&Default::default());
+        let outputs = resources.read::<GeometryPassOutputs>();
 
         let cull = GeometryCull::new(&resources);
 
@@ -176,32 +155,10 @@ impl GeometryPass {
         Self {
             resources,
 
-            outputs,
-
             cull,
-
-            albedo_metallic_view,
-            normal_roughness_view,
-            emissive_view,
-            depth_view,
 
             pipeline,
         }
-    }
-
-    pub fn resize(&mut self, surface_config: &wgpu::SurfaceConfiguration) {
-        self.outputs = Self::make_outputs(&self.resources.device, surface_config);
-
-        self.albedo_metallic_view = self
-            .outputs
-            .albedo_metallic
-            .create_view(&Default::default());
-        self.normal_roughness_view = self
-            .outputs
-            .normal_roughness
-            .create_view(&Default::default());
-        self.emissive_view = self.outputs.emissive.create_view(&Default::default());
-        self.depth_view = self.outputs.depth.create_view(&Default::default());
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -209,17 +166,18 @@ impl GeometryPass {
 
         self.cull.cull(&mut encoder);
 
-        let camera = self.resources.read::<CameraManager>();
+        let camera = self.resources.read::<UniformBuffer<Camera>>();
         let textures = self.resources.read::<TexturesManager>();
         let materials = self.resources.read::<MaterialsManager>();
         let skins = self.resources.read::<SkinsManager>();
         let animations = self.resources.read::<AnimationsManager>();
         let meshes = self.resources.read::<MeshesManager>();
+        let outputs = self.resources.read::<GeometryPassOutputs>();
 
         let color_attachments = [
-            &self.albedo_metallic_view,
-            &self.normal_roughness_view,
-            &self.emissive_view,
+            &outputs.albedo_metallic_view,
+            &outputs.normal_roughness_view,
+            &outputs.emissive_view,
         ]
         .map(|view| {
             Some(wgpu::RenderPassColorAttachment {
@@ -239,7 +197,7 @@ impl GeometryPass {
                 label: Some("Geometry[render]"),
                 color_attachments: &color_attachments,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: &outputs.depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -276,11 +234,27 @@ impl GeometryPass {
 
         drop(rpass);
     }
+}
 
-    fn make_outputs(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
-    ) -> GeometryPassOutputs {
+pub struct GeometryPassOutputs {
+    pub albedo_metallic: wgpu::Texture,
+    pub normal_roughness: wgpu::Texture,
+    pub emissive: wgpu::Texture,
+    pub depth: wgpu::Texture,
+
+    size: wgpu::Extent3d,
+
+    albedo_metallic_view: wgpu::TextureView,
+    normal_roughness_view: wgpu::TextureView,
+    emissive_view: wgpu::TextureView,
+    depth_view: wgpu::TextureView,
+}
+
+impl Resource for GeometryPassOutputs {
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        let device = resources.read::<wgpu::Device>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
@@ -331,20 +305,50 @@ impl GeometryPass {
             view_formats: &[wgpu::TextureFormat::Depth24PlusStencil8],
         });
 
+        let albedo_metallic_view = albedo_metallic.create_view(&Default::default());
+        let normal_roughness_view = normal_roughness.create_view(&Default::default());
+        let emissive_view = emissive.create_view(&Default::default());
+        let depth_view = depth.create_view(&Default::default());
+
         GeometryPassOutputs {
             albedo_metallic,
             normal_roughness,
             emissive,
             depth,
+
+            size,
+
+            albedo_metallic_view,
+            normal_roughness_view,
+            emissive_view,
+            depth_view,
         }
+    }
+
+    fn update(&mut self, resources: &ResourcesManager) -> anyhow::Result<()> {
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+
+        let size = wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
+
+        if self.size == size {
+            return Ok(());
+        }
+
+        *self = Self::instanciate(resources);
+
+        Ok(())
     }
 }
 
 use cull::*;
 mod cull {
     use crate::{
-        CameraManager, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
-        ProfilerCommandEncoder, ResourcesManager,
+        Camera, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
+        ProfilerCommandEncoder, ResourcesManager, UniformBuffer,
     };
 
     use super::DrawInstance;
@@ -366,8 +370,8 @@ mod cull {
     impl GeometryCull {
         pub fn new(resources: &ResourcesManager) -> Self {
             let resources = resources.clone();
-            let device = &resources.device;
-            let camera = resources.read::<CameraManager>();
+            let device = resources.read::<wgpu::Device>();
+            let camera = resources.read::<UniformBuffer<Camera>>();
             let meshes = resources.read::<MeshesManager>();
             let mesh_instances = resources.read::<MeshInstancesManager>();
 
@@ -547,7 +551,7 @@ mod cull {
         }
 
         pub fn cull(&self, encoder: &mut ProfilerCommandEncoder) {
-            let camera = self.resources.read::<CameraManager>();
+            let camera = self.resources.read::<UniformBuffer<Camera>>();
 
             let mut cpass = encoder.scoped_compute_pass("Geometry[cull]");
 

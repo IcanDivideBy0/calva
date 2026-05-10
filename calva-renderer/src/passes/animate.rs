@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crate::{
-    GpuMeshInstance, MeshInstancesManager, RenderContext, ResourcesManager, UniformBuffer,
-    UniformData,
+    GpuMeshInstance, MeshInstancesManager, RenderContext, Resource, ResourcesManager,
+    UniformBuffer, UniformData,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -30,6 +30,12 @@ impl UniformData for AnimateUniform {
     }
 }
 
+impl Resource for AnimateUniform {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        Self::default()
+    }
+}
+
 pub struct AnimatePass {
     resources: ResourcesManager,
 
@@ -40,7 +46,7 @@ pub struct AnimatePass {
 impl AnimatePass {
     pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
+        let device = resources.read::<wgpu::Device>();
         let uniform = resources.read::<UniformBuffer<AnimateUniform>>();
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

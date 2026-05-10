@@ -100,8 +100,7 @@ impl PartialEq for GpuMeshInstance {
 }
 
 pub struct MeshInstancesManager {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    resources: ResourcesManager,
 
     ids: IdGenerator,
 
@@ -117,7 +116,10 @@ pub struct MeshInstancesManager {
 impl MeshInstancesManager {
     pub const MAX_INSTANCES: usize = 1 << 16;
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    fn new(resources: &ResourcesManager) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
+
         let base_instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("MeshInstancesManager base instances"),
             size: std::mem::size_of::<[u32; MeshesManager::MAX_MESHES]>() as _,
@@ -237,8 +239,7 @@ impl MeshInstancesManager {
         });
 
         Self {
-            device: device.clone(),
-            queue: queue.clone(),
+            resources,
 
             ids: IdGenerator::new(0),
 
@@ -305,21 +306,24 @@ impl MeshInstancesManager {
     }
 
     pub fn update(&mut self) -> Result<()> {
+        let device = self.resources.read::<wgpu::Device>();
+        let queue = self.resources.read::<wgpu::Queue>();
+
         let updates_data = self.updates_data.iter().copied().collect::<Vec<_>>();
 
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.updates,
             0,
             bytemuck::bytes_of(&(updates_data.len() as u32)),
         );
 
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.updates,
             std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress,
             bytemuck::cast_slice(&updates_data),
         );
 
-        // self.queue.write_buffer(
+        // queue.write_buffer(
         //     &self.base_instances,
         //     0,
         //     bytemuck::cast_slice(&self.base_instances_data),
@@ -327,7 +331,7 @@ impl MeshInstancesManager {
 
         self.updates_data.clear();
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&Default::default());
 
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("MeshInstancesManager[update]"),
@@ -345,9 +349,9 @@ impl MeshInstancesManager {
 
         drop(cpass);
 
-        let submission_index = self.queue.submit(std::iter::once(encoder.finish()));
+        let submission_index = queue.submit(std::iter::once(encoder.finish()));
 
-        self.device.poll(wgpu::PollType::Wait {
+        device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission_index),
             timeout: None,
         })?;
@@ -358,7 +362,7 @@ impl MeshInstancesManager {
 
 impl Resource for MeshInstancesManager {
     fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(&resources.device, &resources.queue)
+        Self::new(resources)
     }
 
     fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {

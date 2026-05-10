@@ -1,4 +1,4 @@
-use crate::{CameraManager, RenderContext, ResourcesManager, SkyboxManager};
+use crate::{Camera, RenderContext, ResourcesManager, SkyboxManager, UniformBuffer};
 
 pub struct SkyboxPassInputs<'a> {
     pub depth: &'a wgpu::Texture,
@@ -17,8 +17,8 @@ pub struct SkyboxPass {
 impl SkyboxPass {
     pub fn new(resources: &ResourcesManager, inputs: SkyboxPassInputs) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
-        let camera = resources.read::<CameraManager>();
+        let device = resources.read::<wgpu::Device>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
         let skybox = resources.read::<SkyboxManager>();
 
         let output_view = inputs.output.create_view(&Default::default());
@@ -88,7 +88,7 @@ impl SkyboxPass {
     pub fn render(&self, ctx: &mut RenderContext) {
         if let Some(skybox_bind_group) = self.resources.read::<SkyboxManager>().bind_group.as_ref()
         {
-            let camera = self.resources.read::<CameraManager>();
+            let camera = self.resources.read::<UniformBuffer<Camera>>();
 
             let mut rpass = ctx.encoder.scoped_render_pass(
                 "Skybox",

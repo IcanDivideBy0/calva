@@ -1,4 +1,5 @@
 use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager, TextureHandle};
+use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -22,7 +23,7 @@ impl Material {
 }
 
 pub struct MaterialsManager {
-    queue: wgpu::Queue,
+    resources: ResourcesManager,
 
     ids: IdGenerator,
     buffer: wgpu::Buffer,
@@ -34,8 +35,9 @@ pub struct MaterialsManager {
 impl MaterialsManager {
     const MAX_MATERIALS: usize = 1 << 8; // see material_id
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        use wgpu::util::DeviceExt;
+    fn new(resources: &ResourcesManager) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("MaterialManager buffer"),
@@ -67,7 +69,7 @@ impl MaterialsManager {
         });
 
         Self {
-            queue: queue.clone(),
+            resources,
 
             ids: IdGenerator::new(1),
             buffer,
@@ -78,12 +80,14 @@ impl MaterialsManager {
     }
 
     pub fn add(&mut self, materials: &[Material]) -> Vec<MaterialHandle> {
+        let queue = self.resources.read::<wgpu::Queue>();
+
         materials
             .iter()
             .map(|material| {
                 let handle = MaterialHandle(self.ids.get() as u8);
 
-                self.queue.write_buffer(
+                queue.write_buffer(
                     &self.buffer,
                     Material::address(&handle),
                     bytemuck::bytes_of(material),
@@ -97,6 +101,6 @@ impl MaterialsManager {
 
 impl Resource for MaterialsManager {
     fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(&resources.device, &resources.queue)
+        Self::new(resources)
     }
 }

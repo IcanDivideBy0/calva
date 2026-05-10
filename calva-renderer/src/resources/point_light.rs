@@ -27,7 +27,7 @@ impl PointLight {
 }
 
 pub struct PointLightsManager {
-    queue: wgpu::Queue,
+    resources: ResourcesManager,
 
     ids: IdGenerator,
 
@@ -37,7 +37,10 @@ pub struct PointLightsManager {
 impl PointLightsManager {
     const MAX_POINT_LIGHTS: usize = 1 << 16;
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    fn new(resources: &ResourcesManager) -> Self {
+        let resources = resources.clone();
+        let device = resources.read::<wgpu::Device>();
+
         let point_lights = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("LightsManager point lights"),
             size: PointLight::SIZE * Self::MAX_POINT_LIGHTS as wgpu::BufferAddress,
@@ -46,7 +49,7 @@ impl PointLightsManager {
         });
 
         Self {
-            queue: queue.clone(),
+            resources,
             ids: IdGenerator::new(0),
             point_lights,
         }
@@ -80,8 +83,9 @@ impl PointLightsManager {
             writes.last_mut().unwrap().1.push(point_lights[idx + 1]);
         }
 
+        let queue = self.resources.read::<wgpu::Queue>();
         for (address, point_lights) in writes {
-            self.queue.write_buffer(
+            queue.write_buffer(
                 &self.point_lights,
                 address,
                 bytemuck::cast_slice(&point_lights),
@@ -114,8 +118,9 @@ impl PointLightsManager {
             writes.last_mut().unwrap().1.push(PointLight::default());
         }
 
+        let queue = self.resources.read::<wgpu::Queue>();
         for (address, point_lights) in writes {
-            self.queue.write_buffer(
+            queue.write_buffer(
                 &self.point_lights,
                 address,
                 bytemuck::cast_slice(&point_lights),
@@ -142,8 +147,9 @@ impl PointLightsManager {
             writes.last_mut().unwrap().1.push(point_light);
         }
 
+        let queue = self.resources.read::<wgpu::Queue>();
         for (address, point_lights) in writes {
-            self.queue.write_buffer(
+            queue.write_buffer(
                 &self.point_lights,
                 address,
                 bytemuck::cast_slice(&point_lights),
@@ -154,6 +160,6 @@ impl PointLightsManager {
 
 impl Resource for PointLightsManager {
     fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(&resources.device, &resources.queue)
+        Self::new(resources)
     }
 }

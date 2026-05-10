@@ -1,4 +1,4 @@
-use crate::{RenderContext, ResourcesManager};
+use crate::{GeometryPassOutputs, RenderContext, ResourcesManager};
 
 pub struct HierarchicalDepthPassInputs<'a> {
     pub depth: &'a wgpu::Texture,
@@ -23,11 +23,15 @@ pub struct HierarchicalDepthPass {
 }
 
 impl HierarchicalDepthPass {
-    pub fn new(resources: &ResourcesManager, inputs: HierarchicalDepthPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
+        let device = resources.read::<wgpu::Device>();
+        let geometry_outputs = resources.read::<GeometryPassOutputs>();
 
-        let size = (inputs.depth.width() / 16, inputs.depth.height() / 16);
+        let size = (
+            geometry_outputs.depth.width() / 16,
+            geometry_outputs.depth.height() / 16,
+        );
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("HierarchicalDepth sampler"),
@@ -36,7 +40,7 @@ impl HierarchicalDepthPass {
             ..Default::default()
         });
 
-        let outputs = Self::make_outputs(device, &inputs);
+        let outputs = Self::make_outputs(&device, &geometry_outputs.depth);
         let output_view = outputs.output.create_view(&Default::default());
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -74,8 +78,13 @@ impl HierarchicalDepthPass {
             ],
         });
 
-        let bind_group =
-            Self::make_bind_group(device, &bind_group_layout, &sampler, &output_view, &inputs);
+        let bind_group = Self::make_bind_group(
+            &device,
+            &bind_group_layout,
+            &sampler,
+            &output_view,
+            &geometry_outputs.depth,
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("HierarchicalDepth shader"),
@@ -114,18 +123,24 @@ impl HierarchicalDepthPass {
         }
     }
 
-    pub fn rebind(&mut self, inputs: HierarchicalDepthPassInputs) {
-        self.size = (inputs.depth.width() / 16, inputs.depth.height() / 16);
+    pub fn rebind(&mut self) {
+        let device = self.resources.read::<wgpu::Device>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
 
-        self.outputs = Self::make_outputs(&self.resources.device, &inputs);
+        self.size = (
+            geometry_outputs.depth.width() / 16,
+            geometry_outputs.depth.height() / 16,
+        );
+
+        self.outputs = Self::make_outputs(&device, &geometry_outputs.depth);
         self.output_view = self.outputs.output.create_view(&Default::default());
 
         self.bind_group = Self::make_bind_group(
-            &self.resources.device,
+            &device,
             &self.bind_group_layout,
             &self.sampler,
             &self.output_view,
-            &inputs,
+            &geometry_outputs.depth,
         )
     }
 
@@ -137,15 +152,12 @@ impl HierarchicalDepthPass {
         cpass.dispatch_workgroups(self.size.0, self.size.1, 1);
     }
 
-    fn make_outputs(
-        device: &wgpu::Device,
-        inputs: &HierarchicalDepthPassInputs,
-    ) -> HierarchicalDepthPassOutputs {
+    fn make_outputs(device: &wgpu::Device, depth: &wgpu::Texture) -> HierarchicalDepthPassOutputs {
         let output = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("HierarchicalDepth output"),
             size: wgpu::Extent3d {
-                width: inputs.depth.width() / 16,
-                height: inputs.depth.height() / 16,
+                width: depth.width() / 16,
+                height: depth.height() / 16,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -164,7 +176,7 @@ impl HierarchicalDepthPass {
         layout: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
         output_view: &wgpu::TextureView,
-        inputs: &HierarchicalDepthPassInputs,
+        depth: &wgpu::Texture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("HierarchicalDepth bind group"),
@@ -176,7 +188,7 @@ impl HierarchicalDepthPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&inputs.depth.create_view(
+                    resource: wgpu::BindingResource::TextureView(&depth.create_view(
                         &wgpu::TextureViewDescriptor {
                             aspect: wgpu::TextureAspect::DepthOnly,
                             ..Default::default()

@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    util::icosphere::Icosphere, CameraManager, PointLight, PointLightsManager, RenderContext,
-    ResourcesManager,
+    util::icosphere::Icosphere, Camera, PointLight, PointLightsManager, RenderContext,
+    ResourcesManager, UniformBuffer,
 };
 
 pub struct PointLightsPassInputs<'a> {
@@ -32,8 +32,8 @@ pub struct PointLightsPass {
 impl PointLightsPass {
     pub fn new(resources: &ResourcesManager, inputs: PointLightsPassInputs) -> Self {
         let resources = resources.clone();
-        let device = &resources.device;
-        let camera = resources.read::<CameraManager>();
+        let device = resources.read::<wgpu::Device>();
+        let camera = resources.read::<UniformBuffer<Camera>>();
 
         let icosphere = Icosphere::new(1);
 
@@ -184,7 +184,7 @@ impl PointLightsPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
 
         let lighting_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -271,12 +271,10 @@ impl PointLightsPass {
     }
 
     pub fn rebind(&mut self, inputs: PointLightsPassInputs) {
-        self.bind_group = Self::make_bind_group(
-            &self.resources.device,
-            &self.bind_group_layout,
-            &self.sampler,
-            &inputs,
-        );
+        let device = self.resources.read::<wgpu::Device>();
+
+        self.bind_group =
+            Self::make_bind_group(&device, &self.bind_group_layout, &self.sampler, &inputs);
 
         self.output_view = inputs.output.create_view(&Default::default());
         self.depth_view = inputs.depth.create_view(&Default::default());
@@ -285,7 +283,7 @@ impl PointLightsPass {
     pub fn render(&self, ctx: &mut RenderContext) {
         let mut encoder = ctx.encoder.scope("PointLights");
 
-        let camera = self.resources.read::<CameraManager>();
+        let camera = self.resources.read::<UniformBuffer<Camera>>();
         let lights = self.resources.read::<PointLightsManager>();
 
         let mut stencil_pass = encoder.scoped_render_pass(

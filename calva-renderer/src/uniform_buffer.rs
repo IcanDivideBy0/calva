@@ -18,8 +18,6 @@ impl<T: Copy + bytemuck::NoUninit> UniformData for T {
 }
 
 pub struct UniformBuffer<T> {
-    queue: wgpu::Queue,
-
     cpu: T,
     gpu: T,
 
@@ -29,7 +27,7 @@ pub struct UniformBuffer<T> {
 }
 
 impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, value: T) -> Self {
+    pub fn new(device: &wgpu::Device, value: T) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("Uniform buffer: {}", std::any::type_name::<T>())),
             contents: bytemuck::bytes_of(&value.as_gpu_type()),
@@ -66,8 +64,6 @@ impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
         });
 
         Self {
-            queue: queue.clone(),
-
             cpu: value,
             gpu: value,
 
@@ -77,42 +73,35 @@ impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
         }
     }
 
-    pub fn update(&mut self) -> Result<()> {
+    pub fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
         if self.gpu == self.cpu {
             return Ok(());
         }
 
         self.gpu = self.cpu;
-        self.queue
-            .write_buffer(&self.buffer, 0, bytemuck::bytes_of(&self.gpu.as_gpu_type()));
+
+        resources.read::<wgpu::Queue>().write_buffer(
+            &self.buffer,
+            0,
+            bytemuck::bytes_of(&self.gpu.as_gpu_type()),
+        );
 
         Ok(())
     }
 }
 
-impl<T> std::ops::Deref for UniformBuffer<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.cpu
-    }
-}
-
-impl<T> std::ops::DerefMut for UniformBuffer<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.cpu
-    }
-}
-
 impl<T> Resource for UniformBuffer<T>
 where
-    T: Send + Sync + Copy + PartialEq + UniformData + Default + 'static,
+    T: Copy + PartialEq + UniformData + Resource + 'static,
 {
     fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(&resources.device, &resources.queue, Default::default())
+        let device = resources.read::<wgpu::Device>();
+        let resource = *resources.read::<T>();
+        Self::new(&device, resource)
     }
 
-    fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {
-        self.update()
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        self.cpu = *resources.read::<T>();
+        self.update(resources)
     }
 }

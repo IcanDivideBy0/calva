@@ -3,6 +3,7 @@ mod camera;
 mod material;
 mod mesh;
 mod mesh_instance;
+mod mipmap;
 mod point_light;
 mod skin;
 mod skybox;
@@ -14,6 +15,7 @@ pub use camera::*;
 pub use material::*;
 pub use mesh::*;
 pub use mesh_instance::*;
+pub use mipmap::*;
 pub use point_light::*;
 pub use skin::*;
 pub use skybox::*;
@@ -76,18 +78,24 @@ type ResourceArc = Arc<RwLock<Box<dyn Resource>>>;
 
 #[derive(Clone)]
 pub struct ResourcesManager {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_config: Arc<RwLock<wgpu::SurfaceConfiguration>>,
 
     resources: Arc<RwLock<HashMap<TypeId, ResourceArc>>>,
     instantiation_stack: Arc<RwLock<Vec<(TypeId, String)>>>,
 }
 
 impl ResourcesManager {
-    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        surface_config: &wgpu::SurfaceConfiguration,
+    ) -> Self {
         Self {
             device: device.clone(),
             queue: queue.clone(),
+            surface_config: Arc::new(RwLock::new(surface_config.clone())),
 
             resources: Default::default(),
             instantiation_stack: Default::default(),
@@ -160,5 +168,23 @@ impl ResourcesManager {
 
     pub fn write<T: Resource>(&self) -> ResourceWriteLock<T> {
         ResourceWriteLock(self.get_arc::<T>().write_arc(), PhantomData)
+    }
+}
+
+impl Resource for wgpu::Device {
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        resources.device.clone()
+    }
+}
+
+impl Resource for wgpu::Queue {
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        resources.queue.clone()
+    }
+}
+
+impl Resource for wgpu::SurfaceConfiguration {
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        resources.surface_config.read_arc().clone()
     }
 }
