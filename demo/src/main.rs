@@ -313,9 +313,9 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     for key in
                         itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y))
                     {
-                        if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
-                            let model = self.worldgen_model.as_ref().unwrap();
-                            entry.insert(self.worldgen.chunk(model, key));
+                        if let Entry::Vacant(_entry) = self.worldgen_chunks.entry(key) {
+                            // let model = self.worldgen_model.as_ref().unwrap();
+                            // entry.insert(self.worldgen.chunk(model, key));
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::Resource;
+use crate::{Resource, ResourcesManager};
 
 pub struct SkyboxManager {
     device: wgpu::Device,
@@ -102,7 +102,7 @@ impl SkyboxManager {
 }
 
 impl Resource for SkyboxManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 }

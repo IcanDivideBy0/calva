@@ -1,7 +1,7 @@
 use anyhow::Result;
 use wgpu::util::DeviceExt;
 
-use crate::Resource;
+use crate::{Resource, ResourcesManager};
 
 pub trait UniformData {
     type GpuType: bytemuck::NoUninit;
@@ -108,11 +108,11 @@ impl<T> Resource for UniformBuffer<T>
 where
     T: Send + Sync + Copy + PartialEq + UniformData + Default + 'static,
 {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue, Default::default())
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue, Default::default())
     }
 
-    fn update(&mut self) -> Result<()> {
+    fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {
         self.update()
     }
 }

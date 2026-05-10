@@ -1,4 +1,4 @@
-use crate::{util::id_generator::IdGenerator, Resource, SkinHandle};
+use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager, SkinHandle};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -200,7 +200,7 @@ impl MeshesManager {
 }
 
 impl Resource for MeshesManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 }

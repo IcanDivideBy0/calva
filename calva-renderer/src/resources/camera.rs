@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::{Resource, UniformBuffer, UniformData};
+use crate::{Resource, ResourcesManager, UniformBuffer, UniformData};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -106,11 +106,11 @@ impl std::ops::DerefMut for CameraManager {
 }
 
 impl Resource for CameraManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 
-    fn update(&mut self) -> Result<()> {
+    fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {
         self.0.update()
     }
 }

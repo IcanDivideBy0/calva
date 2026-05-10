@@ -3,7 +3,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use wesl::syntax::*;
 
-use crate::Resource;
+use crate::{Resource, ResourcesManager};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -141,8 +141,8 @@ impl TexturesManager {
 }
 
 impl Resource for TexturesManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 }
 

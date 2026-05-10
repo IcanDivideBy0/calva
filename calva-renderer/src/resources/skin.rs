@@ -1,4 +1,4 @@
-use crate::{MeshesManager, Resource};
+use crate::{MeshesManager, Resource, ResourcesManager};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -119,7 +119,7 @@ impl SkinsManager {
 }
 
 impl Resource for SkinsManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 }

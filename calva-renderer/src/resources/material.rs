@@ -1,4 +1,4 @@
-use crate::{util::id_generator::IdGenerator, Resource, TextureHandle};
+use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager, TextureHandle};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -96,7 +96,7 @@ impl MaterialsManager {
 }
 
 impl Resource for MaterialsManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 }

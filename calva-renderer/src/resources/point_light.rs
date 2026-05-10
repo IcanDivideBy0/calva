@@ -1,4 +1,4 @@
-use crate::{util::id_generator::IdGenerator, Resource};
+use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager};
 
 #[repr(C)]
 #[derive(
@@ -153,7 +153,7 @@ impl PointLightsManager {
 }
 
 impl Resource for PointLightsManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 }

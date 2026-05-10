@@ -7,7 +7,7 @@ use anyhow::Result;
 
 use crate::{
     util::id_generator::IdGenerator, AnimationState, MaterialHandle, MeshHandle, MeshesManager,
-    Resource,
+    Resource, ResourcesManager,
 };
 
 #[repr(C)]
@@ -357,11 +357,11 @@ impl MeshInstancesManager {
 }
 
 impl Resource for MeshInstancesManager {
-    fn instanciate(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        Self::new(device, queue)
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        Self::new(&resources.device, &resources.queue)
     }
 
-    fn update(&mut self) -> Result<()> {
+    fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {
         self.update()
     }
 }
