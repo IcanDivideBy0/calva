@@ -1,4 +1,7 @@
-use crate::{Camera, RenderContext, Resource, ResourcesManager, UniformBuffer};
+use crate::{
+    Camera, FxaaPassOutputs, GeometryPassOutputs, RenderContext, Resource, ResourcesManager,
+    UniformBuffer,
+};
 
 mod blit;
 mod blur;
@@ -91,12 +94,6 @@ impl Resource for SsaoRandom {
     }
 }
 
-pub struct SsaoPassInputs<'a> {
-    pub normal: &'a wgpu::Texture,
-    pub depth: &'a wgpu::Texture,
-    pub output: &'a wgpu::Texture,
-}
-
 pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
     resources: ResourcesManager,
 
@@ -112,12 +109,14 @@ pub struct SsaoPass<const WIDTH: u32, const HEIGHT: u32> {
 }
 
 impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
-    pub fn new(resources: &ResourcesManager, inputs: SsaoPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
         let camera = resources.read::<UniformBuffer<Camera>>();
         let config = resources.read::<UniformBuffer<SsaoConfig>>();
         let random = resources.read::<UniformBuffer<SsaoRandom>>();
+        let geometry_outputs = resources.read::<GeometryPassOutputs>();
+        let fxaa_outputs = resources.read::<FxaaPassOutputs>();
 
         let output = Self::make_texture(&device, Some("Ssao output"));
         let output_view = output.create_view(&Default::default());
@@ -166,7 +165,13 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
             ],
         });
 
-        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(
+            &device,
+            &bind_group_layout,
+            &sampler,
+            &geometry_outputs.normal_roughness,
+            &geometry_outputs.depth,
+        );
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Ssao pipeline layout"),
@@ -211,7 +216,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         });
 
         let blur = blur::SsaoBlurPass::new(&resources, &output);
-        let blit = blit::SsaoBlitPass::new(&resources, &output, inputs.output);
+        let blit = blit::SsaoBlitPass::new(&resources, &output, &fxaa_outputs.output);
 
         Self {
             resources,
@@ -228,13 +233,20 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         }
     }
 
-    pub fn rebind(&mut self, inputs: SsaoPassInputs) {
+    pub fn rebind(&mut self) {
         let device = self.resources.read::<wgpu::Device>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
+        let fxaa_outputs = self.resources.read::<FxaaPassOutputs>();
 
-        self.bind_group =
-            Self::make_bind_group(&device, &self.bind_group_layout, &self.sampler, &inputs);
+        self.bind_group = Self::make_bind_group(
+            &device,
+            &self.bind_group_layout,
+            &self.sampler,
+            &geometry_outputs.normal_roughness,
+            &geometry_outputs.depth,
+        );
 
-        self.blit.rebind(inputs.output);
+        self.blit.rebind(&fxaa_outputs.output);
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -297,7 +309,8 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
-        inputs: &SsaoPassInputs,
+        normal: &wgpu::Texture,
+        depth: &wgpu::Texture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Ssao bind group"),
@@ -310,12 +323,12 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.normal.create_view(&Default::default()),
+                        &normal.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&inputs.depth.create_view(
+                    resource: wgpu::BindingResource::TextureView(&depth.create_view(
                         &wgpu::TextureViewDescriptor {
                             aspect: wgpu::TextureAspect::DepthOnly,
                             ..Default::default()

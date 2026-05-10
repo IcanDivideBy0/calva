@@ -33,6 +33,8 @@ pub mod worldgen;
 
 use worldgen::{Chunk, Tile};
 
+use crate::{camera::PerspectiveCamera, controls::FlyingCamera};
+
 #[async_std::main]
 async fn main() -> Result<()> {
     env_logger::init();
@@ -49,9 +51,6 @@ async fn main() -> Result<()> {
 struct DemoState<'a> {
     window: Arc<Window>,
     mouse_pos: glam::Vec2,
-    camera: camera::PerspectiveCamera,
-    flying_camera: controls::FlyingCamera,
-    player_controller: controls::PlayerController,
     renderer: Renderer<'a>,
     engine: Engine,
     egui: EguiWinitPass,
@@ -213,16 +212,6 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         );
         let mouse_pos = Default::default();
 
-        let camera = camera::PerspectiveCamera::new(window.inner_size().into());
-
-        let flying_camera = controls::FlyingCamera::from_look_at(
-            glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
-            glam::Vec3::Y - glam::Vec3::Z,        // target
-            glam::Vec3::Y,                        // up
-        );
-
-        let player_controller = controls::PlayerController::default();
-
         let renderer: Renderer<'a> = task::block_on(Renderer::new(
             Box::new(event_loop.owned_display_handle()),
             window.clone(),
@@ -230,6 +219,13 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         ))
         .unwrap();
         let engine = Engine::new(&renderer);
+
+        let _ = engine.resources.read::<PerspectiveCamera>();
+        *engine.resources.write::<FlyingCamera>() = controls::FlyingCamera::from_look_at(
+            glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
+            glam::Vec3::Y - glam::Vec3::Z,        // target
+            glam::Vec3::Y,                        // up
+        );
 
         let mut ambient_light_config = engine.resources.write::<AmbientLightConfig>();
         ambient_light_config.color = [0.106535, 0.061572, 0.037324];
@@ -240,9 +236,6 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
         self.state = Some(DemoState {
             window,
             mouse_pos,
-            camera,
-            flying_camera,
-            player_controller,
             renderer,
             engine,
             egui,
@@ -261,31 +254,34 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
         if state.egui.on_event(&state.window, &event).consumed {
             return;
-        }
+        };
 
-        if state.flying_camera.handle_event(&event) {
+        if state
+            .engine
+            .resources
+            .write::<FlyingCamera>()
+            .handle_event(&event)
+        {
             // return;
-        }
-
-        if state.player_controller.handle_event(&event) {
-            return;
         }
 
         match event {
             WindowEvent::Resized(size) => {
                 let size = size.into();
 
-                state.camera.resize(size);
                 state.renderer.resize(size);
-                state.engine.resize(&state.renderer);
+                state.engine.resize();
             }
 
             WindowEvent::RedrawRequested => {
                 // Worldgen
                 {
                     let (_, _, cam_pos) = state
-                        .flying_camera
-                        .transform
+                        .engine
+                        .resources
+                        .read::<Camera>()
+                        .view
+                        .inverse()
                         .to_scale_rotation_translation();
 
                     let chunk_coord =
@@ -300,9 +296,9 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     for key in
                         itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y))
                     {
-                        if let Entry::Vacant(_entry) = self.worldgen_chunks.entry(key) {
-                            // let model = self.worldgen_model.as_ref().unwrap();
-                            // entry.insert(self.worldgen.chunk(model, key));
+                        if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
+                            let model = self.worldgen_model.as_ref().unwrap();
+                            entry.insert(self.worldgen.chunk(model, key));
                         }
                     }
                 }
@@ -337,12 +333,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 self.render_time = Instant::now();
 
                 **state.engine.resources.write::<AnimateUniform>() = dt;
-
-                state.flying_camera.update(dt);
-                *state.engine.resources.write::<Camera>() = Camera {
-                    view: state.flying_camera.get_view(),
-                    proj: state.camera.get_proj(),
-                };
+                state.engine.resources.write::<FlyingCamera>().update(dt);
 
                 state.egui.update(&state.renderer, &state.window, |ui| {
                     egui::Panel::right("engine_panel")
@@ -364,12 +355,10 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                         });
                 });
 
-                state.engine.update().unwrap();
-
                 let result = state.renderer.render(|ctx| {
-                    state.engine.render(ctx);
+                    state.engine.render(ctx).unwrap();
                     // fog.render(ctx, &engine.resources.camera, &time);
-                    if let Some(navgrid_debug) = self.navgrid_debug.as_ref() {
+                    if let Some(navgrid_debug) = &self.navgrid_debug {
                         navgrid_debug.render(ctx)
                     }
                     state.egui.render(ctx);

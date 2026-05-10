@@ -144,6 +144,7 @@ impl AnimationsManager {
         self.views.push(view);
         self.bind_group =
             Self::create_bind_group(&device, &self.bind_group_layout, &self.views, &self.sampler);
+
         AnimationHandle(self.views.len() as u32 - 1)
     }
 

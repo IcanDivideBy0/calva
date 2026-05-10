@@ -1,28 +1,20 @@
-use crate::{Camera, RenderContext, ResourcesManager, SkyboxManager, UniformBuffer};
-
-pub struct SkyboxPassInputs<'a> {
-    pub depth: &'a wgpu::Texture,
-    pub output: &'a wgpu::Texture,
-}
+use crate::{
+    AmbientLightPassOutputs, Camera, GeometryPassOutputs, RenderContext, ResourcesManager,
+    SkyboxManager, UniformBuffer,
+};
 
 pub struct SkyboxPass {
     resources: ResourcesManager,
-
-    depth_view: wgpu::TextureView,
-    output_view: wgpu::TextureView,
-
     pipeline: wgpu::RenderPipeline,
 }
 
 impl SkyboxPass {
-    pub fn new(resources: &ResourcesManager, inputs: SkyboxPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
         let camera = resources.read::<UniformBuffer<Camera>>();
         let skybox = resources.read::<SkyboxManager>();
-
-        let output_view = inputs.output.create_view(&Default::default());
-        let depth_view = inputs.depth.create_view(&Default::default());
+        let ambient_light_outputs = resources.read::<AmbientLightPassOutputs>();
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Skybox render pipeline layout"),
@@ -53,7 +45,7 @@ impl SkyboxPass {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: inputs.output.format(),
+                    format: ambient_light_outputs.output.format(),
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -72,30 +64,23 @@ impl SkyboxPass {
 
         Self {
             resources,
-
-            output_view,
-            depth_view,
-
             pipeline,
         }
-    }
-
-    pub fn rebind(&mut self, inputs: SkyboxPassInputs) {
-        self.output_view = inputs.output.create_view(&Default::default());
-        self.depth_view = inputs.depth.create_view(&Default::default());
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
         if let Some(skybox_bind_group) = self.resources.read::<SkyboxManager>().bind_group.as_ref()
         {
             let camera = self.resources.read::<UniformBuffer<Camera>>();
+            let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
+            let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
 
             let mut rpass = ctx.encoder.scoped_render_pass(
                 "Skybox",
                 wgpu::RenderPassDescriptor {
                     label: Some("Skybox"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &self.output_view,
+                        view: &ambient_light_outputs.output_view,
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
@@ -104,7 +89,7 @@ impl SkyboxPass {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_view,
+                        view: &geometry_outputs.depth_view,
                         depth_ops: None,
                         stencil_ops: None,
                     }),

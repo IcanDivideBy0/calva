@@ -74,17 +74,15 @@ impl<T: Copy + PartialEq + UniformData> UniformBuffer<T> {
     }
 
     pub fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
-        if self.gpu == self.cpu {
-            return Ok(());
+        if self.gpu != self.cpu {
+            self.gpu = self.cpu;
+
+            resources.read::<wgpu::Queue>().write_buffer(
+                &self.buffer,
+                0,
+                bytemuck::bytes_of(&self.gpu.as_gpu_type()),
+            );
         }
-
-        self.gpu = self.cpu;
-
-        resources.read::<wgpu::Queue>().write_buffer(
-            &self.buffer,
-            0,
-            bytemuck::bytes_of(&self.gpu.as_gpu_type()),
-        );
 
         Ok(())
     }
@@ -103,5 +101,9 @@ where
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
         self.cpu = *resources.read::<T>();
         self.update(resources)
+    }
+
+    fn update_dependencies() -> impl IntoIterator<Item = std::any::TypeId> {
+        [std::any::TypeId::of::<T>()]
     }
 }

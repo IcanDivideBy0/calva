@@ -1,3 +1,5 @@
+use anyhow::Result;
+use calva::renderer::{Camera, Resource, ResourcesManager};
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
 use winit::{
@@ -177,5 +179,16 @@ impl Default for FlyingCamera {
             last_mouse_pos: (0.0, 0.0).into(),
             mouse_pressed: false,
         }
+    }
+}
+
+impl Resource for FlyingCamera {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        Self::default()
+    }
+
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        resources.write::<Camera>().view = self.get_view();
+        Ok(())
     }
 }

@@ -141,7 +141,7 @@ impl MipmapGenerator {
         texture: &wgpu::Texture,
         desc: &wgpu::TextureDescriptor,
     ) -> Result<()> {
-        let pipelines_read = self.pipelines.read();
+        let pipelines_read = self.pipelines.upgradable_read();
 
         let pipeline = match pipelines_read.get(&desc.format) {
             Some(pipeline) => pipeline,

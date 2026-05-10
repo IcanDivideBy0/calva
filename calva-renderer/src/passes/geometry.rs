@@ -2,6 +2,7 @@ use crate::{
     AnimationState, AnimationsManager, Camera, MaterialsManager, MeshesManager, RenderContext,
     Resource, ResourcesManager, SkinsManager, TexturesManager, UniformBuffer,
 };
+use anyhow::Result;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -238,16 +239,16 @@ impl GeometryPass {
 
 pub struct GeometryPassOutputs {
     pub albedo_metallic: wgpu::Texture,
+    pub albedo_metallic_view: wgpu::TextureView,
+
     pub normal_roughness: wgpu::Texture,
+    pub normal_roughness_view: wgpu::TextureView,
+
     pub emissive: wgpu::Texture,
+    pub emissive_view: wgpu::TextureView,
+
     pub depth: wgpu::Texture,
-
-    size: wgpu::Extent3d,
-
-    albedo_metallic_view: wgpu::TextureView,
-    normal_roughness_view: wgpu::TextureView,
-    emissive_view: wgpu::TextureView,
-    depth_view: wgpu::TextureView,
+    pub depth_view: wgpu::TextureView,
 }
 
 impl Resource for GeometryPassOutputs {
@@ -271,6 +272,7 @@ impl Resource for GeometryPassOutputs {
             format: wgpu::TextureFormat::Bgra8Unorm,
             view_formats: &[wgpu::TextureFormat::Bgra8Unorm],
         });
+        let albedo_metallic_view = albedo_metallic.create_view(&Default::default());
 
         let normal_roughness = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Geometry normal/roughness texture"),
@@ -282,6 +284,7 @@ impl Resource for GeometryPassOutputs {
             format: wgpu::TextureFormat::Rgba16Float,
             view_formats: &[wgpu::TextureFormat::Rgba16Float],
         });
+        let normal_roughness_view = normal_roughness.create_view(&Default::default());
 
         let emissive = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("GBuffer albedo/metallic texture"),
@@ -293,6 +296,7 @@ impl Resource for GeometryPassOutputs {
             format: wgpu::TextureFormat::Bgra8Unorm,
             view_formats: &[wgpu::TextureFormat::Bgra8Unorm],
         });
+        let emissive_view = emissive.create_view(&Default::default());
 
         let depth = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("GBuffer depth texture"),
@@ -304,28 +308,24 @@ impl Resource for GeometryPassOutputs {
             format: wgpu::TextureFormat::Depth24PlusStencil8,
             view_formats: &[wgpu::TextureFormat::Depth24PlusStencil8],
         });
-
-        let albedo_metallic_view = albedo_metallic.create_view(&Default::default());
-        let normal_roughness_view = normal_roughness.create_view(&Default::default());
-        let emissive_view = emissive.create_view(&Default::default());
         let depth_view = depth.create_view(&Default::default());
 
         GeometryPassOutputs {
             albedo_metallic,
-            normal_roughness,
-            emissive,
-            depth,
-
-            size,
-
             albedo_metallic_view,
+
+            normal_roughness,
             normal_roughness_view,
+
+            emissive,
             emissive_view,
+
+            depth,
             depth_view,
         }
     }
 
-    fn update(&mut self, resources: &ResourcesManager) -> anyhow::Result<()> {
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
         let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
 
         let size = wgpu::Extent3d {
@@ -334,11 +334,9 @@ impl Resource for GeometryPassOutputs {
             depth_or_array_layers: 1,
         };
 
-        if self.size == size {
-            return Ok(());
+        if self.depth.size() != size {
+            *self = Self::instanciate(resources);
         }
-
-        *self = Self::instanciate(resources);
 
         Ok(())
     }

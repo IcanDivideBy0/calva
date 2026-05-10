@@ -1,6 +1,7 @@
 use crate::{
-    AnimationState, AnimationsManager, Camera, MeshesManager, RenderContext, Resource,
-    ResourcesManager, SkinsManager, UniformBuffer, UniformData,
+    AmbientLightPassOutputs, AnimationState, AnimationsManager, Camera, GeometryPassOutputs,
+    MeshesManager, RenderContext, Resource, ResourcesManager, SkinsManager, UniformBuffer,
+    UniformData,
 };
 
 #[repr(C)]
@@ -80,17 +81,9 @@ impl egui::Widget for &mut DirectionalLight {
     }
 }
 
-pub struct DirectionalLightPassInputs<'a> {
-    pub albedo_metallic: &'a wgpu::Texture,
-    pub normal_roughness: &'a wgpu::Texture,
-    pub depth: &'a wgpu::Texture,
-    pub output: &'a wgpu::Texture,
-}
-
 pub struct DirectionalLightPass {
     resources: ResourcesManager,
 
-    output_view: wgpu::TextureView,
     cull: DirectionalLightCull,
 
     sampler: wgpu::Sampler,
@@ -113,13 +106,15 @@ impl DirectionalLightPass {
         depth_or_array_layers: 1,
     };
 
-    pub fn new(resources: &ResourcesManager, inputs: DirectionalLightPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
         let camera = resources.read::<UniformBuffer<Camera>>();
         let skins = resources.read::<SkinsManager>();
         let animations = resources.read::<AnimationsManager>();
         let uniform = resources.read::<UniformBuffer<DirectionalLightUniform>>();
+        let geometry_outputs = resources.read::<GeometryPassOutputs>();
+        let ambient_light_outputs = resources.read::<AmbientLightPassOutputs>();
 
         let cull = DirectionalLightCull::new(&resources);
 
@@ -129,8 +124,6 @@ impl DirectionalLightPass {
             min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-
-        let output_view = inputs.output.create_view(&Default::default());
 
         let light_depth = Self::make_depth_texture(&device, Some("DirectionalLight depth texture"));
         let light_depth_view = light_depth.create_view(&Default::default());
@@ -261,7 +254,9 @@ impl DirectionalLightPass {
                 &bind_group_layout,
                 &light_depth_view,
                 &sampler,
-                &inputs,
+                &geometry_outputs.albedo_metallic,
+                &geometry_outputs.normal_roughness,
+                &geometry_outputs.depth,
             );
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -289,7 +284,7 @@ impl DirectionalLightPass {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: inputs.output.format(),
+                        format: ambient_light_outputs.output.format(),
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::One,
@@ -315,8 +310,8 @@ impl DirectionalLightPass {
 
             cull,
 
-            output_view,
             sampler,
+
             light_depth_view,
             light_depth_pipeline,
 
@@ -328,18 +323,19 @@ impl DirectionalLightPass {
         }
     }
 
-    pub fn rebind(&mut self, inputs: DirectionalLightPassInputs) {
+    pub fn rebind(&mut self) {
         let device = self.resources.read::<wgpu::Device>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
 
         self.lighting_bind_group = Self::make_lighting_bind_group(
             &device,
             &self.lighting_bind_group_layout,
             &self.light_depth_view,
             &self.sampler,
-            &inputs,
+            &geometry_outputs.albedo_metallic,
+            &geometry_outputs.normal_roughness,
+            &geometry_outputs.depth,
         );
-
-        self.output_view = inputs.output.create_view(&Default::default());
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -357,6 +353,7 @@ impl DirectionalLightPass {
         let meshes = self.resources.read::<MeshesManager>();
         let skins = self.resources.read::<SkinsManager>();
         let animations = self.resources.read::<AnimationsManager>();
+        let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
 
         self.cull.cull(&mut encoder, &uniform);
 
@@ -405,7 +402,7 @@ impl DirectionalLightPass {
             wgpu::RenderPassDescriptor {
                 label: Some("DirectionalLight[lighting]"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.output_view,
+                    view: &ambient_light_outputs.output_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -434,7 +431,9 @@ impl DirectionalLightPass {
         layout: &wgpu::BindGroupLayout,
         light_depth: &wgpu::TextureView,
         sampler: &wgpu::Sampler,
-        inputs: &DirectionalLightPassInputs,
+        albedo_metallic: &wgpu::Texture,
+        normal_roughness: &wgpu::Texture,
+        depth: &wgpu::Texture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("DirectionalLight[lighting] bind group"),
@@ -443,18 +442,18 @@ impl DirectionalLightPass {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.albedo_metallic.create_view(&Default::default()),
+                        &albedo_metallic.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.normal_roughness.create_view(&Default::default()),
+                        &normal_roughness.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&inputs.depth.create_view(
+                    resource: wgpu::BindingResource::TextureView(&depth.create_view(
                         &wgpu::TextureViewDescriptor {
                             aspect: wgpu::TextureAspect::DepthOnly,
                             ..Default::default()
@@ -578,6 +577,13 @@ impl Resource for DirectionalLightUniform {
         self.camera = *resources.read::<Camera>();
 
         Ok(())
+    }
+
+    fn update_dependencies() -> impl IntoIterator<Item = std::any::TypeId> {
+        [
+            std::any::TypeId::of::<DirectionalLight>(),
+            std::any::TypeId::of::<Camera>(),
+        ]
     }
 }
 

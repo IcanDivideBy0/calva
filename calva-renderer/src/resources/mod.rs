@@ -39,6 +39,13 @@ pub trait Resource: DowncastSync + DowncastSend {
     fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {
         Ok(())
     }
+
+    fn update_dependencies() -> impl IntoIterator<Item = TypeId>
+    where
+        Self: Sized,
+    {
+        []
+    }
 }
 impl_downcast!(sync Resource);
 
@@ -78,12 +85,8 @@ type ResourceArc = Arc<RwLock<Box<dyn Resource>>>;
 
 #[derive(Clone)]
 pub struct ResourcesManager {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface_config: Arc<RwLock<wgpu::SurfaceConfiguration>>,
-
     resources: Arc<RwLock<HashMap<TypeId, ResourceArc>>>,
-    instantiation_stack: Arc<RwLock<Vec<(TypeId, String)>>>,
+    call_stack: Arc<RwLock<Vec<(TypeId, String)>>>,
 }
 
 impl ResourcesManager {
@@ -92,18 +95,32 @@ impl ResourcesManager {
         queue: &wgpu::Queue,
         surface_config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        Self {
-            device: device.clone(),
-            queue: queue.clone(),
-            surface_config: Arc::new(RwLock::new(surface_config.clone())),
+        let mut resources: HashMap<TypeId, ResourceArc> = HashMap::new();
 
-            resources: Default::default(),
-            instantiation_stack: Default::default(),
+        resources.insert(
+            TypeId::of::<wgpu::Device>(),
+            Arc::new(RwLock::new(Box::new(device.clone()))),
+        );
+
+        resources.insert(
+            TypeId::of::<wgpu::Queue>(),
+            Arc::new(RwLock::new(Box::new(queue.clone()))),
+        );
+
+        resources.insert(
+            TypeId::of::<wgpu::SurfaceConfiguration>(),
+            Arc::new(RwLock::new(Box::new(surface_config.clone()))),
+        );
+
+        Self {
+            resources: Arc::new(RwLock::new(resources)),
+            call_stack: Default::default(),
         }
     }
 
     pub(crate) fn update(&self) -> Result<()> {
         for arc in self.resources.read().values() {
+            // TODO: check update_dependencies before updating
             arc.write_arc().update(self)?;
         }
 
@@ -115,7 +132,7 @@ impl ResourcesManager {
         let ty_name = type_name::<T>().to_string();
 
         {
-            let mut stack = self.instantiation_stack.write();
+            let mut stack = self.call_stack.write();
 
             if stack
                 .iter()
@@ -138,7 +155,7 @@ impl ResourcesManager {
 
         let resource = T::instanciate(self);
 
-        self.instantiation_stack.write().pop();
+        self.call_stack.write().pop();
 
         resource
     }
@@ -172,19 +189,19 @@ impl ResourcesManager {
 }
 
 impl Resource for wgpu::Device {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        resources.device.clone()
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        unreachable!()
     }
 }
 
 impl Resource for wgpu::Queue {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        resources.queue.clone()
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        unreachable!()
     }
 }
 
 impl Resource for wgpu::SurfaceConfiguration {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        resources.surface_config.read_arc().clone()
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        unreachable!()
     }
 }

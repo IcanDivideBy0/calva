@@ -1,18 +1,16 @@
 use anyhow::Result;
 
 use crate::{
-    AmbientLightPass, AmbientLightPassInputs, AnimatePass, DirectionalLightPass,
-    DirectionalLightPassInputs, FxaaPass, FxaaPassInputs, GeometryPass, GeometryPassOutputs,
-    HierarchicalDepthPass, PointLightsPass, PointLightsPassInputs, RenderContext, Renderer,
-    Resource, ResourcesManager, SkyboxPass, SkyboxPassInputs, SsaoPass, SsaoPassInputs,
-    ToneMappingPass, ToneMappingPassInputs,
+    AmbientLightPass, AmbientLightPassOutputs, AnimatePass, DirectionalLightPass, FxaaPass,
+    FxaaPassOutputs, GeometryPass, GeometryPassOutputs, HierarchicalDepthPass, PointLightsPass,
+    RenderContext, Renderer, Resource, ResourcesManager, SkyboxPass, SsaoPass, ToneMappingPass,
 };
 
 pub struct Engine {
     pub resources: ResourcesManager,
 
     animate: AnimatePass,
-    pub geometry: GeometryPass,
+    geometry: GeometryPass,
     hierarchical_depth: HierarchicalDepthPass,
     ambient_light: AmbientLightPass,
     directional_light: DirectionalLightPass,
@@ -30,70 +28,14 @@ impl Engine {
         let animate = AnimatePass::new(&resources);
 
         let geometry = GeometryPass::new(&resources);
-
         let hierarchical_depth = HierarchicalDepthPass::new(&resources);
-
-        let geometry_outputs = resources.read::<GeometryPassOutputs>();
-
-        let ambient_light = AmbientLightPass::new(
-            &resources,
-            AmbientLightPassInputs {
-                albedo: &geometry_outputs.albedo_metallic,
-                emissive: &geometry_outputs.emissive,
-            },
-        );
-
-        let directional_light = DirectionalLightPass::new(
-            &resources,
-            DirectionalLightPassInputs {
-                albedo_metallic: &geometry_outputs.albedo_metallic,
-                normal_roughness: &geometry_outputs.normal_roughness,
-                depth: &geometry_outputs.depth,
-                output: &ambient_light.outputs.output,
-            },
-        );
-
-        let point_lights = PointLightsPass::new(
-            &resources,
-            PointLightsPassInputs {
-                albedo_metallic: &geometry_outputs.albedo_metallic,
-                normal_roughness: &geometry_outputs.normal_roughness,
-                depth: &geometry_outputs.depth,
-                output: &ambient_light.outputs.output,
-            },
-        );
-
-        let skybox = SkyboxPass::new(
-            &resources,
-            SkyboxPassInputs {
-                depth: &geometry_outputs.depth,
-                output: &ambient_light.outputs.output,
-            },
-        );
-
-        let fxaa = FxaaPass::new(
-            &resources,
-            FxaaPassInputs {
-                input: &ambient_light.outputs.output,
-            },
-        );
-
-        let ssao = SsaoPass::new(
-            &resources,
-            SsaoPassInputs {
-                normal: &geometry_outputs.normal_roughness,
-                depth: &geometry_outputs.depth,
-                output: &fxaa.outputs.output,
-            },
-        );
-
-        let tone_mapping = ToneMappingPass::new(
-            &resources,
-            ToneMappingPassInputs {
-                format: renderer.surface_config.format,
-                input: &fxaa.outputs.output,
-            },
-        );
+        let ambient_light = AmbientLightPass::new(&resources);
+        let directional_light = DirectionalLightPass::new(&resources);
+        let point_lights = PointLightsPass::new(&resources);
+        let skybox = SkyboxPass::new(&resources);
+        let fxaa = FxaaPass::new(&resources);
+        let ssao = SsaoPass::new(&resources);
+        let tone_mapping = ToneMappingPass::new(&resources);
 
         Self {
             resources,
@@ -111,63 +53,34 @@ impl Engine {
         }
     }
 
-    pub fn resize(&mut self, renderer: &Renderer) {
+    pub fn resize(&mut self) {
         // Manual update required until we remove all these rebinds
-        // by moving all inputs/outmuts to resources
+        // by moving all inputs/outputs to resources
         self.resources
             .write::<GeometryPassOutputs>()
             .update(&self.resources)
             .unwrap();
-
-        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
+        self.resources
+            .write::<AmbientLightPassOutputs>()
+            .update(&self.resources)
+            .unwrap();
+        self.resources
+            .write::<FxaaPassOutputs>()
+            .update(&self.resources)
+            .unwrap();
 
         self.hierarchical_depth.rebind();
-
-        self.ambient_light.rebind(AmbientLightPassInputs {
-            albedo: &geometry_outputs.albedo_metallic,
-            emissive: &geometry_outputs.emissive,
-        });
-
-        self.directional_light.rebind(DirectionalLightPassInputs {
-            albedo_metallic: &geometry_outputs.albedo_metallic,
-            normal_roughness: &geometry_outputs.normal_roughness,
-            depth: &geometry_outputs.depth,
-            output: &self.ambient_light.outputs.output,
-        });
-
-        self.point_lights.rebind(PointLightsPassInputs {
-            albedo_metallic: &geometry_outputs.albedo_metallic,
-            normal_roughness: &geometry_outputs.normal_roughness,
-            depth: &geometry_outputs.depth,
-            output: &self.ambient_light.outputs.output,
-        });
-
-        self.skybox.rebind(SkyboxPassInputs {
-            depth: &geometry_outputs.depth,
-            output: &self.ambient_light.outputs.output,
-        });
-
-        self.fxaa.rebind(FxaaPassInputs {
-            input: &self.ambient_light.outputs.output,
-        });
-
-        self.ssao.rebind(SsaoPassInputs {
-            normal: &geometry_outputs.normal_roughness,
-            depth: &geometry_outputs.depth,
-            output: &self.fxaa.outputs.output,
-        });
-
-        self.tone_mapping.rebind(ToneMappingPassInputs {
-            format: renderer.surface_config.format,
-            input: &self.fxaa.outputs.output,
-        });
+        self.ambient_light.rebind();
+        self.directional_light.rebind();
+        self.point_lights.rebind();
+        self.fxaa.rebind();
+        self.ssao.rebind();
+        self.tone_mapping.rebind();
     }
 
-    pub fn update(&mut self) -> Result<()> {
-        self.resources.update()
-    }
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
+        self.resources.update()?;
 
-    pub fn render(&self, ctx: &mut RenderContext) {
         self.animate.render(ctx);
         self.geometry.render(ctx);
         self.hierarchical_depth.render(ctx);
@@ -178,5 +91,7 @@ impl Engine {
         self.fxaa.render(ctx);
         self.ssao.render(ctx);
         self.tone_mapping.render(ctx);
+
+        Ok(())
     }
 }

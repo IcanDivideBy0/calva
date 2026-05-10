@@ -1,4 +1,6 @@
-use crate::{RenderContext, Resource, ResourcesManager, UniformBuffer};
+use anyhow::Result;
+
+use crate::{GeometryPassOutputs, RenderContext, Resource, ResourcesManager, UniformBuffer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -37,20 +39,58 @@ impl egui::Widget for &mut AmbientLightConfig {
     }
 }
 
-pub struct AmbientLightPassInputs<'a> {
-    pub albedo: &'a wgpu::Texture,
-    pub emissive: &'a wgpu::Texture,
-}
-
 pub struct AmbientLightPassOutputs {
     pub output: wgpu::Texture,
+    pub output_view: wgpu::TextureView,
+}
+
+impl Resource for AmbientLightPassOutputs {
+    fn instanciate(resources: &ResourcesManager) -> Self {
+        let device = resources.read::<wgpu::Device>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+
+        let output = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("AmbientLight output"),
+            size: wgpu::Extent3d {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::Rgba16Float],
+        });
+
+        let output_view = output.create_view(&Default::default());
+
+        AmbientLightPassOutputs {
+            output,
+            output_view,
+        }
+    }
+
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+
+        let size = wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
+
+        if self.output.size() != size {
+            *self = Self::instanciate(resources);
+        }
+
+        Ok(())
+    }
 }
 
 pub struct AmbientLightPass {
     resources: ResourcesManager,
-
-    pub outputs: AmbientLightPassOutputs,
-    output_view: wgpu::TextureView,
 
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -58,12 +98,11 @@ pub struct AmbientLightPass {
 }
 
 impl AmbientLightPass {
-    pub fn new(resources: &ResourcesManager, inputs: AmbientLightPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
-
-        let outputs = Self::make_outputs(&device, &inputs);
-        let output_view = outputs.output.create_view(&Default::default());
+        let geometry_outputs = resources.read::<GeometryPassOutputs>();
+        let ambient_light_outputs = resources.read::<AmbientLightPassOutputs>();
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("AmbientLight bind group layout"),
@@ -93,7 +132,12 @@ impl AmbientLightPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &inputs);
+        let bind_group = Self::make_bind_group(
+            &device,
+            &bind_group_layout,
+            &geometry_outputs.albedo_metallic,
+            &geometry_outputs.emissive,
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("AmbientLight shader"),
@@ -127,7 +171,7 @@ impl AmbientLightPass {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: outputs.output.format(),
+                    format: ambient_light_outputs.output.format(),
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -142,31 +186,33 @@ impl AmbientLightPass {
         Self {
             resources,
 
-            outputs,
-            output_view,
-
             bind_group_layout,
             bind_group,
             pipeline,
         }
     }
 
-    pub fn rebind(&mut self, inputs: AmbientLightPassInputs) {
+    pub fn rebind(&mut self) {
         let device = self.resources.read::<wgpu::Device>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
 
-        self.outputs = Self::make_outputs(&device, &inputs);
-        self.output_view = self.outputs.output.create_view(&Default::default());
-
-        self.bind_group = Self::make_bind_group(&device, &self.bind_group_layout, &inputs);
+        self.bind_group = Self::make_bind_group(
+            &device,
+            &self.bind_group_layout,
+            &geometry_outputs.albedo_metallic,
+            &geometry_outputs.emissive,
+        );
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
+        let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
+
         let mut rpass = ctx.encoder.scoped_render_pass(
             "AmbientLight",
             wgpu::RenderPassDescriptor {
                 label: Some("AmbientLight"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.output_view,
+                    view: &ambient_light_outputs.output_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -193,31 +239,11 @@ impl AmbientLightPass {
         rpass.draw(0..3, 0..1);
     }
 
-    fn make_outputs(
-        device: &wgpu::Device,
-        inputs: &AmbientLightPassInputs,
-    ) -> AmbientLightPassOutputs {
-        let output = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("AmbientLight output"),
-            size: wgpu::Extent3d {
-                depth_or_array_layers: 1,
-                ..inputs.albedo.size()
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[wgpu::TextureFormat::Rgba16Float],
-        });
-
-        AmbientLightPassOutputs { output }
-    }
-
     fn make_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        inputs: &AmbientLightPassInputs,
+        albedo: &wgpu::Texture,
+        emissive: &wgpu::Texture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("AmbientLight bind group"),
@@ -226,13 +252,13 @@ impl AmbientLightPass {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.albedo.create_view(&Default::default()),
+                        &albedo.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.emissive.create_view(&Default::default()),
+                        &emissive.create_view(&Default::default()),
                     ),
                 },
             ],

@@ -1,4 +1,4 @@
-use crate::{RenderContext, Resource, ResourcesManager, UniformBuffer};
+use crate::{FxaaPassOutputs, RenderContext, Resource, ResourcesManager, UniformBuffer};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -29,11 +29,6 @@ impl egui::Widget for &mut ToneMappingConfig {
     }
 }
 
-pub struct ToneMappingPassInputs<'a> {
-    pub format: wgpu::TextureFormat,
-    pub input: &'a wgpu::Texture,
-}
-
 pub struct ToneMappingPass {
     resources: ResourcesManager,
 
@@ -43,10 +38,12 @@ pub struct ToneMappingPass {
 }
 
 impl ToneMappingPass {
-    pub fn new(resources: &ResourcesManager, inputs: ToneMappingPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
         let config = resources.read::<UniformBuffer<ToneMappingConfig>>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+        let fxaa_outputs = resources.read::<FxaaPassOutputs>();
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ToneMapping bind group layout"),
@@ -65,7 +62,7 @@ impl ToneMappingPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &inputs);
+        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &fxaa_outputs.output);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ToneMapping shader"),
@@ -92,7 +89,7 @@ impl ToneMappingPass {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: inputs.format,
+                    format: surface_config.format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -113,10 +110,12 @@ impl ToneMappingPass {
         }
     }
 
-    pub fn rebind(&mut self, input: ToneMappingPassInputs) {
+    pub fn rebind(&mut self) {
         let device = self.resources.read::<wgpu::Device>();
+        let fxaa_outputs = self.resources.read::<FxaaPassOutputs>();
 
-        self.bind_group = Self::make_bind_group(&device, &self.bind_group_layout, &input);
+        self.bind_group =
+            Self::make_bind_group(&device, &self.bind_group_layout, &fxaa_outputs.output);
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -155,7 +154,7 @@ impl ToneMappingPass {
     fn make_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        inputs: &ToneMappingPassInputs,
+        input: &wgpu::Texture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ToneMapping bind group"),
@@ -163,7 +162,7 @@ impl ToneMappingPass {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(
-                    &inputs.input.create_view(&Default::default()),
+                    &input.create_view(&Default::default()),
                 ),
             }],
         })

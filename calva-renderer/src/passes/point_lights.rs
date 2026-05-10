@@ -1,16 +1,9 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    util::icosphere::Icosphere, Camera, PointLight, PointLightsManager, RenderContext,
-    ResourcesManager, UniformBuffer,
+    util::icosphere::Icosphere, AmbientLightPassOutputs, Camera, GeometryPassOutputs, PointLight,
+    PointLightsManager, RenderContext, ResourcesManager, UniformBuffer,
 };
-
-pub struct PointLightsPassInputs<'a> {
-    pub albedo_metallic: &'a wgpu::Texture,
-    pub normal_roughness: &'a wgpu::Texture,
-    pub depth: &'a wgpu::Texture,
-    pub output: &'a wgpu::Texture,
-}
 
 pub struct PointLightsPass {
     resources: ResourcesManager,
@@ -19,8 +12,6 @@ pub struct PointLightsPass {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
 
-    output_view: wgpu::TextureView,
-    depth_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -30,10 +21,12 @@ pub struct PointLightsPass {
 }
 
 impl PointLightsPass {
-    pub fn new(resources: &ResourcesManager, inputs: PointLightsPassInputs) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
         let camera = resources.read::<UniformBuffer<Camera>>();
+        let geometry_outputs = resources.read::<GeometryPassOutputs>();
+        let ambient_light_outputs = resources.read::<AmbientLightPassOutputs>();
 
         let icosphere = Icosphere::new(1);
 
@@ -128,9 +121,6 @@ impl PointLightsPass {
             })
         };
 
-        let output_view = inputs.output.create_view(&Default::default());
-        let depth_view = inputs.depth.create_view(&Default::default());
-
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("PointLights sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -184,7 +174,14 @@ impl PointLightsPass {
             ],
         });
 
-        let bind_group = Self::make_bind_group(&device, &bind_group_layout, &sampler, &inputs);
+        let bind_group = Self::make_bind_group(
+            &device,
+            &bind_group_layout,
+            &sampler,
+            &geometry_outputs.albedo_metallic,
+            &geometry_outputs.normal_roughness,
+            &geometry_outputs.depth,
+        );
 
         let lighting_pipeline = {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -207,7 +204,7 @@ impl PointLightsPass {
                     entry_point: Some("fs_main_lighting"),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: inputs.output.format(),
+                        format: ambient_light_outputs.output.format(),
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::One,
@@ -259,8 +256,6 @@ impl PointLightsPass {
             vertices,
             indices,
 
-            output_view,
-            depth_view,
             sampler,
             bind_group_layout,
             bind_group,
@@ -270,14 +265,18 @@ impl PointLightsPass {
         }
     }
 
-    pub fn rebind(&mut self, inputs: PointLightsPassInputs) {
+    pub fn rebind(&mut self) {
         let device = self.resources.read::<wgpu::Device>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
 
-        self.bind_group =
-            Self::make_bind_group(&device, &self.bind_group_layout, &self.sampler, &inputs);
-
-        self.output_view = inputs.output.create_view(&Default::default());
-        self.depth_view = inputs.depth.create_view(&Default::default());
+        self.bind_group = Self::make_bind_group(
+            &device,
+            &self.bind_group_layout,
+            &self.sampler,
+            &geometry_outputs.albedo_metallic,
+            &geometry_outputs.normal_roughness,
+            &geometry_outputs.depth,
+        );
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -285,6 +284,8 @@ impl PointLightsPass {
 
         let camera = self.resources.read::<UniformBuffer<Camera>>();
         let lights = self.resources.read::<PointLightsManager>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
+        let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
 
         let mut stencil_pass = encoder.scoped_render_pass(
             "PointLights[stencil]",
@@ -292,7 +293,7 @@ impl PointLightsPass {
                 label: Some("PointLights[stencil]"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: &geometry_outputs.depth_view,
                     depth_ops: None,
                     stencil_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(0),
@@ -319,7 +320,7 @@ impl PointLightsPass {
             wgpu::RenderPassDescriptor {
                 label: Some("PointLights[lighting]"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.output_view,
+                    view: &ambient_light_outputs.output_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -328,7 +329,7 @@ impl PointLightsPass {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: &geometry_outputs.depth_view,
                     depth_ops: None,
                     stencil_ops: None,
                 }),
@@ -354,7 +355,9 @@ impl PointLightsPass {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
-        inputs: &PointLightsPassInputs,
+        albedo_metallic: &wgpu::Texture,
+        normal_roughness: &wgpu::Texture,
+        depth: &wgpu::Texture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("PointLights[lighting] bind group"),
@@ -367,18 +370,18 @@ impl PointLightsPass {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.albedo_metallic.create_view(&Default::default()),
+                        &albedo_metallic.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(
-                        &inputs.normal_roughness.create_view(&Default::default()),
+                        &normal_roughness.create_view(&Default::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&inputs.depth.create_view(
+                    resource: wgpu::BindingResource::TextureView(&depth.create_view(
                         &wgpu::TextureViewDescriptor {
                             aspect: wgpu::TextureAspect::DepthOnly,
                             ..Default::default()
