@@ -27,9 +27,6 @@ downcast-rs = { version = "2.0" }
 egui = { version = "0.34", optional = true }
 egui-winit = { version = "0.34", optional = true }
 egui-wgpu = { version = "0.34", optional = true }
-# egui = { git = "https://github.com/emilk/egui", version = "0.34", optional = true }
-# egui-winit = { git = "https://github.com/emilk/egui", version = "0.34", optional = true }
-# egui-wgpu = { git = "https://github.com/emilk/egui", version = "0.34", optional = true }
 
 # Winit
 winit = { version = "0.30", optional = true }

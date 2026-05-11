@@ -1,13 +1,12 @@
 #![warn(clippy::all)]
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_std::task;
 use calva::{
     gltf::GltfModel,
     nav::HeatMap,
     renderer::{
-        egui, AmbientLightConfig, AnimateUniform, Camera, DirectionalLight, EguiWinitPass, Engine,
-        Object, Renderer, SkyboxManager, SsaoConfig, ToneMappingConfig,
+        wgpu, AmbientLightConfig, Camera, EguiWinitPass, Engine, Object, Renderer, SkyboxManager,
     },
 };
 use core::f32;
@@ -15,7 +14,6 @@ use glam::Vec3Swizzles;
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Arc,
-    time::Instant,
 };
 use winit::{
     application::ApplicationHandler,
@@ -28,79 +26,91 @@ use winit::{
 pub mod camera;
 pub mod controls;
 pub mod debug;
-pub mod fog;
 pub mod worldgen;
 
 use worldgen::{Chunk, Tile};
 
 use crate::{camera::PerspectiveCamera, controls::FlyingCamera};
 
-#[async_std::main]
-async fn main() -> Result<()> {
-    env_logger::init();
-    let event_loop = EventLoop::new()?;
-
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    let mut app = DemoApp::new();
-    event_loop.run_app(&mut app)?;
-
-    Ok(())
-}
-
-struct DemoState<'a> {
+struct DemoState {
     window: Arc<Window>,
-    mouse_pos: glam::Vec2,
-    renderer: Renderer<'a>,
     engine: Engine,
+
     egui: EguiWinitPass,
-
-    monster_objects: Vec<Object>,
-}
-
-struct DemoApp<'a> {
-    state: Option<DemoState<'a>>,
+    mouse_pos: glam::Vec2,
+    kb_modifiers: ModifiersState,
 
     worldgen: worldgen::WorldGenerator,
-    worldgen_model: Option<GltfModel>,
+    worldgen_model: GltfModel,
+    #[allow(dead_code)]
+    worldgen_tiles: Vec<Tile>,
     worldgen_chunks: HashMap<glam::IVec2, Vec<Object>>,
 
-    height_map: Option<calva::nav::HeightMap<{ Tile::TEXTURE_SIZE }>>,
-    heat_map: Option<calva::nav::HeatMap<{ Tile::TEXTURE_SIZE }>>,
-    navgrid_debug: Option<debug::Debug>,
-
     monsters_models: Vec<GltfModel>,
+    monster_objects: Vec<Object>,
 
-    kb_modifiers: ModifiersState,
-    render_time: Instant,
+    height_map: Option<calva::nav::HeightMap<{ Tile::TEXTURE_SIZE }>>,
+    height_map_debug: Option<debug::Debug>,
+    heat_map: Option<calva::nav::HeatMap<{ Tile::TEXTURE_SIZE }>>,
 }
 
-impl DemoApp<'_> {
-    pub fn new() -> Self {
+impl DemoState {
+    pub fn new(window: Arc<Window>, engine: Engine) -> Self {
+        let _ = engine.resources.read::<PerspectiveCamera>();
+
+        *engine.resources.write::<FlyingCamera>() = controls::FlyingCamera::from_look_at(
+            glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
+            glam::Vec3::Y - glam::Vec3::Z,        // target
+            glam::Vec3::Y,                        // up
+        );
+
+        *engine.resources.write::<AmbientLightConfig>() = AmbientLightConfig {
+            color: [0.106535, 0.061572, 0.037324],
+            strength: 0.1,
+        };
+
+        let egui = EguiWinitPass::new(&engine.resources, &window);
+
+        Self::init_skybox(&engine).unwrap();
+        let (worldgen, worldgen_model, worldgen_tiles) = Self::init_worldgen(&engine).unwrap();
+        let monsters_models = Self::init_monsters(&engine).unwrap();
+
+        let tile = &worldgen_tiles[7];
+
+        // let height_map = dbg!(calva::nav::HeightMap::new(
+        //     &tile.height_map,
+        //     Tile::PIXEL_SIZE
+        // ));
+        let height_map_debug = debug::Debug::new(&engine.resources, &tile.hmap.triangles);
+        worldgen_model
+            .node_object(worldgen_model.doc.nodes().nth(tile.node_id).unwrap())
+            .with_static(true);
+
         Self {
-            state: None,
+            window,
+            engine,
 
-            worldgen: worldgen::WorldGenerator::new("Calva!533d"),
-            worldgen_model: None,
-            worldgen_chunks: HashMap::new(),
+            egui,
+            mouse_pos: Default::default(),
+            kb_modifiers: Default::default(),
 
+            worldgen,
+            worldgen_model,
+            worldgen_tiles,
+            worldgen_chunks: Default::default(),
+
+            monsters_models,
+            monster_objects: Default::default(),
+
+            // height_map: Some(height_map),
+            height_map_debug: Some(height_map_debug),
             height_map: None,
+            // height_map_debug: None,
             heat_map: None,
-            navgrid_debug: None,
-
-            monsters_models: vec![],
-
-            kb_modifiers: ModifiersState::empty(),
-            render_time: Instant::now(),
         }
     }
 
-    pub fn init_skybox(&mut self) -> Result<()> {
-        let state = self
-            .state
-            .as_mut()
-            .ok_or_else(|| anyhow!("Invalid state"))?;
-
+    pub fn init_skybox(engine: &Engine) -> Result<()> {
         let pixels = [
             "./demo/assets/sky/right.jpg",
             "./demo/assets/sky/left.jpg",
@@ -116,8 +126,7 @@ impl DemoApp<'_> {
             Ok::<_, image::ImageError>(bytes)
         })?;
 
-        state
-            .engine
+        engine
             .resources
             .write::<SkyboxManager>()
             .set_skybox(&pixels);
@@ -125,20 +134,17 @@ impl DemoApp<'_> {
         Ok(())
     }
 
-    pub fn init_worldgen(&mut self) -> Result<()> {
-        let state = self
-            .state
-            .as_mut()
-            .ok_or_else(|| anyhow!("Invalid state"))?;
-
+    pub fn init_worldgen(
+        engine: &Engine,
+    ) -> Result<(worldgen::WorldGenerator, GltfModel, Vec<Tile>)> {
         use std::io::Read;
 
         let mut dungeon_buffer = Vec::new();
         std::fs::File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
         let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
-        let worldgen_model = GltfModel::new(&state.engine.resources, doc, &buffers, &images)?;
+        let worldgen_model = GltfModel::new(&engine.resources, doc, &buffers, &images)?;
 
-        let tile_builder = worldgen::tile::TileBuilder::new(&state.engine.resources);
+        let tile_builder = worldgen::tile::TileBuilder::new(&engine.resources);
 
         let tiles = [
             "module01", "module03", "module07", "module08", "module09", "module10", "module11",
@@ -149,35 +155,14 @@ impl DemoApp<'_> {
         .filter_map(|node_name| tile_builder.build(&buffers, worldgen_model.get_node(node_name)?))
         .collect::<Vec<_>>();
 
-        self.worldgen.set_tiles(&tiles);
+        let mut worldgen = worldgen::WorldGenerator::new("Calva!533d");
+        worldgen.set_tiles(&tiles);
 
-        let tile = &tiles[7];
-        let height_map = calva::nav::HeightMap::new(&tile.height_map, Tile::PIXEL_SIZE);
-        dbg!(&height_map);
-
-        self.navgrid_debug = Some(debug::Debug::new(
-            &state.engine.resources,
-            &height_map.triangles,
-            state.renderer.surface_config.format,
-        ));
-
-        worldgen_model
-            .node_object(worldgen_model.doc.nodes().nth(tile.node_id).unwrap())
-            .with_static(true);
-
-        self.worldgen_model = Some(worldgen_model);
-        self.height_map = Some(height_map);
-
-        Ok(())
+        Ok((worldgen, worldgen_model, tiles))
     }
 
-    pub fn init_monster_models(&mut self) -> Result<()> {
-        let state = self
-            .state
-            .as_mut()
-            .ok_or_else(|| anyhow!("Invalid state"))?;
-
-        self.monsters_models = [
+    pub fn init_monsters(engine: &Engine) -> Result<Vec<GltfModel>> {
+        [
             "./demo/assets/zombies/zombie-boss.glb",
             "./demo/assets/zombies/zombie-common.glb",
             "./demo/assets/zombies/zombie-fat.glb",
@@ -196,55 +181,34 @@ impl DemoApp<'_> {
         ]
         .iter()
         // .take(1)
-        .map(|filepath| GltfModel::from_path(&state.engine.resources, filepath))
-        .collect::<Result<Vec<_>>>()?;
-
-        Ok(())
+        .map(|filepath| GltfModel::from_path(&engine.resources, filepath))
+        .collect::<Result<Vec<_>>>()
     }
 }
 
-impl<'a> ApplicationHandler for DemoApp<'a> {
+#[derive(Default)]
+struct DemoApp {
+    state: Option<DemoState>,
+}
+
+impl ApplicationHandler for DemoApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
                 .create_window(Window::default_attributes())
                 .unwrap(),
         );
-        let mouse_pos = Default::default();
 
-        let renderer: Renderer<'a> = task::block_on(Renderer::new(
-            Box::new(event_loop.owned_display_handle()),
-            window.clone(),
-            window.inner_size().into(),
-        ))
-        .unwrap();
-        let engine = Engine::new(&renderer);
-
-        let _ = engine.resources.read::<PerspectiveCamera>();
-        *engine.resources.write::<FlyingCamera>() = controls::FlyingCamera::from_look_at(
-            glam::Vec3::Y + glam::Vec3::Z * 12.0, // eye
-            glam::Vec3::Y - glam::Vec3::Z,        // target
-            glam::Vec3::Y,                        // up
+        let engine = Engine::new(
+            task::block_on(Renderer::new(
+                Box::new(event_loop.owned_display_handle()),
+                window.clone(),
+                window.inner_size().into(),
+            ))
+            .unwrap(),
         );
 
-        let mut ambient_light_config = engine.resources.write::<AmbientLightConfig>();
-        ambient_light_config.color = [0.106535, 0.061572, 0.037324];
-        ambient_light_config.strength = 0.1;
-
-        let egui = EguiWinitPass::new(&engine.resources, &renderer.surface_config, &window);
-
-        self.state = Some(DemoState {
-            window,
-            mouse_pos,
-            renderer,
-            engine,
-            egui,
-            monster_objects: vec![],
-        });
-
-        self.init_skybox().unwrap();
-        self.init_worldgen().unwrap();
-        self.init_monster_models().unwrap();
+        self.state = Some(DemoState::new(window, engine));
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
@@ -267,10 +231,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
 
         match event {
             WindowEvent::Resized(size) => {
-                let size = size.into();
-
-                state.renderer.resize(size);
-                state.engine.resize();
+                state.engine.resize(size.width, size.height);
             }
 
             WindowEvent::RedrawRequested => {
@@ -290,21 +251,21 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
                     let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
 
-                    self.worldgen_chunks
+                    state
+                        .worldgen_chunks
                         .retain(|pos, _| chunk_x.contains(&pos.x) && chunk_y.contains(&pos.y));
 
                     for key in
                         itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y))
                     {
-                        if let Entry::Vacant(entry) = self.worldgen_chunks.entry(key) {
-                            let model = self.worldgen_model.as_ref().unwrap();
-                            entry.insert(self.worldgen.chunk(model, key));
+                        if let Entry::Vacant(entry) = state.worldgen_chunks.entry(key) {
+                            entry.insert(state.worldgen.chunk(&state.worldgen_model, key));
                         }
                     }
                 }
 
                 // Update monster pos
-                if let (Some(height_map), Some(heat_map)) = (&self.height_map, &self.heat_map) {
+                if let (Some(height_map), Some(heat_map)) = (&state.height_map, &state.heat_map) {
                     for monster in &mut state.monster_objects {
                         let mut transform = monster.transform();
                         let (_, _, translation) = transform.to_scale_rotation_translation();
@@ -325,53 +286,22 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     }
                 }
 
-                if let Some(navgrid_debug) = self.navgrid_debug.as_mut() {
-                    navgrid_debug.rebind();
-                };
-
-                let dt = self.render_time.elapsed();
-                self.render_time = Instant::now();
-
-                **state.engine.resources.write::<AnimateUniform>() = dt;
-                state.engine.resources.write::<FlyingCamera>().update(dt);
-
-                state.egui.update(&state.renderer, &state.window, |ui| {
-                    egui::Panel::right("engine_panel")
-                        .min_size(320.0)
-                        .frame(egui::containers::Frame {
-                            inner_margin: egui::Vec2::splat(10.0).into(),
-                            fill: egui::Color32::from_black_alpha(200),
-                            ..Default::default()
-                        })
-                        .show_inside(ui, |ui| {
-                            ui.add(&state.renderer);
-
-                            let resources = &state.engine.resources;
-
-                            ui.add(&mut *resources.write::<AmbientLightConfig>());
-                            ui.add(&mut *resources.write::<SsaoConfig>());
-                            ui.add(&mut *resources.write::<ToneMappingConfig>());
-                            ui.add(&mut *resources.write::<DirectionalLight>());
-                        });
+                state.egui.update(&state.window, |ui| {
+                    ui.add(&mut state.engine);
                 });
 
-                let result = state.renderer.render(|ctx| {
-                    state.engine.render(ctx).unwrap();
-                    // fog.render(ctx, &engine.resources.camera, &time);
-                    if let Some(navgrid_debug) = &self.navgrid_debug {
-                        navgrid_debug.render(ctx)
+                let result = state.engine.render(|ctx| {
+                    if let Some(height_map_debug) = &state.height_map_debug {
+                        height_map_debug.render(ctx)
                     }
+
                     state.egui.render(ctx);
+
+                    Ok(())
                 });
 
-                match result {
-                    Ok(_) => {}
-                    // // Reconfigure the surface if lost
-                    // Err(wgpu::SurfaceError::Lost) => renderer.resize((0, 0)),
-                    // // The system is out of memory, we should probably quit
-                    // Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    // All other errors (Outdated, Timeout) should be resolved by the next frame
-                    Err(e) => eprintln!("{e:?}"),
+                if let Err(err) = result {
+                    eprintln!("{err:?}");
                 }
 
                 // Emits a new redraw requested event.
@@ -389,7 +319,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 ..
             } => event_loop.exit(),
 
-            WindowEvent::ModifiersChanged(modifiers) => self.kb_modifiers = modifiers.state(),
+            WindowEvent::ModifiersChanged(modifiers) => state.kb_modifiers = modifiers.state(),
 
             WindowEvent::CursorMoved { position, .. } => {
                 state.mouse_pos = glam::Vec2::new(position.x as f32, position.y as f32);
@@ -400,23 +330,21 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                 button,
                 ..
             } => {
-                if let Some(height_map) = self.height_map.as_ref() {
+                if let Some(height_map) = state.height_map.as_ref() {
                     let camera = state.engine.resources.read::<Camera>();
+                    let surface_config =
+                        state.engine.resources.read::<wgpu::SurfaceConfiguration>();
 
                     let (ro, rd) = camera.ray_cast(
                         state.mouse_pos,
-                        glam::vec2(
-                            state.renderer.surface_config.width as f32,
-                            state.renderer.surface_config.height as f32,
-                        ),
+                        glam::vec2(surface_config.width as f32, surface_config.height as f32),
                     );
 
                     if let Some(hit) = height_map.ray_cast(ro, rd) {
                         if button == MouseButton::Left {
                             let grid_coord = Tile::get_grid_coord(&hit.xz());
-                            let heat_map = HeatMap::new(height_map, grid_coord);
-                            dbg!(&heat_map);
-                            self.heat_map = Some(heat_map);
+                            let heat_map = dbg!(HeatMap::new(height_map, grid_coord));
+                            state.heat_map = Some(heat_map);
                         }
 
                         if button == MouseButton::Right {
@@ -426,8 +354,8 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                                     rand::random::<f32>() * f32::consts::TAU,
                                 );
 
-                            let monster_model = &self.monsters_models
-                                [rand::random::<u32>() as usize % self.monsters_models.len()];
+                            let monster_model = &state.monsters_models
+                                [rand::random::<u32>() as usize % state.monsters_models.len()];
 
                             let animation_keys =
                                 monster_model.animations.keys().collect::<Vec<_>>();
@@ -459,7 +387,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     physical_key: PhysicalKey::Code(KeyCode::KeyT),
                     ..
                 } => {
-                    for (z, monster_model) in self.monsters_models.iter().enumerate() {
+                    for (z, monster_model) in state.monsters_models.iter().enumerate() {
                         for (x, animation) in monster_model.animations.values().enumerate() {
                             for y in 0..1 {
                                 let transform = glam::Mat4::from_translation(glam::vec3(
@@ -483,7 +411,7 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
                     state: ElementState::Pressed,
                     physical_key: PhysicalKey::Code(KeyCode::Enter),
                     ..
-                } if self.kb_modifiers.alt_key() => {
+                } if state.kb_modifiers.alt_key() => {
                     state
                         .window
                         .set_fullscreen(match state.window.fullscreen() {
@@ -497,4 +425,15 @@ impl<'a> ApplicationHandler for DemoApp<'a> {
             _ => {}
         }
     }
+}
+
+#[async_std::main]
+async fn main() -> Result<()> {
+    env_logger::init();
+    let event_loop = EventLoop::new()?;
+
+    event_loop.set_control_flow(ControlFlow::Poll);
+    event_loop.run_app(&mut DemoApp::default())?;
+
+    Ok(())
 }

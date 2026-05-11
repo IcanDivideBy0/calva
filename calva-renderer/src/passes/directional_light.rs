@@ -355,7 +355,7 @@ impl DirectionalLightPass {
         let animations = self.resources.read::<AnimationsManager>();
         let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
 
-        self.cull.cull(&mut encoder, &uniform);
+        self.cull.cull(&mut encoder);
 
         let mut depth_pass = encoder.scoped_render_pass(
             "DirectionalLight[depth]",
@@ -540,7 +540,7 @@ impl UniformData for DirectionalLightUniform {
         radius = (radius * 16.0).ceil() / 16.0;
         // 2. shadow texel size in light view space
         let texel_size = radius * 2.0 / DirectionalLightPass::SIZE as f32;
-        // 3. allow center changes only in texel size increments
+        // 3. limit center changes only to texel size increments
         center = (center / texel_size).ceil() * texel_size;
 
         let min = center - glam::Vec3::splat(radius);
@@ -799,12 +799,11 @@ mod cull {
             }
         }
 
-        pub fn cull(
-            &self,
-            encoder: &mut ProfilerCommandEncoder,
-            uniform: &UniformBuffer<DirectionalLightUniform>,
-        ) {
+        pub fn cull(&self, encoder: &mut ProfilerCommandEncoder) {
             let camera = self.resources.read::<UniformBuffer<Camera>>();
+            let uniform = self
+                .resources
+                .read::<UniformBuffer<DirectionalLightUniform>>();
 
             let mut cpass = encoder.scoped_compute_pass("DirectionalLight[cull]");
 

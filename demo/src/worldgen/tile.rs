@@ -1,6 +1,9 @@
-use calva::renderer::{
-    wgpu::{self, util::DeviceExt},
-    ResourcesManager,
+use calva::{
+    nav::HeightMap,
+    renderer::{
+        wgpu::{self, util::DeviceExt},
+        ResourcesManager,
+    },
 };
 use itertools::Itertools;
 use wesl::syntax::*;
@@ -222,7 +225,11 @@ impl TileBuilder {
             return Some(Tile {
                 node_id: node.index(),
                 depth,
-                height_map: [[-Tile::WORLD_SIZE; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
+                // height_map: [[-Tile::WORLD_SIZE; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
+                hmap: HeightMap::new(
+                    &[[-Tile::WORLD_SIZE; Tile::TEXTURE_SIZE]; Tile::TEXTURE_SIZE],
+                    Tile::PIXEL_SIZE,
+                ),
             });
         }
 
@@ -351,7 +358,8 @@ impl TileBuilder {
         Some(Tile {
             node_id: node.index(),
             depth,
-            height_map,
+            // height_map,
+            hmap: HeightMap::new(&height_map, Tile::PIXEL_SIZE),
         })
     }
 }
@@ -359,7 +367,8 @@ impl TileBuilder {
 pub struct Tile {
     pub node_id: usize,
     pub depth: wgpu::Texture,
-    pub height_map: [[f32; Self::TEXTURE_SIZE]; Self::TEXTURE_SIZE],
+    // pub height_map: [[f32; Self::TEXTURE_SIZE]; Self::TEXTURE_SIZE],
+    pub hmap: HeightMap<{ Self::TEXTURE_SIZE }>,
 }
 
 impl Tile {
@@ -370,16 +379,7 @@ impl Tile {
 
     pub const PIXEL_SIZE: f32 = Self::WORLD_SIZE / Self::TEXTURE_SIZE as f32;
 
-    pub fn get_height(&self, pos: glam::USizeVec2) -> f32 {
-        let coord = pos.min(glam::usizevec2(
-            Self::TEXTURE_SIZE - 1,
-            Self::TEXTURE_SIZE - 1,
-        ));
-
-        self.height_map[coord.y][coord.x]
-    }
-
-    pub fn world_get_height(&self, pos: glam::Vec2) -> f32 {
+    pub fn world_get_height(&self, pos: glam::Vec2) -> Option<f32> {
         let coord = (pos / Self::WORLD_SIZE * Self::TEXTURE_SIZE as f32).clamp(
             glam::vec2(0.0, 0.0),
             glam::vec2(
@@ -388,7 +388,7 @@ impl Tile {
             ),
         );
 
-        self.height_map[coord.y.floor() as usize][coord.x.floor() as usize]
+        self.hmap.grid[coord.y.floor() as usize][coord.x.floor() as usize]
     }
 
     pub fn get_grid_coord(local_coord: &glam::Vec2) -> glam::USizeVec2 {

@@ -1,15 +1,15 @@
 use anyhow::Result;
 
 use crate::{
-    AmbientLightPass, AmbientLightPassOutputs, AnimatePass, DirectionalLightPass, FxaaPass,
-    FxaaPassOutputs, GeometryPass, GeometryPassOutputs, HierarchicalDepthPass, PointLightsPass,
-    RenderContext, Renderer, Resource, ResourcesManager, SkyboxPass, SsaoPass, ToneMappingPass,
+    AmbientLightPass, AmbientLightPassOutputs, DirectionalLightPass, FxaaPass, FxaaPassOutputs,
+    GeometryPass, GeometryPassOutputs, HierarchicalDepthPass, PointLightsPass, RenderContext,
+    Renderer, Resource, ResourcesManager, SkyboxPass, SsaoPass, ToneMappingPass,
 };
 
 pub struct Engine {
+    pub renderer: Renderer,
     pub resources: ResourcesManager,
 
-    animate: AnimatePass,
     geometry: GeometryPass,
     hierarchical_depth: HierarchicalDepthPass,
     ambient_light: AmbientLightPass,
@@ -22,10 +22,8 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(renderer: &Renderer) -> Self {
+    pub fn new(renderer: Renderer) -> Self {
         let resources = renderer.resources.clone();
-
-        let animate = AnimatePass::new(&resources);
 
         let geometry = GeometryPass::new(&resources);
         let hierarchical_depth = HierarchicalDepthPass::new(&resources);
@@ -38,9 +36,9 @@ impl Engine {
         let tone_mapping = ToneMappingPass::new(&resources);
 
         Self {
+            renderer,
             resources,
 
-            animate,
             geometry,
             hierarchical_depth,
             ambient_light,
@@ -53,9 +51,20 @@ impl Engine {
         }
     }
 
-    pub fn resize(&mut self) {
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let mut surface_config = self.resources.write::<wgpu::SurfaceConfiguration>();
+
+        surface_config.width = width;
+        surface_config.height = height;
+
+        drop(surface_config);
+
         // Manual update required until we remove all these rebinds
-        // by moving all inputs/outputs to resources
+        // and implement update dependencies in resources manager
+        self.resources
+            .write::<wgpu::Surface>()
+            .update(&self.resources)
+            .unwrap();
         self.resources
             .write::<GeometryPassOutputs>()
             .update(&self.resources)
@@ -78,20 +87,49 @@ impl Engine {
         self.tone_mapping.rebind();
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
+    pub fn render(&self, cb: impl FnOnce(&mut RenderContext) -> Result<()>) -> Result<()> {
         self.resources.update()?;
 
-        self.animate.render(ctx);
-        self.geometry.render(ctx);
-        self.hierarchical_depth.render(ctx);
-        self.ambient_light.render(ctx);
-        self.directional_light.render(ctx);
-        self.point_lights.render(ctx);
-        self.skybox.render(ctx);
-        self.fxaa.render(ctx);
-        self.ssao.render(ctx);
-        self.tone_mapping.render(ctx);
+        self.renderer.render(|ctx| -> Result<()> {
+            self.geometry.render(ctx);
+            self.hierarchical_depth.render(ctx);
+            self.ambient_light.render(ctx);
+            self.directional_light.render(ctx);
+            self.point_lights.render(ctx);
+            self.skybox.render(ctx);
+            self.fxaa.render(ctx);
+            self.ssao.render(ctx);
+            self.tone_mapping.render(ctx);
 
-        Ok(())
+            cb(ctx)?;
+
+            Ok(())
+        })
+    }
+}
+
+#[cfg(feature = "egui")]
+impl egui::Widget for &mut Engine {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        egui::Panel::right("engine_panel")
+            .min_size(320.0)
+            .frame(egui::containers::Frame {
+                inner_margin: egui::Vec2::splat(10.0).into(),
+                fill: egui::Color32::from_black_alpha(200),
+                ..Default::default()
+            })
+            .show_inside(ui, |ui| {
+                use crate::{AmbientLightConfig, DirectionalLight, SsaoConfig, ToneMappingConfig};
+
+                ui.add(&self.renderer);
+
+                let resources = &self.resources;
+
+                ui.add(&mut *resources.write::<AmbientLightConfig>());
+                ui.add(&mut *resources.write::<SsaoConfig>());
+                ui.add(&mut *resources.write::<ToneMappingConfig>());
+                ui.add(&mut *resources.write::<DirectionalLight>());
+            })
+            .response
     }
 }

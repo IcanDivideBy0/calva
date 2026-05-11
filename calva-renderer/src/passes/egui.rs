@@ -1,4 +1,4 @@
-use crate::{RenderContext, Renderer, ResourcesManager};
+use crate::{RenderContext, ResourcesManager};
 
 pub struct EguiPass {
     resources: ResourcesManager,
@@ -9,9 +9,10 @@ pub struct EguiPass {
 }
 
 impl EguiPass {
-    pub fn new(resources: &ResourcesManager, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
 
         let egui_renderer =
             egui_wgpu::Renderer::new(&device, surface_config.format, Default::default());
@@ -32,7 +33,6 @@ impl EguiPass {
 
     pub fn update(
         &mut self,
-        renderer: &Renderer,
         context: &egui::Context,
         shapes: Vec<egui::epaint::ClippedShape>,
         textures_delta: egui::TexturesDelta,
@@ -40,12 +40,10 @@ impl EguiPass {
     ) {
         let device = self.resources.read::<wgpu::Device>();
         let queue = self.resources.read::<wgpu::Queue>();
+        let surface_config = self.resources.read::<wgpu::SurfaceConfiguration>();
 
         self.screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [
-                renderer.surface_config.width,
-                renderer.surface_config.height,
-            ],
+            size_in_pixels: [surface_config.width, surface_config.height],
             pixels_per_point,
         };
 
@@ -97,14 +95,14 @@ impl EguiPass {
     }
 }
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "egui-winit")]
 pub use self::winit::*;
-#[cfg(feature = "winit")]
+#[cfg(feature = "egui-winit")]
 mod winit {
     use winit::window::Window;
 
     use super::EguiPass;
-    use crate::{Renderer, ResourcesManager};
+    use crate::ResourcesManager;
 
     pub struct EguiWinitPass {
         pass: EguiPass,
@@ -112,12 +110,8 @@ mod winit {
     }
 
     impl EguiWinitPass {
-        pub fn new(
-            resources: &ResourcesManager,
-            surface_config: &wgpu::SurfaceConfiguration,
-            window: &Window,
-        ) -> Self {
-            let pass = EguiPass::new(resources, surface_config);
+        pub fn new(resources: &ResourcesManager, window: &Window) -> Self {
+            let pass = EguiPass::new(resources);
 
             let state = egui_winit::State::new(
                 egui::Context::default(),
@@ -141,7 +135,6 @@ mod winit {
 
         pub fn update(
             &mut self,
-            renderer: &Renderer,
             window: &winit::window::Window,
             run_ui: impl FnMut(&mut egui::Ui),
         ) {
@@ -153,7 +146,6 @@ mod winit {
                 .handle_platform_output(window, output.platform_output.clone());
 
             self.pass.update(
-                renderer,
                 self.state.egui_ctx(),
                 output.shapes,
                 output.textures_delta,

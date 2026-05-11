@@ -8,9 +8,9 @@ mod point_light;
 mod skin;
 mod skybox;
 mod texture;
+mod time;
 
 pub use animation::*;
-use anyhow::Result;
 pub use camera::*;
 pub use material::*;
 pub use mesh::*;
@@ -20,7 +20,9 @@ pub use point_light::*;
 pub use skin::*;
 pub use skybox::*;
 pub use texture::*;
+pub use time::*;
 
+use anyhow::Result;
 use downcast_rs::{impl_downcast, DowncastSend, DowncastSync};
 use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock};
 use std::{
@@ -91,25 +93,31 @@ pub struct ResourcesManager {
 
 impl ResourcesManager {
     pub(crate) fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        surface_config: &wgpu::SurfaceConfiguration,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        surface: wgpu::Surface<'static>,
+        surface_config: wgpu::SurfaceConfiguration,
     ) -> Self {
         let mut resources: HashMap<TypeId, ResourceArc> = HashMap::new();
 
         resources.insert(
             TypeId::of::<wgpu::Device>(),
-            Arc::new(RwLock::new(Box::new(device.clone()))),
+            Arc::new(RwLock::new(Box::new(device))),
         );
 
         resources.insert(
             TypeId::of::<wgpu::Queue>(),
-            Arc::new(RwLock::new(Box::new(queue.clone()))),
+            Arc::new(RwLock::new(Box::new(queue))),
+        );
+
+        resources.insert(
+            TypeId::of::<wgpu::Surface>(),
+            Arc::new(RwLock::new(Box::new(surface))),
         );
 
         resources.insert(
             TypeId::of::<wgpu::SurfaceConfiguration>(),
-            Arc::new(RwLock::new(Box::new(surface_config.clone()))),
+            Arc::new(RwLock::new(Box::new(surface_config))),
         );
 
         Self {
@@ -197,6 +205,28 @@ impl Resource for wgpu::Device {
 impl Resource for wgpu::Queue {
     fn instanciate(_resources: &ResourcesManager) -> Self {
         unreachable!()
+    }
+}
+
+impl Resource for wgpu::Surface<'static> {
+    fn instanciate(_resources: &ResourcesManager) -> Self {
+        unreachable!()
+    }
+
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        let device = resources.read::<wgpu::Device>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+
+        match self.get_configuration() {
+            Some(ref current_config) => {
+                if &*surface_config != current_config {
+                    self.configure(&device, &surface_config);
+                }
+            }
+            None => unreachable!(),
+        }
+
+        Ok(())
     }
 }
 

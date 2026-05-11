@@ -1,6 +1,9 @@
+use anyhow::Result;
 use wgpu::util::DeviceExt;
 
-use crate::{Resource, ResourcesManager};
+use crate::{
+    GpuMeshInstance, MeshInstancesManager, Resource, ResourcesManager, Time, UniformBuffer,
+};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -30,6 +33,9 @@ pub struct AnimationsManager {
 
     pub(crate) bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) bind_group: wgpu::BindGroup,
+
+    animate_bind_group: wgpu::BindGroup,
+    animate_pipeline: wgpu::ComputePipeline,
 }
 
 impl AnimationsManager {
@@ -41,6 +47,7 @@ impl AnimationsManager {
     fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
+        let time = resources.read::<UniformBuffer<Time>>();
 
         let mut views = Vec::with_capacity(Self::MAX_ANIMATIONS as _);
 
@@ -95,6 +102,63 @@ impl AnimationsManager {
 
         let bind_group = Self::create_bind_group(&device, &bind_group_layout, &views, &sampler);
 
+        let animate_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("AnimationsManager[animate] bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress
+                                + GpuMeshInstance::SIZE,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+
+        let animate_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("AnimationsManager[animate] bind group"),
+            layout: &animate_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: resources
+                    .read::<MeshInstancesManager>()
+                    .instances
+                    .as_entire_binding(),
+            }],
+        });
+
+        let animate_pipeline = {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Animate shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    wesl::include_wesl!("resources::animation").into(),
+                ),
+            });
+
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Animate pipeline layout"),
+                bind_group_layouts: &[
+                    Some(&animate_bind_group_layout),
+                    Some(&time.bind_group_layout),
+                ],
+                immediate_size: 0,
+            });
+
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Animate pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("maintain"),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+
         Self {
             resources,
 
@@ -103,6 +167,9 @@ impl AnimationsManager {
 
             bind_group_layout,
             bind_group,
+
+            animate_bind_group,
+            animate_pipeline,
         }
     }
 
@@ -171,10 +238,48 @@ impl AnimationsManager {
             ],
         })
     }
+
+    fn update(&mut self) -> Result<()> {
+        let device = self.resources.read::<wgpu::Device>();
+        let queue = self.resources.read::<wgpu::Queue>();
+        let time = self.resources.read::<UniformBuffer<Time>>();
+        let mesh_instances = self.resources.read::<MeshInstancesManager>();
+
+        let mut encoder = device.create_command_encoder(&Default::default());
+
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("AnimationManager[update]"),
+            ..Default::default()
+        });
+
+        cpass.set_pipeline(&self.animate_pipeline);
+        cpass.set_bind_group(0, &self.animate_bind_group, &[]);
+        cpass.set_bind_group(1, &time.bind_group, &[]);
+
+        const WORKGROUP_SIZE: usize = 256;
+        let workgroups_count =
+            (mesh_instances.count() as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+
+        cpass.dispatch_workgroups(workgroups_count, 1, 1);
+
+        drop(cpass);
+
+        let submission_index = queue.submit(std::iter::once(encoder.finish()));
+        device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission_index),
+            timeout: None,
+        })?;
+
+        Ok(())
+    }
 }
 
 impl Resource for AnimationsManager {
     fn instanciate(resources: &ResourcesManager) -> Self {
         Self::new(resources)
+    }
+
+    fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {
+        self.update()
     }
 }

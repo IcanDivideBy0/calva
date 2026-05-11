@@ -9,21 +9,16 @@ use calva::renderer::{
 pub struct Debug {
     resources: ResourcesManager,
 
-    depth_view: wgpu::TextureView,
-
     vertices: wgpu::Buffer,
     vertices_count: u32,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl Debug {
-    pub fn new<A: NoUninit>(
-        resources: &ResourcesManager,
-        triangles: &[A],
-        format: wgpu::TextureFormat,
-    ) -> Self {
+    pub fn new<A: NoUninit>(resources: &ResourcesManager, triangles: &[A]) -> Self {
         let resources = resources.clone();
         let device = resources.read::<wgpu::Device>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
         let camera = resources.read::<UniformBuffer<Camera>>();
         let geometry_outputs = resources.read::<GeometryPassOutputs>();
 
@@ -89,7 +84,7 @@ impl Debug {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: surface_config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -117,18 +112,10 @@ impl Debug {
         Self {
             resources,
 
-            depth_view: geometry_outputs.depth.create_view(&Default::default()),
-
             vertices,
             vertices_count,
             pipeline,
         }
-    }
-
-    pub fn rebind(&mut self) {
-        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
-
-        self.depth_view = geometry_outputs.depth.create_view(&Default::default());
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
@@ -137,6 +124,7 @@ impl Debug {
         }
 
         let camera = self.resources.read::<UniformBuffer<Camera>>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
 
         let mut rpass = ctx.encoder.scoped_render_pass(
             "Debug",
@@ -152,7 +140,7 @@ impl Debug {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: &geometry_outputs.depth_view,
                     depth_ops: None,
                     stencil_ops: None,
                 }),

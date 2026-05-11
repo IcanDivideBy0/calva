@@ -358,10 +358,10 @@ impl Hash for SlotOption {
 
 impl std::cmp::Ord for SlotOption {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.id
-            .cmp(&other.id)
-            .then(self.elevation.cmp(&other.elevation))
-            .then(self.rotation.cmp(&other.rotation))
+        std::cmp::Ord::cmp(
+            &(self.id, self.elevation, self.rotation),
+            &(other.id, other.elevation, other.rotation),
+        )
     }
 }
 
@@ -398,7 +398,7 @@ impl SlotOption {
             std::array::from_fn(|i| {
                 let reverse = |i: usize| Self::WFC_SAMPLES - 1 - i;
 
-                let height = tile.world_get_height(
+                tile.world_get_height(
                     match face {
                         Face::North => [wfc_to_world(i), 0.0],
                         Face::East => [Tile::WORLD_SIZE, wfc_to_world(i)],
@@ -406,10 +406,11 @@ impl SlotOption {
                         Face::West => [0.0, wfc_to_world(reverse(i))],
                     }
                     .into(),
-                );
-
-                let floor_level = (height / Self::FLOOR_HEIGHT).round();
-                u8::try_from(floor_level as i32).ok()
+                )
+                .and_then(|height| {
+                    let floor_level = (height / Self::FLOOR_HEIGHT).round();
+                    u8::try_from(floor_level as i32).ok()
+                })
             })
         });
 

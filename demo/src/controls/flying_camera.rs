@@ -1,5 +1,5 @@
 use anyhow::Result;
-use calva::renderer::{Camera, Resource, ResourcesManager};
+use calva::renderer::{Camera, Resource, ResourcesManager, Time};
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
 use winit::{
@@ -188,7 +188,10 @@ impl Resource for FlyingCamera {
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        self.update(resources.read::<Time>().dt);
+
         resources.write::<Camera>().view = self.get_view();
+
         Ok(())
     }
 }

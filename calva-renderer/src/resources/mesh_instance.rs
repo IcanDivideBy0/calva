@@ -350,7 +350,6 @@ impl MeshInstancesManager {
         drop(cpass);
 
         let submission_index = queue.submit(std::iter::once(encoder.finish()));
-
         device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission_index),
             timeout: None,

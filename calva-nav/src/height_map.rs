@@ -28,36 +28,38 @@ impl<const SIZE: usize> HeightMap<SIZE> {
         let tile_world_size = SIZE as f32 * sample_size;
         let min_height = -tile_world_size;
 
-        let mut grid = [[None; SIZE]; SIZE];
-        for (y, x) in itertools::iproduct!(0..SIZE, 0..SIZE) {
-            let height = get_height(x, y);
+        let grid = std::array::from_fn(|y| {
+            std::array::from_fn(|x| {
+                let height = get_height(x, y);
 
-            if height <= min_height {
-                continue;
-            }
+                if height <= min_height {
+                    return None;
+                }
 
-            let valid_neighbours = itertools::iproduct!(
-                y.saturating_sub(1)..=y.saturating_add(1),
-                x.saturating_sub(1)..=x.saturating_add(1),
-            )
-            .all(|(yy, xx)| {
-                let dist = if xx != x && yy != y {
-                    f32::consts::SQRT_2
+                let valid_neighbours = itertools::iproduct!(
+                    y.saturating_sub(1)..=y.saturating_add(1),
+                    x.saturating_sub(1)..=x.saturating_add(1),
+                )
+                .all(|(yy, xx)| {
+                    let dist = if xx != x && yy != y {
+                        f32::consts::SQRT_2
+                    } else {
+                        1.0
+                    };
+
+                    // This 2x factor on threshold is not logic to me, but omitting it
+                    // produce different results than the triangles list where we're
+                    // checking the dot product of the normal and the up axis.
+                    (height - get_height(xx, yy)).abs() < dist * sample_size * 2.0
+                });
+
+                if valid_neighbours {
+                    Some(height)
                 } else {
-                    1.0
-                };
-
-                // This 2x factor on threshold is not logic to me, but omitting it
-                // produce different results than the triangles list where we're
-                // checking the dot product of the normal and the up axis.
-                (height - get_height(xx, yy)).abs() < dist * sample_size * 2.0
-            });
-            if !valid_neighbours {
-                continue;
-            }
-
-            grid[y][x] = Some(height);
-        }
+                    None
+                }
+            })
+        });
 
         let transform = glam::Mat4::from_translation(glam::vec3(
             -tile_world_size / 2.0,

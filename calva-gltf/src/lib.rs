@@ -408,7 +408,7 @@ impl GltfModel {
     fn nodes_object<'a>(
         &self,
         nodes: impl Iterator<Item = gltf::Node<'a>>,
-        transform: Option<glam::Mat4>,
+        transform: glam::Mat4,
     ) -> Object {
         let mut instances = vec![];
         let mut point_lights = vec![];
@@ -469,7 +469,7 @@ impl GltfModel {
 
                 Some(transform)
             },
-            transform.unwrap_or_default(),
+            transform,
         );
 
         Object::new(&self.resources, instances, point_lights)
@@ -477,18 +477,18 @@ impl GltfModel {
 
     pub fn node_object(&self, node: gltf::Node) -> Object {
         let transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix()).inverse();
-        self.nodes_object(std::iter::once(node), Some(transform))
+        self.nodes_object(std::iter::once(node), transform)
     }
 
     pub fn scene_object(&self, scene: gltf::Scene) -> Object {
-        self.nodes_object(scene.nodes(), None)
+        self.nodes_object(scene.nodes(), glam::Mat4::IDENTITY)
     }
 
     pub fn object(&self) -> Object {
         if let Some(scene) = self.doc.default_scene() {
             self.scene_object(scene)
         } else {
-            self.nodes_object(self.doc.nodes(), None)
+            self.nodes_object(self.doc.nodes(), glam::Mat4::IDENTITY)
         }
     }
 }

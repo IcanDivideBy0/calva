@@ -6,28 +6,18 @@ use wgpu_profiler::{GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult};
 
 use crate::ResourcesManager;
 
-pub struct Renderer<'window> {
-    pub surface: wgpu::Surface<'window>,
-    pub surface_config: wgpu::SurfaceConfiguration,
-
-    pub adapter: wgpu::Adapter,
-    pub adapter_info: wgpu::AdapterInfo,
-
+pub struct Renderer {
     pub resources: ResourcesManager,
 
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    #[allow(dead_code)]
+    adapter: wgpu::Adapter,
+    adapter_info: wgpu::AdapterInfo,
 
     profiler: RefCell<GpuProfiler>,
     profiler_results: RefCell<Vec<GpuTimerQueryResult>>,
 }
 
-pub trait WgpuHasDisplayHandle:
-    raw_window_handle::HasDisplayHandle + core::fmt::Debug + Send + Sync + 'static
-{
-}
-
-impl<'window> Renderer<'window> {
+impl Renderer {
     const FEATURES: wgpu::Features = wgpu::Features::empty()
         .union(wgpu::Features::DEPTH_CLIP_CONTROL) // all platforms
         .union(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) // Vulkan, DX12
@@ -45,7 +35,7 @@ impl<'window> Renderer<'window> {
 
     pub async fn new(
         display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>,
-        window: impl Into<wgpu::SurfaceTarget<'window>>,
+        window: impl Into<wgpu::SurfaceTarget<'static>>,
         size: (u32, u32),
     ) -> Result<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -87,8 +77,6 @@ impl<'window> Renderer<'window> {
 
         surface.configure(&device, &surface_config);
 
-        let resources = ResourcesManager::new(&device, &queue, &surface_config);
-
         let profiler = RefCell::new(GpuProfiler::new(
             &device,
             GpuProfilerSettings {
@@ -99,45 +87,36 @@ impl<'window> Renderer<'window> {
         )?);
         let profiler_results = RefCell::new(vec![]);
 
-        Ok(Self {
-            surface,
-            surface_config,
+        let resources = ResourcesManager::new(device, queue, surface, surface_config);
 
+        Ok(Self {
             adapter,
             adapter_info,
 
             resources,
-
-            device,
-            queue,
 
             profiler,
             profiler_results,
         })
     }
 
-    pub fn resize(&mut self, (width, height): (u32, u32)) {
-        self.surface_config.width = width;
-        self.surface_config.height = height;
-        self.surface.configure(&self.device, &self.surface_config);
+    pub fn render(&self, cb: impl FnOnce(&mut RenderContext) -> Result<()>) -> Result<()> {
+        let device = self.resources.read::<wgpu::Device>();
+        let queue = self.resources.read::<wgpu::Queue>();
+        let surface = self.resources.read::<wgpu::Surface>();
+        let surface_config = self.resources.read::<wgpu::SurfaceConfiguration>();
 
-        *self.resources.write::<wgpu::SurfaceConfiguration>() = self.surface_config.clone();
-    }
+        let mut encoder = device.create_command_encoder(&Default::default());
 
-    pub fn render(&self, cb: impl FnOnce(&mut RenderContext)) -> Result<()> {
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-
-        let frame = match self.surface.get_current_texture() {
+        let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
             wgpu::CurrentSurfaceTexture::Suboptimal(_) => {
-                self.surface.configure(&self.device, &self.surface_config);
+                surface.configure(&device, &surface_config);
                 return Ok(());
             }
 
             _ => return Err(anyhow!("Failed")),
         };
-
-        let frame_view = frame.texture.create_view(&Default::default());
 
         let mut profiler = self.profiler.try_borrow_mut()?;
 
@@ -145,24 +124,24 @@ impl<'window> Renderer<'window> {
 
         let mut context = RenderContext {
             encoder: scope,
-            frame: &frame_view,
+            frame: &frame.texture.create_view(&Default::default()),
         };
 
-        cb(&mut context);
+        cb(&mut context)?;
         drop(context);
 
         profiler.resolve_queries(&mut encoder);
 
-        let submission_index = self.queue.submit(std::iter::once(encoder.finish()));
+        let submission_index = queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        self.device.poll(wgpu::PollType::Wait {
+        device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission_index),
             timeout: None,
         })?;
 
         profiler.end_frame()?;
-        if let Some(results) = profiler.process_finished_frame(self.queue.get_timestamp_period()) {
+        if let Some(results) = profiler.process_finished_frame(queue.get_timestamp_period()) {
             *self.profiler_results.try_borrow_mut()? = results;
         }
 
@@ -171,7 +150,7 @@ impl<'window> Renderer<'window> {
 }
 
 #[cfg(feature = "egui")]
-impl egui::Widget for &Renderer<'_> {
+impl egui::Widget for &Renderer {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         ui.vertical(|ui| {
             egui::CollapsingHeader::new("Adapter")

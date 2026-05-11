@@ -1,7 +1,6 @@
 mod ambient_light;
-mod animate;
 mod directional_light;
-// #[cfg(feature = "egui")]
+#[cfg(feature = "egui")]
 mod egui;
 mod fxaa;
 mod geometry;
@@ -11,10 +10,9 @@ mod skybox;
 mod ssao;
 mod tone_mapping;
 
-// #[cfg(feature = "egui")]
+#[cfg(feature = "egui")]
 pub use self::egui::*;
 pub use ambient_light::*;
-pub use animate::*;
 pub use directional_light::*;
 pub use fxaa::*;
 pub use geometry::*;
