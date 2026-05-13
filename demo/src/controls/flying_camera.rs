@@ -183,8 +183,8 @@ impl Default for FlyingCamera {
 }
 
 impl Resource for FlyingCamera {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
-        Self::default()
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::default())
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {

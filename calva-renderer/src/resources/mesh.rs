@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager, SkinHandle};
 
 #[repr(C)]
@@ -206,7 +208,7 @@ impl MeshesManager {
 }
 
 impl Resource for MeshesManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }

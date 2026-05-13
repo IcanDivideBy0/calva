@@ -252,7 +252,7 @@ pub struct GeometryPassOutputs {
 }
 
 impl Resource for GeometryPassOutputs {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let device = resources.read::<wgpu::Device>();
         let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
 
@@ -310,7 +310,7 @@ impl Resource for GeometryPassOutputs {
         });
         let depth_view = depth.create_view(&Default::default());
 
-        GeometryPassOutputs {
+        Ok(GeometryPassOutputs {
             albedo_metallic,
             albedo_metallic_view,
 
@@ -322,7 +322,7 @@ impl Resource for GeometryPassOutputs {
 
             depth,
             depth_view,
-        }
+        })
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
@@ -335,7 +335,7 @@ impl Resource for GeometryPassOutputs {
         };
 
         if self.depth.size() != size {
-            *self = Self::instanciate(resources);
+            *self = Self::instanciate(resources)?;
         }
 
         Ok(())

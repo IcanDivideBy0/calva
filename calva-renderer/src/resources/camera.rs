@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{Resource, ResourcesManager, UniformData};
 
 #[repr(C)]
@@ -82,7 +84,7 @@ impl UniformData for Camera {
 }
 
 impl Resource for Camera {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
-        Self::default()
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::default())
     }
 }

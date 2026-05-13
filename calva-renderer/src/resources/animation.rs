@@ -275,8 +275,8 @@ impl AnimationsManager {
 }
 
 impl Resource for AnimationsManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 
     fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {

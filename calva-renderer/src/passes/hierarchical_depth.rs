@@ -12,7 +12,7 @@ pub struct HierarchicalDepthPassOutputs {
 }
 
 impl Resource for HierarchicalDepthPassOutputs {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let device = resources.read::<wgpu::Device>();
         let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
 
@@ -33,10 +33,10 @@ impl Resource for HierarchicalDepthPassOutputs {
 
         let output_view = output.create_view(&Default::default());
 
-        Self {
+        Ok(Self {
             output,
             output_view,
-        }
+        })
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
@@ -49,7 +49,7 @@ impl Resource for HierarchicalDepthPassOutputs {
         };
 
         if self.output.size() != size {
-            *self = Self::instanciate(resources);
+            *self = Self::instanciate(resources)?;
         }
 
         Ok(())

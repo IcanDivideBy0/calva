@@ -218,7 +218,7 @@ impl MipmapGenerator {
 }
 
 impl Resource for MipmapGenerator {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }

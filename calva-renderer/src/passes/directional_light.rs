@@ -47,12 +47,12 @@ pub struct DirectionalLight {
 }
 
 impl Resource for DirectionalLight {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
-        Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self {
             direction: glam::vec3(0.5, -1.0, 0.5),
             color: [1.0; 3],
             intensity: 5.0,
-        }
+        })
     }
 }
 
@@ -565,11 +565,11 @@ impl UniformData for DirectionalLightUniform {
 }
 
 impl Resource for DirectionalLightUniform {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let light = *resources.read::<DirectionalLight>();
         let camera = *resources.read::<Camera>();
 
-        Self { light, camera }
+        Ok(Self { light, camera })
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {

@@ -15,19 +15,19 @@ impl PerspectiveCamera {
 }
 
 impl Resource for PerspectiveCamera {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
 
-        Self {
+        Ok(Self {
             aspect: surface_config.width as f32 / surface_config.height as f32,
             fovy: 45.0_f32.to_radians(),
             znear: 0.1,
             zfar: 100.0,
-        }
+        })
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
-        *self = Self::instanciate(resources);
+        *self = Self::instanciate(resources)?;
 
         resources.write::<Camera>().proj = self.get_proj();
 

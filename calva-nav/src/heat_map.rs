@@ -78,7 +78,7 @@ impl<const SIZE: usize> fmt::Debug for HeatMap<SIZE> {
 
         write!(
             f,
-            "\n{}",
+            "{SIZE}×{SIZE}\n{}",
             debug_map(&self.grid, |heat| match heat {
                 Some(0.0) => (0, 255, 0),
                 Some(heat) => {

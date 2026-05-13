@@ -30,6 +30,7 @@ impl Renderer {
         .union(wgpu::Features::FLOAT32_FILTERABLE) // Vulkan, DX12, Metal
         .union(wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY) // Vulkan, DX12
         .union(wgpu::Features::DEPTH32FLOAT_STENCIL8) // Vulkan, DX12, Metal
+        .union(wgpu::Features::IMMEDIATES) // Vulkan, DX12, Metal
         .union(GpuProfiler::ALL_WGPU_TIMER_FEATURES) // Vulkan, DX12
         ;
 

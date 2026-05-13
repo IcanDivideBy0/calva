@@ -710,6 +710,7 @@ name = "calva-nav"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "calva-renderer",
  "colored",
  "glam 0.32.1",

@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{
     Camera, FxaaPassOutputs, GeometryPassOutputs, RenderContext, Resource, ResourcesManager,
     UniformBuffer,
@@ -15,12 +17,12 @@ pub struct SsaoConfig {
 }
 
 impl Resource for SsaoConfig {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
-        Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self {
             radius: 0.3,
             bias: 0.025,
             power: 1.0,
-        }
+        })
     }
 }
 
@@ -89,8 +91,8 @@ impl SsaoRandom {
 }
 
 impl Resource for SsaoRandom {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
-        Self::new()
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new())
     }
 }
 

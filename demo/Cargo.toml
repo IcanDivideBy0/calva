@@ -20,5 +20,5 @@ rand = "0.10"
 rand_seeder = "0.5"
 serde = "1.0"
 serde_json = "1.0"
-wesl = { version = "0.3" }
-wesl-quote = { version = "0.3" }
+wesl = "0.3"
+wesl-quote = "0.3"

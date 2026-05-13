@@ -92,10 +92,11 @@ impl<T> Resource for UniformBuffer<T>
 where
     T: Copy + PartialEq + UniformData + Resource + 'static,
 {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let device = resources.read::<wgpu::Device>();
         let resource = *resources.read::<T>();
-        Self::new(&device, resource)
+
+        Ok(Self::new(&device, resource))
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {

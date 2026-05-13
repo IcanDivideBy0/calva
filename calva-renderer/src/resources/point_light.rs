@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager};
 
 #[repr(C)]
@@ -159,7 +161,7 @@ impl PointLightsManager {
 }
 
 impl Resource for PointLightsManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }

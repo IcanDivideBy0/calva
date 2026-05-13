@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{FxaaPassOutputs, RenderContext, Resource, ResourcesManager, UniformBuffer};
 
 #[repr(C)]
@@ -8,11 +10,11 @@ pub struct ToneMappingConfig {
 }
 
 impl Resource for ToneMappingConfig {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
-        Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self {
             exposure: 0.0,
             gamma: 1.0,
-        }
+        })
     }
 }
 

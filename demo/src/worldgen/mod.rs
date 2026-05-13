@@ -1,24 +1,41 @@
-use calva::renderer::Object;
-use noise::NoiseFn;
-use rand::prelude::*;
+use anyhow::Result;
+use calva::{
+    gltf::GltfModel,
+    nav::HeightMapBuilder,
+    renderer::{Camera, Resource, ResourcesManager},
+};
+use rand::RngExt;
 use rand_seeder::SipHasher;
-use std::fmt;
-use std::{cell::RefCell, collections::BTreeSet, hash::Hash};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fs::File,
+    hash::Hash,
+    io::Read,
+};
 
-use calva::gltf::GltfModel;
+mod chunk;
+mod tile;
+mod wfc;
 
-pub mod tile;
+use chunk::WorldChunk;
+use tile::Tile;
 
-pub use tile::{Face, Tile};
+const CHUNK_SIZE: usize = 3;
+const MODULE_SIZE: usize = 5;
+type Chunk = WorldChunk<CHUNK_SIZE, MODULE_SIZE>;
 
 pub struct WorldGenerator {
+    model: GltfModel,
+    tiles: HashMap<usize, Tile>,
+
     seed: u32,
-    noise: Box<dyn NoiseFn<f64, 2>>,
-    options: BTreeSet<SlotOption>,
+    // // noise: Box<dyn NoiseFn<f64, 2> + Send + Sync>,
+    noise: Box<noise::ScalePoint<noise::ScaleBias<f64, noise::Perlin, 2>>>,
+    chunks: HashMap<glam::IVec2, Chunk>,
 }
 
 impl WorldGenerator {
-    pub fn new(seed: impl Hash) -> Self {
+    fn new(seed: impl Hash, model: GltfModel, tiles: HashMap<usize, Tile>) -> Self {
         let seed = SipHasher::from(seed).into_rng().random();
 
         let noise = Box::new(
@@ -31,463 +48,153 @@ impl WorldGenerator {
         );
 
         Self {
+            model,
+            tiles,
+
             seed,
             noise,
-            options: BTreeSet::new(),
+            chunks: Default::default(),
         }
     }
 
-    pub fn set_tiles(&mut self, tiles: &[Tile]) {
-        self.options = tiles.iter().flat_map(SlotOption::permutations).collect();
-    }
+    pub fn ray_cast(&self, ro: glam::Vec3, rd: glam::Vec3) -> Option<f32> {
+        self.chunks.values().fold(None, |prev_hit, chunk| {
+            let hit = chunk.ray_cast(ro, rd, |tile_id| &self.tiles[&tile_id]);
 
-    pub fn chunk(&self, model: &GltfModel, coord: glam::IVec2) -> Vec<Object> {
-        let chunk = Chunk::new(self.seed, coord, self.noise.as_ref(), &self.options);
-
-        // dbg!(&chunk);
-
-        let offset = coord * (Chunk::SIZE as i32);
-
-        itertools::iproduct!(0..Chunk::SIZE, 0..Chunk::SIZE)
-            .filter_map(|(x, y)| -> Option<Object> {
-                let slot = chunk.grid[y][x].borrow();
-                let opt = slot.options.first()?;
-                let transform = opt.transform(offset + glam::ivec2(x as _, y as _));
-
-                Some(
-                    model
-                        .node_object(model.doc.nodes().nth(opt.id)?)
-                        .with_transform(transform),
-                )
-            })
-            .collect()
-    }
-}
-
-type ChunkGrid = [[RefCell<Slot>; Chunk::SIZE]; Chunk::SIZE];
-pub struct Chunk {
-    coord: glam::IVec2,
-    grid: ChunkGrid,
-}
-
-impl Chunk {
-    pub const SIZE: usize = 3;
-    pub const WORLD_SIZE: f32 = Self::SIZE as f32 * Tile::WORLD_SIZE;
-
-    fn new(
-        seed: impl Hash,
-        coord: glam::IVec2,
-        noise: &dyn NoiseFn<f64, 2>,
-        options: &BTreeSet<SlotOption>,
-    ) -> Self {
-        let mut rng = SipHasher::from((seed, coord)).into_rng();
-
-        let grid = std::array::from_fn(|_| {
-            std::array::from_fn(|_| {
-                RefCell::new(Slot {
-                    options: options.clone(),
-                })
-            })
-        });
-
-        for face in Face::all() {
-            for i in 0..Self::SIZE {
-                let (x, y) = match face {
-                    Face::North => (i, 0),
-                    Face::East => (Self::SIZE - 1, i),
-                    Face::South => (Self::SIZE - 1 - i, Self::SIZE - 1),
-                    Face::West => (0, Self::SIZE - 1 - i),
-                };
-
-                let nx = coord.x as f64 * Self::SIZE as f64
-                    + x as f64
-                    + match face {
-                        Face::East | Face::South => 1.0,
-                        _ => 0.0,
-                    };
-
-                let ny = coord.y as f64 * Self::SIZE as f64
-                    + y as f64
-                    + match face {
-                        Face::South | Face::West => 1.0,
-                        _ => 0.0,
-                    };
-
-                let elevation_start = noise.get([nx, ny]) * SlotOption::ELEVATION_MAX as f64;
-
-                let nxx = match face {
-                    Face::North => nx + 1.0,
-                    Face::South => nx - 1.0,
-                    _ => nx,
-                };
-                let nyy = match face {
-                    Face::East => ny + 1.0,
-                    Face::West => ny - 1.0,
-                    _ => ny,
-                };
-
-                let elevation_end = noise.get([nxx, nyy]) * SlotOption::ELEVATION_MAX as f64;
-
-                let elevation_start = elevation_start as u8 * 2;
-                let elevation_end = elevation_end as u8 * 2;
-
-                let mut constraint = [
-                    Some(elevation_start),
-                    Some(elevation_start),
-                    Some(u8::max(elevation_start, elevation_end)),
-                    Some(elevation_end),
-                    Some(elevation_end),
-                ];
-                constraint.reverse();
-
-                grid[y][x]
-                    .borrow_mut()
-                    .apply_constraints(face, &[constraint]);
-
-                Self::propagate(&grid, x, y);
+            match (hit, prev_hit) {
+                (Some(hit), Some(prev_hit)) => Some(f32::min(hit, prev_hit)),
+                _ => Option::or(hit, prev_hit),
             }
-        }
-
-        while let Some((x, y)) = Self::min_entropy_slot(&grid) {
-            let mut slot = grid[y][x].borrow_mut();
-            slot.options = [*slot.options.iter().choose(&mut rng).unwrap_or_else(|| {
-                eprintln!("Cannot generate chunk {coord}");
-                options.first().unwrap()
-            })]
-            .into();
-            drop(slot);
-
-            Self::propagate(&grid, x, y);
-        }
-
-        Self { coord, grid }
-    }
-
-    fn min_entropy_slot(grid: &ChunkGrid) -> Option<(usize, usize)> {
-        (0..Self::SIZE)
-            .flat_map(|y| {
-                (0..Self::SIZE).filter_map(move |x| {
-                    let slot = grid[y][x].borrow();
-
-                    if slot.collapsed() {
-                        None
-                    } else {
-                        Some((slot.entropy(), (x, y)))
-                    }
-                })
-            })
-            .min_by_key(|(entropy, _)| *entropy)
-            .map(|(_, coord)| coord)
-    }
-
-    fn propagate(grid: &ChunkGrid, x: usize, y: usize) {
-        for face in Face::all() {
-            let (xx, yy) = match face {
-                Face::North if y > 0 => (x, y - 1),
-                // #[allow(clippy::absurd_extreme_comparisons)]
-                Face::East if x < Self::SIZE - 1 => (x + 1, y),
-                // #[allow(clippy::absurd_extreme_comparisons)]
-                Face::South if y < Self::SIZE - 1 => (x, y + 1),
-                Face::West if x > 0 => (x - 1, y),
-                _ => continue,
-            };
-
-            let slot = grid[y][x].borrow();
-            let mut neighbour = grid[yy][xx].borrow_mut();
-
-            let constraints = slot.constraints(face).collect::<Vec<_>>();
-            let has_changed = neighbour.apply_constraints(face.opposite(), &constraints);
-
-            if has_changed {
-                drop(slot);
-                drop(neighbour);
-
-                Self::propagate(grid, xx, yy);
-            }
-        }
-    }
-}
-
-impl fmt::Debug for Chunk {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use colored::Colorize;
-        let get_constraint = |face: Face, i: usize| {
-            let (x, y) = match face {
-                Face::North => (i, 0),
-                Face::East => (Self::SIZE - 1, i),
-                Face::South => (Self::SIZE - 1 - i, Self::SIZE - 1),
-                Face::West => (0, Self::SIZE - 1 - i),
-            };
-
-            self.grid[y][x]
-                .borrow()
-                .options
-                .first()
-                .unwrap()
-                .constraint(face)
-                .map(|c| match c {
-                    Some(x) => {
-                        let c = (x + 1) * 31;
-                        format!("{}", x.to_string().bold().red().on_truecolor(c, c, c))
-                    }
-                    None => String::from(" "),
-                })
-        };
-
-        let north: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::North, i));
-
-        writeln!(f, "Chunk ({},{})", self.coord.x, self.coord.y)?;
-
-        writeln!(
-            f,
-            "{}",
-            north
-                .iter()
-                .enumerate()
-                .map(|(idx, c)| c[(idx.min(1))..].join(""))
-                .collect::<Vec<_>>()
-                .join("")
-        )?;
-
-        let east: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::East, i));
-        let west: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::West, i));
-        for y in 0..Self::SIZE {
-            let e = &east[y];
-            let w = &west[Self::SIZE - 1 - y];
-
-            let end = if y < Self::SIZE - 1 {
-                SlotOption::WFC_SAMPLES
-            } else {
-                SlotOption::WFC_SAMPLES - 1
-            };
-
-            for i in 1..end {
-                let last = i == SlotOption::WFC_SAMPLES - 1;
-
-                let c = if last { "┼" } else { "│" };
-                let mut strs = [c; Self::SIZE + 1];
-
-                strs[0] = w[SlotOption::WFC_SAMPLES - 1 - i].as_str();
-                strs[Self::SIZE] = e[i].as_str();
-
-                let sep = if last { "─" } else { " " };
-                writeln!(f, "{}", strs.join(&sep.repeat(SlotOption::WFC_SAMPLES - 2)))?;
-            }
-        }
-
-        let mut south: [_; Self::SIZE] = std::array::from_fn(|i| get_constraint(Face::South, i));
-        writeln!(
-            f,
-            "{}",
-            south
-                .iter_mut()
-                .rev()
-                .enumerate()
-                .map(|(idx, c)| {
-                    c.reverse();
-                    c[(idx.min(1))..].join("")
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        )?;
-
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct Slot {
-    options: BTreeSet<SlotOption>,
-}
-
-impl Slot {
-    fn entropy(&self) -> usize {
-        self.options.len()
-    }
-
-    fn collapsed(&self) -> bool {
-        self.entropy() == 1
-    }
-
-    fn constraints(&self, face: Face) -> impl Iterator<Item = SlotConstraint> + '_ {
-        self.options.iter().map(move |opt| opt.constraint(face))
-    }
-
-    fn apply_constraints(&mut self, face: Face, constraints: &[SlotConstraint]) -> bool {
-        if self.collapsed() {
-            return false;
-        }
-
-        let prev_entropy = self.entropy();
-
-        self.options.retain(|opt| {
-            let mut c = opt.constraint(face);
-            c.reverse();
-
-            constraints.contains(&c)
-        });
-
-        prev_entropy > self.entropy()
-    }
-}
-
-type SlotConstraint = [Option<u8>; SlotOption::WFC_SAMPLES];
-
-#[derive(Clone, Copy)]
-struct SlotOption {
-    id: usize,
-    elevation: u8,
-    rotation: u8,
-    constraints: [SlotConstraint; 4], // north east south west
-}
-
-impl Eq for SlotOption {}
-impl PartialEq for SlotOption {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.rotation == other.rotation && self.elevation == other.elevation
-    }
-}
-
-impl Hash for SlotOption {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-        self.elevation.hash(state);
-        self.rotation.hash(state);
-    }
-}
-
-impl std::cmp::Ord for SlotOption {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        std::cmp::Ord::cmp(
-            &(self.id, self.elevation, self.rotation),
-            &(other.id, other.elevation, other.rotation),
-        )
-    }
-}
-
-impl std::cmp::PartialOrd for SlotOption {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl SlotOption {
-    const WFC_SAMPLES: usize = 5;
-    const FLOOR_HEIGHT: f32 = 4.0;
-
-    const ELEVATION_MAX: usize = 4;
-
-    fn constraint(&self, face: Face) -> SlotConstraint {
-        match face {
-            Face::North => self.constraints[0],
-            Face::East => self.constraints[1],
-            Face::South => self.constraints[2],
-            Face::West => self.constraints[3],
-        }
-    }
-
-    fn permutations(tile: &Tile) -> impl Iterator<Item = Self> + '_ {
-        fn wfc_to_world(i: usize) -> f32 {
-            const STEP: f32 = Tile::WORLD_SIZE / SlotOption::WFC_SAMPLES as f32;
-            const HALF: f32 = STEP / 2.0;
-
-            i as f32 * STEP + HALF
-        }
-
-        let mut constraints = Face::all().map(|face| {
-            std::array::from_fn(|i| {
-                let reverse = |i: usize| Self::WFC_SAMPLES - 1 - i;
-
-                tile.world_get_height(
-                    match face {
-                        Face::North => [wfc_to_world(i), 0.0],
-                        Face::East => [Tile::WORLD_SIZE, wfc_to_world(i)],
-                        Face::South => [wfc_to_world(reverse(i)), Tile::WORLD_SIZE],
-                        Face::West => [0.0, wfc_to_world(reverse(i))],
-                    }
-                    .into(),
-                )
-                .and_then(|height| {
-                    let floor_level = (height / Self::FLOOR_HEIGHT).round();
-                    u8::try_from(floor_level as i32).ok()
-                })
-            })
-        });
-
-        (0..4).flat_map(move |rotation| {
-            let it = (0..=(Self::ELEVATION_MAX as u8 + 2)).map(move |elevation| Self {
-                id: tile.node_id,
-                elevation,
-                rotation,
-                constraints: constraints
-                    .map(|constraint| constraint.map(|value| value.map(|i| i + elevation))),
-            });
-
-            // Rotate faces
-            constraints = [
-                constraints[3],
-                constraints[0],
-                constraints[1],
-                constraints[2],
-            ];
-
-            it
         })
     }
-
-    fn transform(&self, pos: glam::IVec2) -> glam::Mat4 {
-        let rotation =
-            glam::Quat::from_rotation_y(self.rotation as f32 * -std::f32::consts::FRAC_PI_2);
-
-        let translation = glam::vec3(pos.x as f32, self.elevation as f32, pos.y as f32)
-            * glam::vec3(Tile::WORLD_SIZE, Self::FLOOR_HEIGHT, Tile::WORLD_SIZE);
-
-        glam::Mat4::from_rotation_translation(rotation, translation)
-    }
 }
 
-impl fmt::Debug for SlotOption {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use colored::Colorize;
-        let get_visual_constraint = |face: Face| {
-            self.constraint(face).map(|c| match c {
-                Some(x) => {
-                    let c = (x + 1) * 31;
-                    format!("{x}").bold().red().on_truecolor(c, c, c)
-                }
-                None => " ".normal(),
+impl Resource for WorldGenerator {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        let height_map_builder = resources.read::<HeightMapBuilder>();
+
+        let mut dungeon_buffer = Vec::new();
+        File::open("./demo/assets/dungeon.glb")?.read_to_end(&mut dungeon_buffer)?;
+        let (doc, buffers, images) = gltf::import_slice(&dungeon_buffer)?;
+        let model = GltfModel::new(resources, doc, &buffers, &images)?;
+
+        const TILES: &[&str] = &[
+            "module01", "module03", "module07", "module08", "module09", "module10", "module11",
+            "module12", "module13", "module14", "module15", "module16", "module17", "module18",
+            "module19",
+        ];
+
+        let tiles = TILES
+            .iter()
+            .filter_map(|node_name| {
+                let node = model.get_node(node_name)?;
+                let (floor_triangles, walls_triangles) = get_tile_triangles(&buffers, &node);
+                let (height_map, depth) =
+                    height_map_builder.build(Tile::WORLD_SIZE, &floor_triangles, &walls_triangles);
+
+                Some((node.index(), Tile { depth, height_map }))
             })
-        };
+            .collect::<HashMap<_, _>>();
 
-        let north = get_visual_constraint(Face::North);
-        let east = get_visual_constraint(Face::East);
-        let south = get_visual_constraint(Face::South);
-        let west = get_visual_constraint(Face::West);
+        Ok(WorldGenerator::new("Calva!533d", model, tiles))
+    }
 
-        writeln!(
-            f,
-            "SlotOption {{ id[{}], elevetion[{}], rotation [{}] }}",
-            self.id, self.elevation, self.rotation
-        )?;
+    fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
+        let camera = resources.read::<Camera>();
 
-        writeln!(
-            f,
-            "╔{}{}{}{}{}╗",
-            north[0], north[1], north[2], north[3], north[4],
-        )?;
+        let (_, _, cam_pos) = camera.view.inverse().to_scale_rotation_translation();
 
-        writeln!(f, "{}     {}", west[4], east[0])?;
-        writeln!(f, "{}     {}", west[3], east[1])?;
-        writeln!(f, "{}     {}", west[2], east[2])?;
-        writeln!(f, "{}     {}", west[1], east[3])?;
-        writeln!(f, "{}     {}", west[0], east[4])?;
+        let chunk_coord = ((cam_pos + Tile::WORLD_SIZE * 0.5) / Chunk::WORLD_SIZE).floor();
+        let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
+        let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
+        let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
 
-        writeln!(
-            f,
-            "╚{}{}{}{}{}╝",
-            south[4], south[3], south[2], south[1], south[0],
-        )?;
+        self.chunks
+            .retain(|pos, _| chunk_x.contains(&pos.x) && chunk_y.contains(&pos.y));
+
+        for key in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
+            if let Entry::Vacant(entry) = self.chunks.entry(key) {
+                let chunk = Chunk::new(
+                    &mut self.tiles.iter(),
+                    self.seed,
+                    &self.noise,
+                    key,
+                    |tile_id| {
+                        let node = self.model.doc.nodes().nth(tile_id).unwrap();
+                        self.model.node_object(node)
+                    },
+                );
+
+                entry.insert(chunk);
+            }
+        }
 
         Ok(())
     }
+}
+
+fn get_tile_triangles(
+    buffers: &[gltf::buffer::Data],
+    node: &gltf::Node,
+) -> (Vec<[glam::Vec3; 3]>, Vec<[glam::Vec3; 3]>) {
+    let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
+        buffers.get(buffer.index()).map(std::ops::Deref::deref)
+    };
+
+    let mut floor_triangles = vec![];
+    let mut walls_triangles = vec![];
+
+    calva::gltf::traverse_nodes_tree::<glam::Mat4>(
+        node.children(),
+        &mut |parent_transform, node| {
+            let get_flag = |flag: &str| {
+                node.extras()
+                    .as_ref()
+                    .and_then(|extras| {
+                        serde_json::from_str::<serde_json::Map<_, _>>(extras.get())
+                            .ok()?
+                            .get(flag)
+                            .and_then(|value| value.as_bool())
+                    })
+                    .unwrap_or(false)
+            };
+
+            let triangles = match (get_flag("floor"), get_flag("wall")) {
+                (true, _) => &mut floor_triangles,
+                (_, true) => &mut walls_triangles,
+                _ => return None,
+            };
+
+            let transform =
+                *parent_transform * glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+
+            if let Some(mesh) = node.mesh() {
+                for primitive in mesh.primitives() {
+                    let reader = primitive.reader(get_buffer_data);
+
+                    let vertices: Vec<_> = reader
+                        .read_positions()?
+                        .map(glam::Vec3::from_array)
+                        .collect();
+
+                    let indices: Vec<_> = reader.read_indices()?.into_u32().collect();
+
+                    triangles.extend(indices.chunks_exact(3).filter_map(|chunk| {
+                        let [i1, i2, i3] = <[u32; 3]>::try_from(chunk).ok()?;
+
+                        Some([
+                            transform.transform_point3(*vertices.get(i1 as usize)?),
+                            transform.transform_point3(*vertices.get(i2 as usize)?),
+                            transform.transform_point3(*vertices.get(i3 as usize)?),
+                        ])
+                    }));
+                }
+            }
+
+            Some(transform)
+        },
+        glam::Mat4::IDENTITY,
+    );
+
+    (floor_triangles, walls_triangles)
 }

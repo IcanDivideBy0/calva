@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{AmbientLightPassOutputs, RenderContext, Resource, ResourcesManager};
 
 pub struct FxaaPassOutputs {
@@ -6,7 +8,7 @@ pub struct FxaaPassOutputs {
 }
 
 impl Resource for FxaaPassOutputs {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let device = resources.read::<wgpu::Device>();
         let ambient_light_outputs = resources.read::<AmbientLightPassOutputs>();
 
@@ -23,17 +25,17 @@ impl Resource for FxaaPassOutputs {
 
         let output_view = output.create_view(&Default::default());
 
-        Self {
+        Ok(Self {
             output,
             output_view,
-        }
+        })
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> anyhow::Result<()> {
         let ambient_light_outputs = resources.read::<AmbientLightPassOutputs>();
 
         if ambient_light_outputs.output.size() != self.output.size() {
-            *self = Self::instanciate(resources);
+            *self = Self::instanciate(resources)?;
         }
 
         Ok(())

@@ -34,7 +34,7 @@ use std::{
 };
 
 pub trait Resource: DowncastSync + DowncastSend {
-    fn instanciate(resources: &ResourcesManager) -> Self
+    fn instanciate(resources: &ResourcesManager) -> Result<Self>
     where
         Self: Sized;
 
@@ -127,7 +127,15 @@ impl ResourcesManager {
     }
 
     pub(crate) fn update(&self) -> Result<()> {
-        for arc in self.resources.read().values() {
+        let arcs = {
+            // Some updates might read resources that are not created yet.
+            // That's why it's important not to lock the resources registry
+            // during the update loop.
+            let read = self.resources.read();
+            read.values().cloned().collect::<Vec<_>>()
+        };
+
+        for arc in arcs {
             // TODO: check update_dependencies before updating
             arc.write_arc().update(self)?;
         }
@@ -135,7 +143,7 @@ impl ResourcesManager {
         Ok(())
     }
 
-    fn instanciate<T: Resource>(&self) -> T {
+    fn instanciate<T: Resource>(&self) -> Result<T> {
         let ty_id = TypeId::of::<T>();
         let ty_name = type_name::<T>().to_string();
 
@@ -176,7 +184,7 @@ impl ResourcesManager {
             None => {
                 drop(read); // prevent deadlock
 
-                let resource = self.instanciate::<T>();
+                let resource = self.instanciate::<T>().unwrap();
 
                 self.resources
                     .write()
@@ -197,19 +205,19 @@ impl ResourcesManager {
 }
 
 impl Resource for wgpu::Device {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
         unreachable!()
     }
 }
 
 impl Resource for wgpu::Queue {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
         unreachable!()
     }
 }
 
 impl Resource for wgpu::Surface<'static> {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
         unreachable!()
     }
 
@@ -231,7 +239,7 @@ impl Resource for wgpu::Surface<'static> {
 }
 
 impl Resource for wgpu::SurfaceConfiguration {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
         unreachable!()
     }
 }

@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{MeshesManager, Resource, ResourcesManager};
 
 #[repr(C)]
@@ -124,7 +126,7 @@ impl SkinsManager {
 }
 
 impl Resource for SkinsManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }

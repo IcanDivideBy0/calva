@@ -1,7 +1,0 @@
-{
-  "files.associations": {
-    "*.gltf": "json",
-    "*.wesl": "wgsl"
-  },
-  "rust-analyzer.check.command": "clippy"
-}

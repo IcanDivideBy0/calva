@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 renderer = { package = "calva-renderer", path = "../calva-renderer" }
 anyhow = "1.0"
+bytemuck = "1.25"
 glam = "0.32"
 itertools = "0.14"
 parry3d = "0.26"

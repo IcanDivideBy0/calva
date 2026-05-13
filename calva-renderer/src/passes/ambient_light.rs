@@ -10,12 +10,12 @@ pub struct AmbientLightConfig {
 }
 
 impl Resource for AmbientLightConfig {
-    fn instanciate(_resources: &ResourcesManager) -> Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
         // Blender defaults
-        Self {
+        Ok(Self {
             color: [0.05; 3],
             strength: 1.0,
-        }
+        })
     }
 }
 
@@ -45,7 +45,7 @@ pub struct AmbientLightPassOutputs {
 }
 
 impl Resource for AmbientLightPassOutputs {
-    fn instanciate(resources: &ResourcesManager) -> Self {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let device = resources.read::<wgpu::Device>();
         let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
 
@@ -66,10 +66,10 @@ impl Resource for AmbientLightPassOutputs {
 
         let output_view = output.create_view(&Default::default());
 
-        AmbientLightPassOutputs {
+        Ok(AmbientLightPassOutputs {
             output,
             output_view,
-        }
+        })
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
@@ -82,7 +82,7 @@ impl Resource for AmbientLightPassOutputs {
         };
 
         if self.output.size() != size {
-            *self = Self::instanciate(resources);
+            *self = Self::instanciate(resources)?;
         }
 
         Ok(())

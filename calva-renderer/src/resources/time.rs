@@ -24,13 +24,13 @@ impl UniformData for Time {
 }
 
 impl Resource for Time {
-    fn instanciate(_resources: &super::ResourcesManager) -> Self {
-        Self {
+    fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self {
             time: Instant::now(),
             dt: Duration::default(),
 
             epoch: Instant::now(),
-        }
+        })
     }
 
     fn update(&mut self, _resources: &ResourcesManager) -> Result<()> {

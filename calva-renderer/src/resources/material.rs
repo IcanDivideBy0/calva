@@ -1,4 +1,5 @@
 use crate::{util::id_generator::IdGenerator, Resource, ResourcesManager, TextureHandle};
+use anyhow::Result;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -100,7 +101,7 @@ impl MaterialsManager {
 }
 
 impl Resource for MaterialsManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }

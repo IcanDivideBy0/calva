@@ -1,3 +1,4 @@
+use anyhow::Result;
 use wgpu::util::DeviceExt;
 
 use crate::{Resource, ResourcesManager};
@@ -105,7 +106,7 @@ impl SkyboxManager {
 }
 
 impl Resource for SkyboxManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }

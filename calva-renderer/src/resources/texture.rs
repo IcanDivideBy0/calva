@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{Resource, ResourcesManager};
 
 #[repr(C)]
@@ -120,7 +122,7 @@ impl TexturesManager {
 }
 
 impl Resource for TexturesManager {
-    fn instanciate(resources: &ResourcesManager) -> Self {
-        Self::new(resources)
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        Ok(Self::new(resources))
     }
 }
