@@ -81,11 +81,6 @@ fn fs_main_lighting(in: VertexOutput) -> @location(0) vec4<f32> {
     let albedo_metallic = textureSample(t_albedo_metallic, t_sampler, in.uv);
     let normal_roughness = textureSample(t_normal_roughness, t_sampler, in.uv);
 
-    let albedo = albedo_metallic.rgb;
-    let normal = normal_roughness.xyz;
-    let metallic = albedo_metallic.a;
-    let roughness = normal_roughness.a;
-
     let z = textureSample(t_depth, t_sampler, in.uv);
     let frag_pos_view4 = camera.inv_proj * vec4<f32>(in.ndc, z, 1.0);
     let frag_pos_view = frag_pos_view4.xyz / frag_pos_view4.w;

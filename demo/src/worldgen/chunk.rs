@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use calva::nav::HeightMap;
 use noise::NoiseFn;
 use rand_seeder::SipHasher;
 
@@ -19,28 +20,100 @@ impl<const SIZE: usize, const MODULE_SIZE: usize> WorldChunk<SIZE, MODULE_SIZE> 
     pub const WORLD_SIZE: f32 = Tile::WORLD_SIZE * SIZE as f32;
 
     pub fn new<'t>(
-        tiles: &mut impl Iterator<Item = (&'t usize, &'t Tile)>,
         seed: impl Hash,
-        _noise: &dyn NoiseFn<f64, 2>,
+        noise: &dyn NoiseFn<f64, 2>,
         coord: glam::IVec2,
+        height_maps: &mut impl Iterator<Item = (usize, &'t HeightMap)>,
     ) -> Self {
         let rng = SipHasher::from((seed, coord)).into_rng();
 
-        let constraints = WfcConstraints {
-            north: std::array::from_fn(|_| std::array::from_fn(|_| Some(0.0))),
-            east: std::array::from_fn(|_| std::array::from_fn(|_| Some(0.0))),
-            south: std::array::from_fn(|_| std::array::from_fn(|_| Some(0.0))),
-            west: std::array::from_fn(|_| std::array::from_fn(|_| Some(0.0))),
+        let elevations = 4;
+        let elevations_increments = 8;
+
+        let get_noise = |x: usize, y: usize| {
+            let n = noise.get([
+                coord.x as f64 * SIZE as f64 + x as f64,
+                coord.y as f64 * SIZE as f64 + y as f64,
+                // x as f64, y as f64,
+            ]) as f32;
+            let h = n * elevations as f32;
+            h.round() * elevations_increments as f32
         };
 
+        let mut constraints = WfcConstraints {
+            north: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            east: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            south: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            west: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+        };
+
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let top_left = get_noise(x, y);
+                let top_right = get_noise(x + 1, y);
+                let bottom_left = get_noise(x, y + 1);
+                let bottom_right = get_noise(x + 1, y + 1);
+
+                if y == 0 {
+                    constraints.north[x] = std::array::from_fn(|i| {
+                        if (i as f32) < (MODULE_SIZE as f32 / 2.0) {
+                            Some(top_left)
+                        } else if (i as f32) > (MODULE_SIZE as f32 / 2.0) {
+                            Some(top_right)
+                        } else {
+                            Some(f32::max(top_left, top_right))
+                        }
+                    });
+                }
+
+                if x == SIZE - 1 {
+                    constraints.east[y] = std::array::from_fn(|i| {
+                        if (i as f32) < (MODULE_SIZE as f32 / 2.0) {
+                            Some(top_right)
+                        } else if (i as f32) > (MODULE_SIZE as f32 / 2.0) {
+                            Some(bottom_right)
+                        } else {
+                            Some(f32::max(top_right, bottom_right))
+                        }
+                    });
+                }
+
+                if y == SIZE - 1 {
+                    constraints.south[x] = std::array::from_fn(|i| {
+                        if (i as f32) < (MODULE_SIZE as f32 / 2.0) {
+                            Some(bottom_left)
+                        } else if (i as f32) > (MODULE_SIZE as f32 / 2.0) {
+                            Some(bottom_right)
+                        } else {
+                            Some(f32::max(bottom_left, bottom_right))
+                        }
+                    });
+                }
+
+                if x == 0 {
+                    constraints.west[y] = std::array::from_fn(|i| {
+                        if (i as f32) < (MODULE_SIZE as f32 / 2.0) {
+                            Some(top_left)
+                        } else if (i as f32) > (MODULE_SIZE as f32 / 2.0) {
+                            Some(bottom_left)
+                        } else {
+                            Some(f32::max(top_left, bottom_left))
+                        }
+                    });
+                }
+            }
+        }
+
+        dbg!(constraints);
+
         let grid = wfc::<SIZE, MODULE_SIZE>(
-            tiles,
             WfcConfig {
                 constraints,
-                elevations: 4,
-                elevations_increments: 4,
+                elevations,
+                elevations_increments,
                 rng: Box::new(rng),
             },
+            height_maps,
         );
 
         let world_pos = glam::vec3(

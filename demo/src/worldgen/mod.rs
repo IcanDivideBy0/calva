@@ -112,9 +112,14 @@ impl Resource for WorldGenerator {
         self.chunks
             .retain(|pos, _| chunk_x.contains(&pos.x) && chunk_y.contains(&pos.y));
 
-        for key in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
-            if let Entry::Vacant(entry) = self.chunks.entry(key) {
-                let chunk = Chunk::new(&mut self.tiles.iter(), self.seed, &self.noise, key);
+        for coord in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
+            if let Entry::Vacant(entry) = self.chunks.entry(coord) {
+                let chunk = Chunk::new(
+                    self.seed,
+                    &self.noise,
+                    coord,
+                    &mut self.tiles.iter().map(|(id, tile)| (*id, &tile.height_map)),
+                );
 
                 let objects = itertools::iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE)
                     .map(|(y, x)| glam::usizevec2(x, y))

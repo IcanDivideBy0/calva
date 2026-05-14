@@ -72,9 +72,9 @@ impl Renderer {
             .get_default_config(&adapter, size.0, size.1)
             .ok_or_else(|| anyhow!("Surface not compatible with adapter"))?;
         surface_config.format = surface_config.format.add_srgb_suffix();
-        // surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
+        surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
         // surface_config.present_mode = wgpu::PresentMode::AutoVsync;
-        surface_config.present_mode = wgpu::PresentMode::Fifo;
+        // surface_config.present_mode = wgpu::PresentMode::Fifo;
 
         surface.configure(&device, &surface_config);
 

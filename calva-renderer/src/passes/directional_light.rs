@@ -70,7 +70,11 @@ impl egui::Widget for &mut DirectionalLight {
                     );
                 });
 
-                ui.add(egui::Slider::new(&mut self.intensity, 0.0..=50.0).text("Intensity"));
+                ui.add(
+                    egui::Slider::new(&mut self.intensity, 0.0..=100.0)
+                        .text("Intensity")
+                        .logarithmic(true),
+                );
 
                 ui.columns(2, |columns| {
                     columns[0].add(egui::Slider::new(&mut self.direction.x, -1.5..=1.5).text("X"));

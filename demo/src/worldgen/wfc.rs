@@ -2,8 +2,6 @@ use calva::nav::HeightMap;
 use core::f32;
 use rand::{seq::IndexedRandom, Rng};
 
-use super::tile::Tile;
-
 #[derive(Clone, Copy, Debug)]
 enum Direction {
     North,
@@ -185,19 +183,21 @@ impl<const SIZE: usize> Module<SIZE> {
     }
 }
 
-type GridCell<const MODULE_SIZE: usize> = Vec<Module<MODULE_SIZE>>;
+type GridCell<'a, const MODULE_SIZE: usize> = Vec<&'a Module<MODULE_SIZE>>;
 
-type GridConstraint<const SIZE: usize, const MODULE_SIZE: usize> = [GridCell<MODULE_SIZE>; SIZE];
+type GridConstraint<'a, const SIZE: usize, const MODULE_SIZE: usize> =
+    [GridCell<'a, MODULE_SIZE>; SIZE];
 
 #[derive(Clone, Debug)]
-struct GridConstraints<const SIZE: usize, const MODULE_SIZE: usize> {
-    north: GridConstraint<SIZE, MODULE_SIZE>,
-    east: GridConstraint<SIZE, MODULE_SIZE>,
-    south: GridConstraint<SIZE, MODULE_SIZE>,
-    west: GridConstraint<SIZE, MODULE_SIZE>,
+struct GridConstraints<'a, const SIZE: usize, const MODULE_SIZE: usize> {
+    north: GridConstraint<'a, SIZE, MODULE_SIZE>,
+    east: GridConstraint<'a, SIZE, MODULE_SIZE>,
+    south: GridConstraint<'a, SIZE, MODULE_SIZE>,
+    west: GridConstraint<'a, SIZE, MODULE_SIZE>,
 }
 
-type Grid<const SIZE: usize, const MODULE_SIZE: usize> = [[GridCell<MODULE_SIZE>; SIZE]; SIZE];
+type Grid<'a, const SIZE: usize, const MODULE_SIZE: usize> =
+    [[GridCell<'a, MODULE_SIZE>; SIZE]; SIZE];
 
 fn propagate<const SIZE: usize, const MODULE_SIZE: usize>(
     grid: &mut Grid<SIZE, MODULE_SIZE>,
@@ -250,6 +250,7 @@ fn find_min_enthropy<const SIZE: usize, const MODULE_SIZE: usize>(
         .reduce(|acc, item| if item.0 < acc.0 { item } else { acc })
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct WfcConstraints<const SIZE: usize, const MODULE_SIZE: usize> {
     pub north: [[Option<f32>; MODULE_SIZE]; SIZE],
     pub east: [[Option<f32>; MODULE_SIZE]; SIZE],
@@ -265,11 +266,11 @@ pub struct WfcConfig<const SIZE: usize, const MODULE_SIZE: usize> {
 }
 
 pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
-    tiles: &mut impl Iterator<Item = (&'t usize, &'t Tile)>,
     mut config: WfcConfig<SIZE, MODULE_SIZE>,
+    height_maps: &mut impl Iterator<Item = (usize, &'t HeightMap)>,
 ) -> [[(usize, f32, i8); SIZE]; SIZE] {
-    let modules = tiles
-        .map(|(id, tile)| Module::<MODULE_SIZE>::new(*id, &tile.height_map))
+    let modules = height_maps
+        .map(|(id, height_map)| Module::<MODULE_SIZE>::new(id, height_map))
         .flat_map(|module| {
             (0..(config.elevations))
                 .map(|i| i as i8 * config.elevations_increments)
@@ -279,10 +280,11 @@ pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
         .collect::<Vec<_>>();
 
     let mut grid: Grid<SIZE, MODULE_SIZE> =
-        std::array::from_fn(|_| std::array::from_fn(|_| modules.clone()));
+        std::array::from_fn(|_| std::array::from_fn(|_| modules.iter().collect()));
 
-    let constraints = GridConstraints {
-        north: config.constraints.north.map(|c| {
+    let (north, east, south, west) = (
+        config.constraints.north.map(|mut c| {
+            c.reverse();
             vec![Module {
                 constraints: ModuleConstraints {
                     south: c.map(|o| o.map(|h| h as i8)),
@@ -291,7 +293,8 @@ pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
                 ..Default::default()
             }]
         }),
-        east: config.constraints.east.map(|c| {
+        config.constraints.east.map(|mut c| {
+            c.reverse();
             vec![Module {
                 constraints: ModuleConstraints {
                     west: c.map(|o| o.map(|h| h as i8)),
@@ -300,7 +303,7 @@ pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
                 ..Default::default()
             }]
         }),
-        south: config.constraints.south.map(|c| {
+        config.constraints.south.map(|c| {
             vec![Module {
                 constraints: ModuleConstraints {
                     north: c.map(|o| o.map(|h| h as i8)),
@@ -309,7 +312,7 @@ pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
                 ..Default::default()
             }]
         }),
-        west: config.constraints.west.map(|c| {
+        config.constraints.west.map(|c| {
             vec![Module {
                 constraints: ModuleConstraints {
                     east: c.map(|o| o.map(|h| h as i8)),
@@ -318,9 +321,16 @@ pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
                 ..Default::default()
             }]
         }),
+    );
+
+    let constraints = GridConstraints {
+        north: std::array::from_fn(|i| north[i].iter().collect()),
+        east: std::array::from_fn(|i| east[i].iter().collect()),
+        south: std::array::from_fn(|i| south[i].iter().collect()),
+        west: std::array::from_fn(|i| west[i].iter().collect()),
     };
 
-    propagate(&mut grid, &constraints);
+    propagate(&mut grid, &constraints); // propagate grid constraints first
     while let Some((_, coord)) = find_min_enthropy(&grid) {
         let collapse = *grid[coord.y][coord.x].choose(&mut config.rng).unwrap();
         grid[coord.y][coord.x] = vec![collapse];

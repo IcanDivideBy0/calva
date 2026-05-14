@@ -287,7 +287,7 @@ impl Resource for GeometryPassOutputs {
         let normal_roughness_view = normal_roughness.create_view(&Default::default());
 
         let emissive = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("GBuffer albedo/metallic texture"),
+            label: Some("GBuffer emissive texture"),
             size,
             mip_level_count: 1,
             sample_count: 1,
