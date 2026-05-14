@@ -2,7 +2,7 @@ use anyhow::Result;
 use calva::{
     gltf::GltfModel,
     nav::HeightMapBuilder,
-    renderer::{Camera, Resource, ResourcesManager},
+    renderer::{Camera, Object, Resource, ResourcesManager},
 };
 use rand::RngExt;
 use rand_seeder::SipHasher;
@@ -29,9 +29,9 @@ pub struct WorldGenerator {
     tiles: HashMap<usize, Tile>,
 
     seed: u32,
-    // // noise: Box<dyn NoiseFn<f64, 2> + Send + Sync>,
+    // noise: Box<dyn NoiseFn<f64, 2> + Send + Sync>,
     noise: Box<noise::ScalePoint<noise::ScaleBias<f64, noise::Perlin, 2>>>,
-    chunks: HashMap<glam::IVec2, Chunk>,
+    chunks: HashMap<glam::IVec2, (Chunk, Vec<Object>)>,
 }
 
 impl WorldGenerator {
@@ -58,7 +58,7 @@ impl WorldGenerator {
     }
 
     pub fn ray_cast(&self, ro: glam::Vec3, rd: glam::Vec3) -> Option<f32> {
-        self.chunks.values().fold(None, |prev_hit, chunk| {
+        self.chunks.values().fold(None, |prev_hit, (chunk, _)| {
             let hit = chunk.ray_cast(ro, rd, |tile_id| &self.tiles[&tile_id]);
 
             match (hit, prev_hit) {
@@ -114,18 +114,21 @@ impl Resource for WorldGenerator {
 
         for key in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
             if let Entry::Vacant(entry) = self.chunks.entry(key) {
-                let chunk = Chunk::new(
-                    &mut self.tiles.iter(),
-                    self.seed,
-                    &self.noise,
-                    key,
-                    |tile_id| {
-                        let node = self.model.doc.nodes().nth(tile_id).unwrap();
-                        self.model.node_object(node)
-                    },
-                );
+                let chunk = Chunk::new(&mut self.tiles.iter(), self.seed, &self.noise, key);
 
-                entry.insert(chunk);
+                let objects = itertools::iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE)
+                    .map(|(y, x)| glam::usizevec2(x, y))
+                    .map(|coord| {
+                        let tile_id = chunk.get_tile_id(coord);
+
+                        let node = self.model.doc.nodes().nth(tile_id).unwrap();
+                        self.model
+                            .node_object(node)
+                            .with_transform(chunk.get_tile_transform(coord))
+                    })
+                    .collect::<Vec<_>>();
+
+                entry.insert((chunk, objects));
             }
         }
 
