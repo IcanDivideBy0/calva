@@ -138,7 +138,7 @@ impl HeightMapBuilder {
 
     pub fn build<A: NoUninit>(
         &self,
-        size: f32,
+        world_size: f32,
         floor_triangles: &[A],
         walls_triangles: &[A],
     ) -> (HeightMap<{ Self::TEXTURE_SIZE }>, wgpu::Texture) {
@@ -189,7 +189,7 @@ impl HeightMapBuilder {
             rpass.set_stencil_reference(1);
 
             rpass.set_pipeline(&self.walls_pipeline);
-            rpass.set_immediates(0, bytemuck::bytes_of(&size));
+            rpass.set_immediates(0, bytemuck::bytes_of(&world_size));
             rpass.set_vertex_buffer(0, walls_vertices.slice(..));
             rpass.draw(0..walls_vertices_count, 0..1);
         }
@@ -218,7 +218,7 @@ impl HeightMapBuilder {
             rpass.set_stencil_reference(0);
 
             rpass.set_pipeline(&self.floor_pipeline);
-            rpass.set_immediates(0, bytemuck::bytes_of(&size));
+            rpass.set_immediates(0, bytemuck::bytes_of(&world_size));
             rpass.set_vertex_buffer(0, floor_vertices.slice(..));
             rpass.draw(0..floor_vertices_count, 0..1);
         }
@@ -266,7 +266,7 @@ impl HeightMapBuilder {
 
         for (y, row) in bytemuck::cast_slice::<u8, f32>(&buffer_view)
             .iter()
-            .map(|depth| (depth - 0.5) * -2.0 * size)
+            .map(|depth| (depth - 0.5) * -2.0 * world_size)
             .chunks(Self::TEXTURE_SIZE)
             .into_iter()
             .enumerate()
@@ -277,7 +277,7 @@ impl HeightMapBuilder {
         }
 
         (
-            HeightMap::new(&height_map_data, size / Self::TEXTURE_SIZE as f32),
+            HeightMap::new(&height_map_data, world_size / Self::TEXTURE_SIZE as f32),
             depth,
         )
     }

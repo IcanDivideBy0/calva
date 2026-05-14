@@ -34,12 +34,28 @@ struct ModuleConstraints<const SIZE: usize> {
 }
 
 impl<const SIZE: usize> ModuleConstraints<SIZE> {
-    fn rotate(&self) -> Self {
-        ModuleConstraints {
+    fn rotate(&mut self) {
+        *self = ModuleConstraints {
             north: self.west,
             east: self.north,
             south: self.east,
             west: self.south,
+        };
+
+        self.north.reverse();
+        self.south.reverse();
+    }
+
+    fn elevate(&mut self, elevation: i8) {
+        for constraint in [
+            &mut self.north,
+            &mut self.east,
+            &mut self.south,
+            &mut self.west,
+        ] {
+            for h in constraint {
+                *h = h.map(|h| h + elevation);
+            }
         }
     }
 
@@ -76,13 +92,13 @@ enum ModuleOrientation {
 impl ModuleOrientation {
     const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
 
-    fn rotate(&self) -> Self {
-        match self {
+    fn rotate(&mut self) {
+        *self = match self {
             Self::Zero => Self::One,
             Self::One => Self::Two,
             Self::Two => Self::Three,
             Self::Three => Self::Zero,
-        }
+        };
     }
 
     fn angle(&self) -> f32 {
@@ -127,16 +143,13 @@ impl<const SIZE: usize> Module<SIZE> {
             south: std::array::from_fn(|i| {
                 let offset = i * block_size + half_block_size;
                 height_map
-                    .get_height(&glam::usizevec2(
-                        HEIGHT_MAP_SIZE - 1 - offset,
-                        HEIGHT_MAP_SIZE - 1,
-                    ))
+                    .get_height(&glam::usizevec2(offset, HEIGHT_MAP_SIZE - 1))
                     .map(|height| height.round() as i8)
             }),
             west: std::array::from_fn(|i| {
                 let offset = i * block_size + half_block_size;
                 height_map
-                    .get_height(&glam::usizevec2(0, HEIGHT_MAP_SIZE - 1 - offset))
+                    .get_height(&glam::usizevec2(0, offset))
                     .map(|height| height.round() as i8)
             }),
         };
@@ -153,31 +166,27 @@ impl<const SIZE: usize> Module<SIZE> {
     }
 
     fn is_compatible(&self, other: &Self, direction: Direction) -> bool {
-        let other_constraint = other.get_constraint(direction.opposite());
-
-        self.get_constraint(direction)
-            .iter()
-            .rev()
-            .enumerate()
-            .all(|(i, c)| {
-                other_constraint[i].map(|h| h + other.elevation) == c.map(|h| h + self.elevation)
-            })
+        self.get_constraint(direction) == other.get_constraint(direction.opposite())
     }
 
-    fn rotate(&self) -> Self {
-        Module {
-            constraints: self.constraints.rotate(),
-            orientation: self.orientation.rotate(),
-            ..*self
-        }
+    fn rotate(&mut self) {
+        self.constraints.rotate();
+        self.orientation.rotate();
     }
 
-    fn build_variants(self, elevation: i8) -> [Self; const { ModuleOrientation::ALL.len() }] {
-        let mut variant = self;
-        variant.elevation = elevation;
+    fn elevate(&mut self, elevation: i8) {
+        self.constraints.elevate(elevation);
+        self.elevation += elevation;
+    }
+
+    fn build_variants(&self, elevation: i8) -> [Self; const { ModuleOrientation::ALL.len() }] {
+        let mut variant = *self;
+
+        variant.elevate(-self.elevation);
+        variant.elevate(elevation);
 
         std::array::from_fn(|_| {
-            variant = variant.rotate();
+            variant.rotate();
             variant
         })
     }
@@ -258,92 +267,104 @@ pub struct WfcConstraints<const SIZE: usize, const MODULE_SIZE: usize> {
     pub west: [[Option<f32>; MODULE_SIZE]; SIZE],
 }
 
-pub struct WfcConfig<const SIZE: usize, const MODULE_SIZE: usize> {
-    pub constraints: WfcConstraints<SIZE, MODULE_SIZE>,
+pub struct Wfc<const SIZE: usize, const MODULE_SIZE: usize> {
     pub elevations: usize,
     pub elevations_increments: i8,
-    pub rng: Box<dyn Rng>,
+
+    modules: Vec<Module<MODULE_SIZE>>,
 }
 
-pub fn wfc<'t, const SIZE: usize, const MODULE_SIZE: usize>(
-    mut config: WfcConfig<SIZE, MODULE_SIZE>,
-    height_maps: &mut impl Iterator<Item = (usize, &'t HeightMap)>,
-) -> [[(usize, f32, i8); SIZE]; SIZE] {
-    let modules = height_maps
-        .map(|(id, height_map)| Module::<MODULE_SIZE>::new(id, height_map))
-        .flat_map(|module| {
-            (0..(config.elevations))
-                .map(|i| i as i8 * config.elevations_increments)
-                .flat_map(|elevation| module.build_variants(elevation))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+impl<const SIZE: usize, const MODULE_SIZE: usize> Wfc<SIZE, MODULE_SIZE> {
+    pub fn new<'a>(
+        elevations: usize,
+        elevations_increments: i8,
+        height_maps: &mut impl Iterator<Item = (&'a usize, &'a HeightMap)>,
+    ) -> Self {
+        Self {
+            elevations,
+            elevations_increments,
 
-    let mut grid: Grid<SIZE, MODULE_SIZE> =
-        std::array::from_fn(|_| std::array::from_fn(|_| modules.iter().collect()));
-
-    let (north, east, south, west) = (
-        config.constraints.north.map(|mut c| {
-            c.reverse();
-            vec![Module {
-                constraints: ModuleConstraints {
-                    south: c.map(|o| o.map(|h| h as i8)),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }]
-        }),
-        config.constraints.east.map(|mut c| {
-            c.reverse();
-            vec![Module {
-                constraints: ModuleConstraints {
-                    west: c.map(|o| o.map(|h| h as i8)),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }]
-        }),
-        config.constraints.south.map(|c| {
-            vec![Module {
-                constraints: ModuleConstraints {
-                    north: c.map(|o| o.map(|h| h as i8)),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }]
-        }),
-        config.constraints.west.map(|c| {
-            vec![Module {
-                constraints: ModuleConstraints {
-                    east: c.map(|o| o.map(|h| h as i8)),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }]
-        }),
-    );
-
-    let constraints = GridConstraints {
-        north: std::array::from_fn(|i| north[i].iter().collect()),
-        east: std::array::from_fn(|i| east[i].iter().collect()),
-        south: std::array::from_fn(|i| south[i].iter().collect()),
-        west: std::array::from_fn(|i| west[i].iter().collect()),
-    };
-
-    propagate(&mut grid, &constraints); // propagate grid constraints first
-    while let Some((_, coord)) = find_min_enthropy(&grid) {
-        let collapse = *grid[coord.y][coord.x].choose(&mut config.rng).unwrap();
-        grid[coord.y][coord.x] = vec![collapse];
-        propagate(&mut grid, &constraints);
+            modules: height_maps
+                .map(|(id, height_map)| Module::<MODULE_SIZE>::new(*id, height_map))
+                .flat_map(|module| {
+                    (0..=elevations)
+                        .map(|i| i as i8 * elevations_increments)
+                        .flat_map(|elevation| module.build_variants(elevation))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+        }
     }
 
-    std::array::from_fn(|y| {
-        std::array::from_fn(|x| {
-            let module = grid[y][x].choose(&mut config.rng).unwrap();
-            let angle = module.orientation.angle();
-            let elevation = module.elevation;
+    pub fn collapse(
+        &self,
+        constraints: WfcConstraints<SIZE, MODULE_SIZE>,
+        rng: &mut impl Rng,
+    ) -> [[(usize, f32, i8); SIZE]; SIZE] {
+        let mut grid: Grid<SIZE, MODULE_SIZE> =
+            std::array::from_fn(|_| std::array::from_fn(|_| self.modules.iter().collect()));
 
-            (module.id, angle, elevation)
+        let (north, east, south, west) = (
+            constraints.north.map(|c| {
+                vec![Module {
+                    constraints: ModuleConstraints {
+                        south: c.map(|o| o.map(|h| h as i8)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }]
+            }),
+            constraints.east.map(|c| {
+                vec![Module {
+                    constraints: ModuleConstraints {
+                        west: c.map(|o| o.map(|h| h as i8)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }]
+            }),
+            constraints.south.map(|c| {
+                vec![Module {
+                    constraints: ModuleConstraints {
+                        north: c.map(|o| o.map(|h| h as i8)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }]
+            }),
+            constraints.west.map(|c| {
+                vec![Module {
+                    constraints: ModuleConstraints {
+                        east: c.map(|o| o.map(|h| h as i8)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }]
+            }),
+        );
+
+        let constraints = GridConstraints {
+            north: std::array::from_fn(|i| north[i].iter().collect()),
+            east: std::array::from_fn(|i| east[i].iter().collect()),
+            south: std::array::from_fn(|i| south[i].iter().collect()),
+            west: std::array::from_fn(|i| west[i].iter().collect()),
+        };
+
+        propagate(&mut grid, &constraints); // propagate grid constraints first
+        while let Some((_, coord)) = find_min_enthropy(&grid) {
+            let collapse = *grid[coord.y][coord.x].choose(rng).unwrap();
+            grid[coord.y][coord.x] = vec![collapse];
+            propagate(&mut grid, &constraints);
+        }
+
+        std::array::from_fn(|y| {
+            std::array::from_fn(|x| {
+                let module = grid[y][x].choose(rng).unwrap();
+                let angle = module.orientation.angle();
+                let elevation = module.elevation;
+
+                (module.id, angle, elevation)
+            })
         })
-    })
+    }
 }
