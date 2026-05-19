@@ -1,14 +1,14 @@
 use core::{f32, fmt};
 use std::collections::VecDeque;
 
-use crate::{util::debug_map, HeightMap};
+use crate::util::debug_map;
 
 pub struct HeatMap<const SIZE: usize> {
     grid: [[Option<f32>; SIZE]; SIZE],
 }
 
 impl<const SIZE: usize> HeatMap<SIZE> {
-    pub fn new(height_map: &HeightMap<SIZE>, target: glam::USizeVec2) -> Self {
+    pub fn new(height_map_data: &[[Option<f32>; SIZE]; SIZE], target: glam::USizeVec2) -> Self {
         let mut grid = [[None; SIZE]; SIZE];
         grid[target.y][target.x] = Some(0.0);
 
@@ -21,7 +21,7 @@ impl<const SIZE: usize> HeatMap<SIZE> {
             )
             .map(|(y, x)| glam::usizevec2(x, y))
             {
-                if height_map.get_height(&coord).is_none() {
+                if height_map_data[coord.y.min(SIZE)][coord.x.min(SIZE)].is_none() {
                     continue;
                 }
 

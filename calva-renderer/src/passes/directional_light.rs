@@ -104,11 +104,6 @@ pub struct DirectionalLightPass {
 
 impl DirectionalLightPass {
     const SIZE: u32 = 2048;
-    const TEXTURE_SIZE: wgpu::Extent3d = wgpu::Extent3d {
-        width: Self::SIZE,
-        height: Self::SIZE,
-        depth_or_array_layers: 1,
-    };
 
     pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
@@ -479,7 +474,11 @@ impl DirectionalLightPass {
     fn make_depth_texture(device: &wgpu::Device, label: wgpu::Label<'static>) -> wgpu::Texture {
         device.create_texture(&wgpu::TextureDescriptor {
             label,
-            size: Self::TEXTURE_SIZE,
+            size: wgpu::Extent3d {
+                width: Self::SIZE,
+                height: Self::SIZE,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -813,13 +812,11 @@ mod cull {
 
             const WORKGROUP_SIZE: u32 = 32;
 
-            let meshes_count = self.resources.read::<MeshesManager>().count();
-            let meshes_workgroups_count =
-                (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            let meshes_count = self.resources.read::<MeshesManager>().count() as u32;
+            let meshes_workgroups_count = meshes_count.div_ceil(WORKGROUP_SIZE);
 
-            let instances_count = self.resources.read::<MeshInstancesManager>().count();
-            let instances_workgroups_count =
-                (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            let instances_count = self.resources.read::<MeshInstancesManager>().count() as u32;
+            let instances_workgroups_count = instances_count.div_ceil(WORKGROUP_SIZE);
 
             cpass.set_pipeline(&self.pipelines.0);
             cpass.set_bind_group(0, &camera.bind_group, &[]);

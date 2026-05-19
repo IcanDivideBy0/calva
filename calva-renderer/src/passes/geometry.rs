@@ -555,13 +555,11 @@ mod cull {
 
             const WORKGROUP_SIZE: u32 = 32;
 
-            let meshes_count = self.resources.read::<MeshesManager>().count();
-            let meshes_workgroups_count =
-                (meshes_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            let meshes_count = self.resources.read::<MeshesManager>().count() as u32;
+            let meshes_workgroups_count = meshes_count.div_ceil(WORKGROUP_SIZE);
 
-            let instances_count = self.resources.read::<MeshInstancesManager>().count();
-            let instances_workgroups_count =
-                (instances_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            let instances_count = self.resources.read::<MeshInstancesManager>().count() as u32;
+            let instances_workgroups_count = instances_count.div_ceil(WORKGROUP_SIZE);
 
             cpass.set_pipeline(&self.pipelines.0);
             cpass.set_bind_group(0, &camera.bind_group, &[]);

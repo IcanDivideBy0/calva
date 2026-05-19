@@ -141,7 +141,7 @@ impl HeightMapBuilder {
         world_size: f32,
         floor_triangles: &[A],
         walls_triangles: &[A],
-    ) -> (HeightMap<{ Self::TEXTURE_SIZE }>, wgpu::Texture) {
+    ) -> (HeightMap, wgpu::Texture) {
         let device = self.resources.read::<wgpu::Device>();
         let queue = self.resources.read::<wgpu::Queue>();
 
@@ -289,24 +289,24 @@ impl Resource for HeightMapBuilder {
     }
 }
 
-pub struct HeightMap<const SIZE: usize = { HeightMapBuilder::TEXTURE_SIZE }> {
-    pub grid: [[Option<f32>; SIZE]; SIZE],
+pub struct HeightMap {
+    pub grid: [[Option<f32>; Self::SIZE]; Self::SIZE],
     pub triangles: Vec<[glam::Vec3; 3]>,
     bvh: Bvh,
 }
 
-impl<const SIZE: usize> HeightMap<SIZE> {
-    pub const SIZE: usize = SIZE;
+impl HeightMap {
+    pub const SIZE: usize = HeightMapBuilder::TEXTURE_SIZE;
 
-    pub fn new(height_map: &[[f32; SIZE]; SIZE], sample_size: f32) -> Self {
+    pub fn new(height_map: &[[f32; Self::SIZE]; Self::SIZE], sample_size: f32) -> Self {
         let get_height = |x: usize, y: usize| {
-            let y = y.min(SIZE - 1);
-            let x = x.min(SIZE - 1);
+            let y = y.min(Self::SIZE - 1);
+            let x = x.min(Self::SIZE - 1);
 
             height_map[y][x]
         };
 
-        let tile_world_size = SIZE as f32 * sample_size;
+        let tile_world_size = Self::SIZE as f32 * sample_size;
         let min_height = -tile_world_size;
 
         let grid = std::array::from_fn(|y| {
@@ -348,7 +348,7 @@ impl<const SIZE: usize> HeightMap<SIZE> {
             -tile_world_size / 2.0,
         ));
 
-        let points: Vec<Vec<glam::Vec3>> = itertools::iproduct!(0..=SIZE, 0..=SIZE)
+        let points: Vec<Vec<glam::Vec3>> = itertools::iproduct!(0..=Self::SIZE, 0..=Self::SIZE)
             .map(|(y, x)| {
                 let it = itertools::iproduct!(0..=1, 0..=1,)
                     .map(|(yy, xx)| get_height(x.saturating_sub(xx), y.saturating_sub(yy)));
@@ -367,12 +367,12 @@ impl<const SIZE: usize> HeightMap<SIZE> {
                     y as f32 * sample_size,
                 ))
             })
-            .chunks(SIZE + 1)
+            .chunks(Self::SIZE + 1)
             .into_iter()
             .map(std::iter::Iterator::collect)
             .collect();
 
-        let triangles: Vec<_> = itertools::iproduct!(0..SIZE, 0..SIZE)
+        let triangles: Vec<_> = itertools::iproduct!(0..Self::SIZE, 0..Self::SIZE)
             .map(|(y, x)| {
                 [
                     [points[y][x], points[y + 1][x + 1], points[y][x + 1]],
@@ -417,7 +417,7 @@ impl<const SIZE: usize> HeightMap<SIZE> {
     }
 
     pub fn get_height(&self, coord: &glam::USizeVec2) -> &Option<f32> {
-        &self.grid[coord.y.min(SIZE)][coord.x.min(SIZE)]
+        &self.grid[coord.y.min(Self::SIZE)][coord.x.min(Self::SIZE)]
     }
 
     pub fn ray_cast(&self, ro: glam::Vec3, rd: glam::Vec3) -> Option<f32> {
@@ -440,7 +440,7 @@ impl<const SIZE: usize> HeightMap<SIZE> {
     }
 }
 
-impl<const SIZE: usize> fmt::Debug for HeightMap<SIZE> {
+impl fmt::Debug for HeightMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let min = self
             .grid
@@ -455,6 +455,8 @@ impl<const SIZE: usize> fmt::Debug for HeightMap<SIZE> {
             .flatten()
             .filter_map(|h| *h)
             .fold(f32::MIN, f32::max);
+
+        const SIZE: usize = HeightMap::SIZE;
 
         write!(
             f,

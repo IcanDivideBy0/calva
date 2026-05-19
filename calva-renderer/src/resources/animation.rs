@@ -153,7 +153,7 @@ impl AnimationsManager {
                 label: Some("Animate pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
-                entry_point: Some("maintain"),
+                entry_point: Some("update"),
                 compilation_options: Default::default(),
                 cache: None,
             })
@@ -243,12 +243,13 @@ impl AnimationsManager {
         let device = self.resources.read::<wgpu::Device>();
         let queue = self.resources.read::<wgpu::Queue>();
         let time = self.resources.read::<UniformBuffer<Time>>();
-        let mesh_instances = self.resources.read::<MeshInstancesManager>();
+        let mut profiler = self.resources.write::<wgpu_profiler::GpuProfiler>();
 
         let mut encoder = device.create_command_encoder(&Default::default());
+        let mut scope = profiler.scope("AnimationsManager", &mut encoder);
 
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("AnimationManager[update]"),
+        let mut cpass = scope.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("AnimationsManager[update]"),
             ..Default::default()
         });
 
@@ -256,19 +257,18 @@ impl AnimationsManager {
         cpass.set_bind_group(0, &self.animate_bind_group, &[]);
         cpass.set_bind_group(1, &time.bind_group, &[]);
 
-        const WORKGROUP_SIZE: usize = 256;
-        let workgroups_count =
-            (mesh_instances.count() as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+        const WORKGROUP_SIZE: u32 = 256;
+        let count = self.resources.read::<MeshInstancesManager>().count() as u32;
+        let workgroups_count = count.div_ceil(WORKGROUP_SIZE);
 
         cpass.dispatch_workgroups(workgroups_count, 1, 1);
 
         drop(cpass);
+        drop(scope);
 
-        let submission_index = queue.submit(std::iter::once(encoder.finish()));
-        device.poll(wgpu::PollType::Wait {
-            submission_index: Some(submission_index),
-            timeout: None,
-        })?;
+        profiler.resolve_queries(&mut encoder);
+
+        queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }

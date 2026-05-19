@@ -1,14 +1,15 @@
 use anyhow::Result;
 use calva::{
     gltf::GltfModel,
-    nav::{HeightMap, HeightMapBuilder},
+    nav::{HeatMap, HeightMap, HeightMapBuilder},
     renderer::{Camera, Object, Resource, ResourcesManager},
 };
+use glam::Vec3Swizzles;
 use noise::NoiseFn;
 use rand::RngExt;
 use rand_seeder::SipHasher;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, BTreeMap, HashMap},
     fs::File,
     hash::Hash,
     io::Read,
@@ -20,18 +21,21 @@ mod wfc;
 use chunk::WorldChunk;
 use wfc::Wfc;
 
+use crate::{controls::TopDownCamera, worldgen::wfc::ModuleRotation};
+
 const SEED: &str = "Calva!533d";
 
 type Chunk = WorldChunk<{ WorldGenerator::CHUNK_SIZE }, { WorldGenerator::WFC_MODULE_SIZE }>;
 
 pub struct WorldGenerator {
     model: GltfModel,
-    height_maps: HashMap<usize, HeightMap>,
+    height_maps: BTreeMap<usize, HeightMap>, // Needs to be a sorted structure for wfc to produce stable results w/ rng
 
     seed: u32,
     noise: Box<dyn NoiseFn<f64, 2> + Send + Sync>,
     wfc: Wfc<{ Self::CHUNK_SIZE }, { Self::WFC_MODULE_SIZE }>,
     chunks: HashMap<glam::IVec2, (Chunk, Vec<Object>)>,
+    main_chunk: glam::IVec2,
 }
 
 impl WorldGenerator {
@@ -39,7 +43,7 @@ impl WorldGenerator {
     pub const CHUNK_SIZE: usize = 3;
     pub const WFC_MODULE_SIZE: usize = 5;
 
-    fn new(seed: impl Hash, model: GltfModel, height_maps: HashMap<usize, HeightMap>) -> Self {
+    fn new(seed: impl Hash, model: GltfModel, height_maps: BTreeMap<usize, HeightMap>) -> Self {
         let seed = SipHasher::from(seed).into_rng().random();
 
         let noise = Box::new(
@@ -61,6 +65,7 @@ impl WorldGenerator {
             noise,
             wfc,
             chunks: Default::default(),
+            main_chunk: Default::default(),
         }
     }
 
@@ -73,6 +78,110 @@ impl WorldGenerator {
                 _ => Option::or(hit, prev_hit),
             }
         })
+    }
+
+    pub fn get_heat_map(
+        &self,
+        world_target: glam::Vec3,
+    ) -> HeatMap<{ WorldGenerator::CHUNK_SIZE * HeightMap::SIZE }> {
+        let (chunk, _) = self.chunks.get(&self.main_chunk).unwrap();
+
+        let height_map_data = chunk.get_height_map_data(|id| self.height_maps.get(&id).unwrap());
+
+        let chunk_target = world_target.xz()
+            - glam::vec2(
+                self.main_chunk.x as f32 * Self::CHUNK_SIZE as f32 * Self::TILE_WORLD_SIZE,
+                self.main_chunk.y as f32 * Self::CHUNK_SIZE as f32 * Self::TILE_WORLD_SIZE,
+            );
+
+        let data_target = glam::usizevec2(
+            (chunk_target.x / Self::TILE_WORLD_SIZE * HeightMap::SIZE as f32) as usize,
+            (chunk_target.y / Self::TILE_WORLD_SIZE * HeightMap::SIZE as f32) as usize,
+        );
+
+        HeatMap::new(&height_map_data, data_target)
+    }
+
+    fn get_chunk_index(world_pos: glam::Vec3) -> glam::IVec2 {
+        glam::ivec2(
+            (world_pos.x / Chunk::WORLD_SIZE).floor() as _,
+            (world_pos.z / Chunk::WORLD_SIZE).floor() as _,
+        )
+    }
+
+    fn get_module_index(world_pos: glam::Vec3) -> glam::USizeVec2 {
+        let chunk_index = Self::get_chunk_index(world_pos);
+        let chunk_pos = glam::vec2(
+            chunk_index.x as f32 * Chunk::WORLD_SIZE,
+            chunk_index.y as f32 * Chunk::WORLD_SIZE,
+        );
+
+        let module_chunk_pos = world_pos.xz() - chunk_pos;
+
+        glam::usizevec2(
+            (module_chunk_pos.x / Chunk::WORLD_SIZE * Self::CHUNK_SIZE as f32) as _,
+            (module_chunk_pos.y / Chunk::WORLD_SIZE * Self::CHUNK_SIZE as f32) as _,
+        )
+    }
+
+    pub fn get_height(&self, world_pos: glam::Vec3) -> Option<f32> {
+        // self.ray_cast(
+        //     glam::vec3(world_pos.x, 1000.0, world_pos.z),
+        //     glam::Vec3::NEG_Y,
+        // )
+        // .map(|h| 1000.0 - h)
+
+        let chunk_index = Self::get_chunk_index(world_pos);
+        let (chunk, _) = self.chunks.get(&chunk_index)?;
+
+        let module_index = Self::get_module_index(world_pos);
+        let module = chunk.grid[module_index.y][module_index.x];
+
+        let height_map = self.height_maps.get(&module.id)?;
+
+        let height_map_pos = world_pos.xz()
+            - glam::vec2(
+                chunk_index.x as f32 * Chunk::WORLD_SIZE,
+                chunk_index.y as f32 * Chunk::WORLD_SIZE,
+            )
+            - glam::vec2(
+                module_index.x as f32 * Self::TILE_WORLD_SIZE,
+                module_index.y as f32 * Self::TILE_WORLD_SIZE,
+            );
+        let height_map_coord = glam::usizevec2(
+            (height_map_pos.x / Self::TILE_WORLD_SIZE * HeightMap::SIZE as f32) as _,
+            (height_map_pos.y / Self::TILE_WORLD_SIZE * HeightMap::SIZE as f32) as _,
+        );
+
+        let x = height_map_coord.x;
+        let y = height_map_coord.y;
+        const MAX: usize = HeightMap::SIZE - 1;
+        let height = match module.rotation {
+            ModuleRotation::Cw0 => height_map.grid[y][x],
+            ModuleRotation::Cw90 => height_map.grid[MAX - x][y],
+            ModuleRotation::Cw180 => height_map.grid[MAX - y][MAX - x],
+            ModuleRotation::Cw270 => height_map.grid[x][MAX - y],
+        };
+
+        height.map(|h| h + module.elevation as f32)
+    }
+
+    pub fn get_heat_map_coord(&self, world_pos: glam::Vec3) -> Option<glam::USizeVec2> {
+        let (main_chunk, _) = self.chunks.get(&self.main_chunk)?;
+
+        let chunk_pos = world_pos.xz() - main_chunk.world_pos.xz();
+
+        let chunk_range = 0.0..Chunk::WORLD_SIZE;
+        if !chunk_range.contains(&chunk_pos.x) || !chunk_range.contains(&chunk_pos.y) {
+            return None;
+        }
+
+        let chunk_pos_norm = chunk_pos / Chunk::WORLD_SIZE;
+
+        Some(glam::usizevec2(
+            (chunk_pos_norm.x * (HeightMap::SIZE * Self::CHUNK_SIZE) as f32) as _,
+            (chunk_pos_norm.y * (HeightMap::SIZE * Self::CHUNK_SIZE) as f32) as _,
+        ))
     }
 }
 
@@ -104,25 +213,30 @@ impl Resource for WorldGenerator {
 
                 Some((node.index(), height_map))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         Ok(WorldGenerator::new(SEED, model, height_maps))
     }
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
         let camera = resources.read::<Camera>();
+        let (_, _, camera_pos) = camera.view.inverse().to_scale_rotation_translation();
+        let chunk_coord = (camera_pos.xz() / Chunk::WORLD_SIZE).floor();
 
-        let (_, _, cam_pos) = camera.view.inverse().to_scale_rotation_translation();
+        // let camera = resources.read::<TopDownCamera>();
+        // let chunk_coord = (camera.target.xz() / Chunk::WORLD_SIZE).floor();
 
-        let chunk_coord = ((cam_pos + Self::TILE_WORLD_SIZE * 0.5) / Chunk::WORLD_SIZE).floor();
-        let chunk_coord = glam::ivec2(chunk_coord.x as _, chunk_coord.z as _);
-        let chunk_x = (chunk_coord.x - 1)..=(chunk_coord.x + 1);
-        let chunk_y = (chunk_coord.y - 1)..=(chunk_coord.y + 1);
+        self.main_chunk = glam::ivec2(chunk_coord.x as _, chunk_coord.y as _);
+
+        let chunk_x = (self.main_chunk.x - 1)..=(self.main_chunk.x + 1);
+        let chunk_y = (self.main_chunk.y - 1)..=(self.main_chunk.y + 1);
+        // let chunk_x = (self.main_chunk.x)..=(self.main_chunk.x);
+        // let chunk_y = (self.main_chunk.y)..=(self.main_chunk.y);
 
         self.chunks
             .retain(|pos, _| chunk_x.contains(&pos.x) && chunk_y.contains(&pos.y));
 
-        for coord in itertools::iproduct!(chunk_x, chunk_y).map(|(x, y)| glam::ivec2(x, y)) {
+        for coord in itertools::iproduct!(chunk_x, chunk_y).map(glam::IVec2::from) {
             let Entry::Vacant(entry) = self.chunks.entry(coord) else {
                 continue;
             };
@@ -136,7 +250,7 @@ impl Resource for WorldGenerator {
                     let node = self.model.doc.nodes().nth(id).unwrap();
                     self.model
                         .node_object(node)
-                        .with_transform(chunk.get_height_map_transform(coord))
+                        .with_transform(chunk.get_object_transform(coord))
                 })
                 .collect::<Vec<_>>();
 

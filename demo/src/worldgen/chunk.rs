@@ -5,13 +5,13 @@ use noise::NoiseFn;
 use rand_seeder::SipHasher;
 
 use crate::worldgen::{
-    wfc::{Wfc, WfcConstraints},
+    wfc::{Module, ModuleRotation, Wfc, WfcConstraints},
     WorldGenerator,
 };
 
-pub struct WorldChunk<const SIZE: usize, const MODULE_SIZE: usize> {
-    world_pos: glam::Vec3,
-    grid: [[(usize, f32, i8); SIZE]; SIZE],
+pub struct WorldChunk<const SIZE: usize, const WFC_MODULE_SIZE: usize> {
+    pub world_pos: glam::Vec3,
+    pub grid: [[Module<WFC_MODULE_SIZE>; SIZE]; SIZE],
 }
 
 impl<const SIZE: usize, const WFC_MODULE_SIZE: usize> WorldChunk<SIZE, WFC_MODULE_SIZE> {
@@ -109,33 +109,60 @@ impl<const SIZE: usize, const WFC_MODULE_SIZE: usize> WorldChunk<SIZE, WFC_MODUL
     }
 
     pub fn get_height_map_id(&self, coord: glam::USizeVec2) -> usize {
-        self.grid[coord.y][coord.x].0
+        self.grid[coord.y][coord.x].id
     }
 
-    pub fn get_height_map_transform(&self, coord: glam::USizeVec2) -> glam::Mat4 {
-        let (_, angle, elevation) = self.grid[coord.y][coord.x];
+    pub fn get_object_transform(&self, coord: glam::USizeVec2) -> glam::Mat4 {
+        let module = self.grid[coord.y][coord.x];
 
-        let rotation = glam::Quat::from_axis_angle(glam::Vec3::Y, angle);
+        let rotation = glam::Quat::from_axis_angle(glam::Vec3::Y, module.rotation.angle());
 
         let translation = glam::vec3(
             (coord.x as f32 + 0.5) * WorldGenerator::TILE_WORLD_SIZE,
-            elevation as f32,
+            module.elevation as f32,
             (coord.y as f32 + 0.5) * WorldGenerator::TILE_WORLD_SIZE,
         ) + self.world_pos;
 
         glam::Mat4::from_rotation_translation(rotation, translation)
     }
 
-    pub fn ray_cast<'a>(
+    pub fn get_height_map_data<'h>(
+        &self,
+        get_height_map: impl Fn(usize) -> &'h HeightMap,
+    ) -> [[Option<f32>; WorldGenerator::CHUNK_SIZE * HeightMap::SIZE];
+           WorldGenerator::CHUNK_SIZE * HeightMap::SIZE] {
+        let mut height_map_data = std::array::from_fn(|_| std::array::from_fn(|_| None));
+
+        for (grid_y, grid_x) in itertools::iproduct!(0..SIZE, 0..SIZE) {
+            let module = self.grid[grid_y][grid_x];
+            let height_map = get_height_map(module.id);
+
+            for (y, x) in itertools::iproduct!(0..HeightMap::SIZE, 0..HeightMap::SIZE) {
+                const MAX: usize = HeightMap::SIZE - 1;
+
+                height_map_data[grid_y * HeightMap::SIZE + y][grid_x * HeightMap::SIZE + x] =
+                    match module.rotation {
+                        ModuleRotation::Cw0 => height_map.grid[y][x],
+                        ModuleRotation::Cw90 => height_map.grid[MAX - x][y],
+                        ModuleRotation::Cw180 => height_map.grid[MAX - y][MAX - x],
+                        ModuleRotation::Cw270 => height_map.grid[x][MAX - y],
+                    };
+            }
+        }
+
+        height_map_data
+    }
+
+    pub fn ray_cast<'h>(
         &self,
         ro: glam::Vec3,
         rd: glam::Vec3,
-        get_height_map: impl Fn(usize) -> &'a HeightMap,
+        get_height_map: impl Fn(usize) -> &'h HeightMap,
     ) -> Option<f32> {
         itertools::iproduct!(0..SIZE, 0..SIZE)
             .map(|(y, x)| glam::usizevec2(x, y))
             .fold(None, |prev_hit, coord| {
-                let height_map_space_transform = self.get_height_map_transform(coord).inverse();
+                let height_map_space_transform = self.get_object_transform(coord).inverse();
 
                 let hit = get_height_map(self.get_height_map_id(coord)).ray_cast(
                     height_map_space_transform.transform_point3(ro),

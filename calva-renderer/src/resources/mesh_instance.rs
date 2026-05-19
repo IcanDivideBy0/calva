@@ -109,8 +109,8 @@ pub struct MeshInstancesManager {
 
     updates_data: HashSet<GpuMeshInstance>,
     updates: wgpu::Buffer,
-    maintain_bind_group: wgpu::BindGroup,
-    maintain_pipeline: wgpu::ComputePipeline,
+    update_bind_group: wgpu::BindGroup,
+    update_pipeline: wgpu::ComputePipeline,
 }
 
 impl MeshInstancesManager {
@@ -150,9 +150,9 @@ impl MeshInstancesManager {
             mapped_at_creation: false,
         });
 
-        let maintain_bind_group_layout =
+        let update_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("MeshInstancesManager[maintain] bind group layout"),
+                label: Some("MeshInstancesManager[update] bind group layout"),
                 entries: &[
                     // Updates
                     wgpu::BindGroupLayoutEntry {
@@ -198,9 +198,9 @@ impl MeshInstancesManager {
                 ],
             });
 
-        let maintain_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("MeshInstancesManager[maintain] bind group"),
-            layout: &maintain_bind_group_layout,
+        let update_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("MeshInstancesManager[update] bind group"),
+            layout: &update_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -222,18 +222,18 @@ impl MeshInstancesManager {
             source: wgpu::ShaderSource::Wgsl(wesl::include_wesl!("resources::instances").into()),
         });
 
-        let maintain_pipeline_layout =
+        let update_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("MeshInstancesManager[maintain] pipeline layout"),
-                bind_group_layouts: &[Some(&maintain_bind_group_layout)],
+                label: Some("MeshInstancesManager[update] pipeline layout"),
+                bind_group_layouts: &[Some(&update_bind_group_layout)],
                 immediate_size: 0,
             });
 
-        let maintain_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("MeshInstancesManager[maintain] pipeline"),
-            layout: Some(&maintain_pipeline_layout),
+        let update_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("MeshInstancesManager[update] pipeline"),
+            layout: Some(&update_pipeline_layout),
             module: &shader,
-            entry_point: Some("maintain"),
+            entry_point: Some("update"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -248,8 +248,8 @@ impl MeshInstancesManager {
 
             updates_data,
             updates,
-            maintain_bind_group,
-            maintain_pipeline,
+            update_bind_group,
+            update_pipeline,
         }
     }
 
@@ -308,14 +308,12 @@ impl MeshInstancesManager {
     pub fn update(&mut self) -> Result<()> {
         let device = self.resources.read::<wgpu::Device>();
         let queue = self.resources.read::<wgpu::Queue>();
+        let mut profiler = self.resources.write::<wgpu_profiler::GpuProfiler>();
 
         let updates_data = self.updates_data.iter().copied().collect::<Vec<_>>();
+        let updates_count = updates_data.len() as u32;
 
-        queue.write_buffer(
-            &self.updates,
-            0,
-            bytemuck::bytes_of(&(updates_data.len() as u32)),
-        );
+        queue.write_buffer(&self.updates, 0, bytemuck::bytes_of(&updates_count));
 
         queue.write_buffer(
             &self.updates,
@@ -328,32 +326,31 @@ impl MeshInstancesManager {
         //     0,
         //     bytemuck::cast_slice(&self.base_instances_data),
         // );
+        // 4f90a9bfd867a82c9a788be95069f52131c102e2
 
-        self.updates_data.clear();
+        // self.updates_data.clear();
 
         let mut encoder = device.create_command_encoder(&Default::default());
+        let mut scope = profiler.scope("MeshInstancesManager", &mut encoder);
 
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        let mut cpass = scope.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("MeshInstancesManager[update]"),
             ..Default::default()
         });
 
-        const WORKGROUP_SIZE: u32 = 32;
+        const WORKGROUP_SIZE: u32 = 256;
+        let updates_workgroups_count = updates_count.div_ceil(WORKGROUP_SIZE);
 
-        let updates_workgroups_count =
-            (Self::MAX_INSTANCES as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
-
-        cpass.set_pipeline(&self.maintain_pipeline);
-        cpass.set_bind_group(0, &self.maintain_bind_group, &[]);
+        cpass.set_pipeline(&self.update_pipeline);
+        cpass.set_bind_group(0, &self.update_bind_group, &[]);
         cpass.dispatch_workgroups(updates_workgroups_count, 1, 1);
 
         drop(cpass);
+        drop(scope);
 
-        let submission_index = queue.submit(std::iter::once(encoder.finish()));
-        device.poll(wgpu::PollType::Wait {
-            submission_index: Some(submission_index),
-            timeout: None,
-        })?;
+        profiler.resolve_queries(&mut encoder);
+
+        queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }

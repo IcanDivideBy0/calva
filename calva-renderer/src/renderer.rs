@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings, GpuTimerQueryResult};
 
-use crate::ResourcesManager;
+use crate::{Resource, ResourcesManager};
 
 pub struct Renderer {
     pub resources: ResourcesManager,
@@ -13,7 +13,6 @@ pub struct Renderer {
     adapter: wgpu::Adapter,
     adapter_info: wgpu::AdapterInfo,
 
-    profiler: RefCell<GpuProfiler>,
     profiler_results: RefCell<Vec<GpuTimerQueryResult>>,
 }
 
@@ -78,14 +77,6 @@ impl Renderer {
 
         surface.configure(&device, &surface_config);
 
-        let profiler = RefCell::new(GpuProfiler::new(
-            &device,
-            GpuProfilerSettings {
-                // enable_debug_groups: false,
-                // enable_timer_queries: false,
-                ..Default::default()
-            },
-        )?);
         let profiler_results = RefCell::new(vec![]);
 
         let resources = ResourcesManager::new(device, queue, surface, surface_config);
@@ -96,7 +87,6 @@ impl Renderer {
 
             resources,
 
-            profiler,
             profiler_results,
         })
     }
@@ -106,6 +96,7 @@ impl Renderer {
         let queue = self.resources.read::<wgpu::Queue>();
         let surface = self.resources.read::<wgpu::Surface>();
         let surface_config = self.resources.read::<wgpu::SurfaceConfiguration>();
+        let mut profiler = self.resources.write::<GpuProfiler>();
 
         let mut encoder = device.create_command_encoder(&Default::default());
 
@@ -118,8 +109,6 @@ impl Renderer {
 
             _ => return Err(anyhow!("Failed")),
         };
-
-        let mut profiler = self.profiler.try_borrow_mut()?;
 
         let scope = profiler.scope("RenderPass", &mut encoder);
 
@@ -178,7 +167,8 @@ impl egui::Widget for &Renderer {
                         });
                 });
 
-            if !self.profiler.borrow().settings().enable_timer_queries {
+            let profiler = self.resources.read::<GpuProfiler>();
+            if !profiler.settings().enable_timer_queries {
                 return;
             }
 
@@ -235,4 +225,21 @@ pub type ProfilerCommandEncoder<'a> = wgpu_profiler::Scope<'a, wgpu::CommandEnco
 pub struct RenderContext<'a> {
     pub encoder: ProfilerCommandEncoder<'a>,
     pub frame: &'a wgpu::TextureView,
+}
+
+impl Resource for GpuProfiler {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        let device = resources.read::<wgpu::Device>();
+
+        let profiler = GpuProfiler::new(
+            &device,
+            GpuProfilerSettings {
+                // enable_debug_groups: false,
+                // enable_timer_queries: false,
+                ..Default::default()
+            },
+        )?;
+
+        Ok(profiler)
+    }
 }

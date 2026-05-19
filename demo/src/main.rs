@@ -2,13 +2,11 @@
 
 use anyhow::Result;
 use async_std::task;
-use calva::{
-    gltf::GltfModel,
-    renderer::{
-        wgpu, AmbientLightConfig, Camera, EguiWinitPass, Engine, Object, Renderer, SkyboxManager,
-    },
+use calva::renderer::{
+    wgpu, AmbientLightConfig, Camera, EguiWinitPass, Engine, Renderer, SkyboxManager,
 };
 use core::f32;
+use rand::seq::IteratorRandom;
 
 use std::sync::Arc;
 use winit::{
@@ -22,9 +20,13 @@ use winit::{
 pub mod camera;
 pub mod controls;
 pub mod debug;
+pub mod monsters;
 pub mod worldgen;
 
-use crate::{camera::PerspectiveCamera, controls::FlyingCamera, worldgen::WorldGenerator};
+use crate::{
+    camera::PerspectiveCamera, controls::TopDownCamera, monsters::MonstersManager,
+    worldgen::WorldGenerator,
+};
 
 struct DemoState {
     window: Arc<Window>,
@@ -33,17 +35,15 @@ struct DemoState {
     egui: EguiWinitPass,
     mouse_pos: glam::Vec2,
     kb_modifiers: ModifiersState,
-
-    monsters_models: Vec<GltfModel>,
-    monster_objects: Vec<Object>,
 }
 
 impl DemoState {
     pub fn new(window: Arc<Window>, engine: Engine) -> Self {
         let _ = engine.resources.read::<PerspectiveCamera>();
         let _ = engine.resources.read::<WorldGenerator>();
+        // let _ = engine.resources.read::<TopDownCamera>();
 
-        *engine.resources.write::<FlyingCamera>() = controls::FlyingCamera::from_look_at(
+        *engine.resources.write::<controls::FlyingCamera>() = controls::FlyingCamera::from_look_at(
             glam::Vec3::Y + glam::Vec3::Z * 0.0, // eye
             glam::Vec3::Y - glam::Vec3::Z,       // target
             glam::Vec3::Y,                       // up
@@ -57,7 +57,6 @@ impl DemoState {
         let egui = EguiWinitPass::new(&engine.resources, &window);
 
         Self::init_skybox(&engine).unwrap();
-        let monsters_models = Self::init_monsters(&engine).unwrap();
 
         Self {
             window,
@@ -66,9 +65,6 @@ impl DemoState {
             egui,
             mouse_pos: Default::default(),
             kb_modifiers: Default::default(),
-
-            monsters_models,
-            monster_objects: Default::default(),
         }
     }
 
@@ -94,30 +90,6 @@ impl DemoState {
             .set_skybox(&pixels);
 
         Ok(())
-    }
-
-    fn init_monsters(engine: &Engine) -> Result<Vec<GltfModel>> {
-        [
-            "./demo/assets/zombies/zombie-boss.glb",
-            "./demo/assets/zombies/zombie-common.glb",
-            "./demo/assets/zombies/zombie-fat.glb",
-            "./demo/assets/zombies/zombie-murderer.glb",
-            "./demo/assets/zombies/zombie-snapper.glb",
-            "./demo/assets/skeletons/skeleton-archer.glb",
-            "./demo/assets/skeletons/skeleton-grunt.glb",
-            "./demo/assets/skeletons/skeleton-mage.glb",
-            "./demo/assets/skeletons/skeleton-king.glb",
-            "./demo/assets/skeletons/skeleton-swordsman.glb",
-            "./demo/assets/demons/demon-bomb.glb",
-            "./demo/assets/demons/demon-boss.glb",
-            "./demo/assets/demons/demon-fatty.glb",
-            "./demo/assets/demons/demon-grunt.glb",
-            "./demo/assets/demons/demon-imp.glb",
-        ]
-        .iter()
-        // .take(1)
-        .map(|filepath| GltfModel::from_path(&engine.resources, filepath))
-        .collect::<Result<Vec<_>>>()
     }
 }
 
@@ -155,14 +127,11 @@ impl ApplicationHandler for DemoApp {
             return;
         };
 
-        if state
-            .engine
-            .resources
-            .write::<FlyingCamera>()
-            .handle_event(&event)
-        {
+        let mut flying_camera = state.engine.resources.write::<controls::FlyingCamera>();
+        if flying_camera.handle_event(&event) {
             // return;
         }
+        drop(flying_camera);
 
         match event {
             WindowEvent::Resized(size) => {
@@ -170,28 +139,6 @@ impl ApplicationHandler for DemoApp {
             }
 
             WindowEvent::RedrawRequested => {
-                // Update monster pos
-                // if let (Some(height_map), Some(heat_map)) = (&state.height_map, &state.heat_map) {
-                //     for monster in &mut state.monster_objects {
-                //         let mut transform = monster.transform();
-                //         let (_, _, translation) = transform.to_scale_rotation_translation();
-
-                //         let grid_coord = Tile::get_grid_coord(&translation.xz());
-
-                //         let dir = heat_map.apply_kernel(grid_coord) * Tile::PIXEL_SIZE / 4.0;
-
-                //         let new_grid_coord = Tile::get_grid_coord(&(translation.xz() + dir));
-
-                //         let dh = height_map.get_height(&new_grid_coord).unwrap_or_default()
-                //             - height_map.get_height(&grid_coord).unwrap_or_default();
-
-                //         transform =
-                //             glam::Mat4::from_translation(glam::vec3(dir.x, dh, dir.y)) * transform;
-
-                //         monster.set_transform(transform);
-                //     }
-                // }
-
                 state.egui.update(&state.window, |ui| {
                     ui.add(&mut state.engine);
                 });
@@ -229,7 +176,7 @@ impl ApplicationHandler for DemoApp {
 
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
-                // button,
+                button: MouseButton::Left,
                 ..
             } => {
                 let camera = state.engine.resources.read::<Camera>();
@@ -240,15 +187,15 @@ impl ApplicationHandler for DemoApp {
                     state.mouse_pos,
                     glam::vec2(surface_config.width as f32, surface_config.height as f32),
                 );
+
                 if let Some(hit) = worldgen.ray_cast(ro, rd) {
+                    let mut monsters = state.engine.resources.write::<MonstersManager>();
+
                     let hit = ro + rd * hit;
 
-                    let monster_model = &state.monsters_models
-                        [rand::random::<u32>() as usize % state.monsters_models.len()];
-
-                    let animation_keys = monster_model.animations.keys().collect::<Vec<_>>();
-                    let animation = &monster_model.animations
-                        [animation_keys[rand::random::<u32>() as usize % animation_keys.len()]];
+                    let mut rng = rand::rng();
+                    let model = monsters.models.values().choose(&mut rng).unwrap();
+                    let animation = model.animations.values().choose(&mut rng).unwrap();
 
                     let transform = glam::Mat4::from_translation(hit)
                         * glam::Mat4::from_axis_angle(
@@ -256,106 +203,99 @@ impl ApplicationHandler for DemoApp {
                             rand::random::<f32>() * f32::consts::TAU,
                         );
 
-                    state.monster_objects.push(
-                        monster_model
-                            .object()
-                            .with_animation((*animation).into())
-                            .with_transform(transform),
-                    );
+                    let object = model
+                        .object()
+                        .with_animation((*animation).into())
+                        .with_transform(transform);
+
+                    monsters.objects.push(object);
                 }
-
-                // if let Some(height_map) = state.height_map.as_ref() {
-                //     let camera = state.engine.resources.read::<Camera>();
-                //     let surface_config =
-                //         state.engine.resources.read::<wgpu::SurfaceConfiguration>();
-
-                //     let (ro, rd) = camera.ray_cast(
-                //         state.mouse_pos,
-                //         glam::vec2(surface_config.width as f32, surface_config.height as f32),
-                //     );
-
-                //     if let Some(hit) = height_map.ray_cast(ro, rd) {
-                //         if button == MouseButton::Left {
-                //             let grid_coord = Tile::get_grid_coord(&hit.xz());
-                //             let heat_map = dbg!(HeatMap::new(height_map, grid_coord));
-                //             state.heat_map = Some(heat_map);
-                //         }
-
-                //         if button == MouseButton::Right {
-                //             let transform = glam::Mat4::from_translation(hit)
-                //                 * glam::Mat4::from_axis_angle(
-                //                     glam::Vec3::Y,
-                //                     rand::random::<f32>() * f32::consts::TAU,
-                //                 );
-
-                //             let monster_model = &state.monsters_models
-                //                 [rand::random::<u32>() as usize % state.monsters_models.len()];
-
-                //             let animation_keys =
-                //                 monster_model.animations.keys().collect::<Vec<_>>();
-                //             let animation = &monster_model.animations[animation_keys
-                //                 [rand::random::<u32>() as usize % animation_keys.len()]];
-
-                //             state.monster_objects.push(
-                //                 monster_model
-                //                     .object()
-                //                     .with_transform(transform)
-                //                     .with_animation((*animation).into()),
-                //             );
-                //         }
-                //     }
-                // }
             }
 
-            WindowEvent::KeyboardInput { event, .. } => match event {
-                KeyEvent {
-                    state: ElementState::Pressed,
-                    physical_key: PhysicalKey::Code(KeyCode::KeyR),
-                    ..
-                } => {
-                    state.monster_objects.pop();
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let camera = state.engine.resources.read::<Camera>();
+                let worldgen = state.engine.resources.read::<WorldGenerator>();
+                let surface_config = state.engine.resources.read::<wgpu::SurfaceConfiguration>();
+
+                let (ro, rd) = camera.ray_cast(
+                    state.mouse_pos,
+                    glam::vec2(surface_config.width as f32, surface_config.height as f32),
+                );
+
+                if let Some(hit) = worldgen.ray_cast(ro, rd) {
+                    let hit = ro + rd * hit;
+
+                    let mut monsters = state.engine.resources.write::<MonstersManager>();
+                    monsters.target = Some(hit);
+                    monsters.heat_map = Some(worldgen.get_heat_map(hit));
+
+                    // let mut top_down_camera = state.engine.resources.write::<TopDownCamera>();
+                    // top_down_camera.target = hit;
                 }
+            }
 
-                KeyEvent {
-                    state: ElementState::Pressed,
-                    physical_key: PhysicalKey::Code(KeyCode::KeyT),
-                    ..
-                } => {
-                    for (z, monster_model) in state.monsters_models.iter().enumerate() {
-                        for (x, animation) in monster_model.animations.values().enumerate() {
-                            for y in 0..1 {
-                                let transform = glam::Mat4::from_translation(glam::vec3(
-                                    4.0 * x as f32,
-                                    8.0 + 4.0 * y as f32,
-                                    4.0 * z as f32,
-                                ));
-
-                                state.monster_objects.push(
-                                    monster_model
-                                        .object()
-                                        .with_transform(transform)
-                                        .with_animation((*animation).into()),
-                                );
-                            }
-                        }
+            WindowEvent::KeyboardInput { event, .. } => {
+                match event {
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::KeyR),
+                        ..
+                    } => {
+                        let mut monsters = state.engine.resources.write::<MonstersManager>();
+                        monsters.objects.pop();
                     }
-                }
 
-                KeyEvent {
-                    state: ElementState::Pressed,
-                    physical_key: PhysicalKey::Code(KeyCode::Enter),
-                    ..
-                } if state.kb_modifiers.alt_key() => {
-                    state
-                        .window
-                        .set_fullscreen(match state.window.fullscreen() {
-                            None => Some(Fullscreen::Borderless(None)),
-                            _ => None,
-                        });
-                }
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::KeyT),
+                        ..
+                    } => {
+                        let mut monsters = state.engine.resources.write::<MonstersManager>();
 
-                _ => {}
-            },
+                        let mut objects =
+                            monsters
+                                .models
+                                .values()
+                                .enumerate()
+                                .flat_map(|(z, model)| {
+                                    model.animations.values().enumerate().map(
+                                        move |(x, animation)| {
+                                            let transform = glam::Mat4::from_translation(
+                                                glam::vec3(4.0 * x as f32, 8.0, 4.0 * z as f32),
+                                            );
+
+                                            model
+                                                .object()
+                                                .with_transform(transform)
+                                                .with_animation((*animation).into())
+                                        },
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+
+                        monsters.objects.append(&mut objects);
+                    }
+
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::Enter),
+                        ..
+                    } if state.kb_modifiers.alt_key() => {
+                        state
+                            .window
+                            .set_fullscreen(match state.window.fullscreen() {
+                                None => Some(Fullscreen::Borderless(None)),
+                                _ => None,
+                            });
+                    }
+
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
