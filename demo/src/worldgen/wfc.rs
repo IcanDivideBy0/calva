@@ -1,6 +1,9 @@
 use calva::nav::HeightMap;
 use core::f32;
-use rand::{seq::IndexedRandom, Rng};
+use noise::NoiseFn;
+use rand::{seq::IndexedRandom, RngExt};
+use rand_seeder::SipHasher;
+use std::hash::Hash;
 
 #[derive(Clone, Copy, Debug)]
 enum Direction {
@@ -81,7 +84,7 @@ impl<const SIZE: usize> Default for ModuleConstraints<SIZE> {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub enum ModuleRotation {
+enum ModuleRotation {
     #[default]
     Cw0,
     Cw90,
@@ -101,7 +104,7 @@ impl ModuleRotation {
         };
     }
 
-    pub fn angle(&self) -> f32 {
+    fn angle(&self) -> f32 {
         match self {
             Self::Cw0 => 0.0,
             Self::Cw90 => -f32::consts::FRAC_PI_2,
@@ -114,9 +117,9 @@ impl ModuleRotation {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Module<const SIZE: usize> {
     pub id: usize,
-    pub rotation: ModuleRotation,
-    pub elevation: i8,
 
+    rotation: ModuleRotation,
+    elevation: i8,
     constraints: ModuleConstraints<SIZE>,
 }
 
@@ -159,12 +162,8 @@ impl<const SIZE: usize> Module<SIZE> {
         }
     }
 
-    fn get_constraint(&self, direction: Direction) -> ModuleConstraint<SIZE> {
-        self.constraints.get(direction)
-    }
-
     fn is_compatible(&self, other: &Self, direction: Direction) -> bool {
-        self.get_constraint(direction) == other.get_constraint(direction.opposite())
+        self.constraints.get(direction) == other.constraints.get(direction.opposite())
     }
 
     fn rotate(&mut self) {
@@ -188,6 +187,27 @@ impl<const SIZE: usize> Module<SIZE> {
             variant
         })
     }
+
+    pub fn get_height(&self, coord: glam::USizeVec2, height_map: &HeightMap) -> Option<f32> {
+        let (x, y) = coord.into();
+
+        const MAX: usize = HeightMap::SIZE - 1;
+        let height = match self.rotation {
+            ModuleRotation::Cw0 => height_map.grid[y][x],
+            ModuleRotation::Cw90 => height_map.grid[MAX - x][y],
+            ModuleRotation::Cw180 => height_map.grid[MAX - y][MAX - x],
+            ModuleRotation::Cw270 => height_map.grid[x][MAX - y],
+        };
+
+        height.map(|h| h + self.elevation as f32)
+    }
+
+    pub fn get_local_transform(&self) -> glam::Mat4 {
+        glam::Mat4::from_rotation_translation(
+            glam::Quat::from_axis_angle(glam::Vec3::Y, self.rotation.angle()),
+            glam::Vec3::Y * self.elevation as f32,
+        )
+    }
 }
 
 type GridCell<'a, const MODULE_SIZE: usize> = Vec<&'a Module<MODULE_SIZE>>;
@@ -207,30 +227,126 @@ type Grid<'a, const SIZE: usize, const MODULE_SIZE: usize> =
     [[GridCell<'a, MODULE_SIZE>; SIZE]; SIZE];
 
 #[derive(Clone, Copy, Debug)]
-pub struct WfcConstraints<const SIZE: usize, const MODULE_SIZE: usize> {
-    pub north: [[Option<f32>; MODULE_SIZE]; SIZE],
-    pub east: [[Option<f32>; MODULE_SIZE]; SIZE],
-    pub south: [[Option<f32>; MODULE_SIZE]; SIZE],
-    pub west: [[Option<f32>; MODULE_SIZE]; SIZE],
+struct WfcConstraints<const SIZE: usize, const MODULE_SIZE: usize> {
+    north: [[Option<f32>; MODULE_SIZE]; SIZE],
+    east: [[Option<f32>; MODULE_SIZE]; SIZE],
+    south: [[Option<f32>; MODULE_SIZE]; SIZE],
+    west: [[Option<f32>; MODULE_SIZE]; SIZE],
+}
+
+impl<const SIZE: usize, const MODULE_SIZE: usize> WfcConstraints<SIZE, MODULE_SIZE> {
+    fn new(coord: glam::IVec2, wfc: &Wfc<SIZE, MODULE_SIZE>) -> Self {
+        let get_noise = |x: usize, y: usize| {
+            let noise = wfc.noise.get([
+                coord.x as f64 * SIZE as f64 + x as f64,
+                coord.y as f64 * SIZE as f64 + y as f64,
+            ]) as f32;
+
+            let h = noise * wfc.elevations as f32;
+            h.floor() * wfc.elevations_increments as f32
+        };
+
+        let mut constraints: WfcConstraints<SIZE, MODULE_SIZE> = WfcConstraints {
+            north: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            east: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            south: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            west: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+        };
+
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let top_left = get_noise(x, y);
+                let top_right = get_noise(x + 1, y);
+                let bottom_left = get_noise(x, y + 1);
+                let bottom_right = get_noise(x + 1, y + 1);
+
+                if y == 0 {
+                    constraints.north[x] = std::array::from_fn(|i| {
+                        if (MODULE_SIZE as f32 / 2.0) > (i as f32) + 1.0 {
+                            Some(top_left)
+                        } else if (MODULE_SIZE as f32 / 2.0) < (i as f32) {
+                            Some(top_right)
+                        } else {
+                            Some(f32::max(top_left, top_right))
+                        }
+                    });
+                }
+
+                if x == SIZE - 1 {
+                    constraints.east[y] = std::array::from_fn(|i| {
+                        if (MODULE_SIZE as f32 / 2.0) > (i as f32) + 1.0 {
+                            Some(top_right)
+                        } else if (MODULE_SIZE as f32 / 2.0) < (i as f32) {
+                            Some(bottom_right)
+                        } else {
+                            Some(f32::max(top_right, bottom_right))
+                        }
+                    });
+                }
+
+                if y == SIZE - 1 {
+                    constraints.south[x] = std::array::from_fn(|i| {
+                        if (MODULE_SIZE as f32 / 2.0) > (i as f32) + 1.0 {
+                            Some(bottom_left)
+                        } else if (MODULE_SIZE as f32 / 2.0) < (i as f32) {
+                            Some(bottom_right)
+                        } else {
+                            Some(f32::max(bottom_left, bottom_right))
+                        }
+                    });
+                }
+
+                if x == 0 {
+                    constraints.west[y] = std::array::from_fn(|i| {
+                        if (MODULE_SIZE as f32 / 2.0) > (i as f32) + 1.0 {
+                            Some(top_left)
+                        } else if (MODULE_SIZE as f32 / 2.0) < (i as f32) {
+                            Some(bottom_left)
+                        } else {
+                            Some(f32::max(top_left, bottom_left))
+                        }
+                    });
+                }
+            }
+        }
+
+        constraints
+    }
 }
 
 pub struct Wfc<const SIZE: usize, const MODULE_SIZE: usize> {
-    pub elevations: usize,
-    pub elevations_increments: i8,
+    elevations: usize,
+    elevations_increments: i8,
 
+    seed: u32,
+    noise: Box<dyn NoiseFn<f64, 2> + Send + Sync>,
     modules: Vec<Module<MODULE_SIZE>>,
 }
 
 impl<const SIZE: usize, const MODULE_SIZE: usize> Wfc<SIZE, MODULE_SIZE> {
     pub fn new<'a>(
+        seed: impl Hash,
         elevations: usize,
         elevations_increments: i8,
         height_maps: &mut impl Iterator<Item = (&'a usize, &'a HeightMap)>,
     ) -> Self {
+        let seed = SipHasher::from(seed).into_rng().random();
+
+        let noise = Box::new(
+            noise::ScalePoint::new(
+                noise::ScaleBias::<f64, _, 2>::new(noise::Perlin::new(seed))
+                    .set_scale(0.5)
+                    .set_bias(0.5),
+            )
+            .set_scale(0.08),
+        );
+
         Self {
             elevations,
             elevations_increments,
 
+            seed,
+            noise,
             modules: height_maps
                 .map(|(id, height_map)| Module::<MODULE_SIZE>::new(*id, height_map))
                 .flat_map(|module| {
@@ -243,13 +359,13 @@ impl<const SIZE: usize, const MODULE_SIZE: usize> Wfc<SIZE, MODULE_SIZE> {
         }
     }
 
-    pub fn collapse(
-        &self,
-        constraints: WfcConstraints<SIZE, MODULE_SIZE>,
-        rng: &mut impl Rng,
-    ) -> [[Module<MODULE_SIZE>; SIZE]; SIZE] {
+    pub fn collapse(&self, coord: glam::IVec2) -> [[Module<MODULE_SIZE>; SIZE]; SIZE] {
         let mut grid: Grid<SIZE, MODULE_SIZE> =
             std::array::from_fn(|_| std::array::from_fn(|_| self.modules.iter().collect()));
+
+        let rng = &mut SipHasher::from((self.seed, coord)).into_rng();
+
+        let constraints = WfcConstraints::new(coord, self);
 
         let (north, east, south, west) = (
             constraints.north.map(|c| {

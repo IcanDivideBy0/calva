@@ -44,26 +44,27 @@ pub struct MeshInstance {
 bitflags::bitflags! {
     #[repr(C)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, bytemuck::Pod, bytemuck::Zeroable)]
-    pub struct MeshInstanceUpdateMask: u16 {
-        const TRANSFORM = 1 << 0;
-        const ANIMATION = 1 << 1;
+    pub struct MeshInstanceFlags: u8 {
+        const ACTIVE           = 1 << 0;
+        const UPDATE_TRANSFORM = 1 << 1;
+        const UPDATE_ANIMATION = 1 << 2;
     }
 }
 
-impl Default for MeshInstanceUpdateMask {
+impl Default for MeshInstanceFlags {
     fn default() -> Self {
-        MeshInstanceUpdateMask::all()
+        MeshInstanceFlags::all()
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct GpuMeshInstance {
-    update_mask: MeshInstanceUpdateMask,
+    padding: u16,
     handle: MeshInstanceHandle,
     mesh: MeshHandle,
     material: MaterialHandle,
-    active: u8,
+    flags: MeshInstanceFlags,
     animation: AnimationState,
     transform: glam::Mat4,
 }
@@ -75,10 +76,10 @@ impl GpuMeshInstance {
 impl From<(MeshInstanceHandle, MeshInstance)> for GpuMeshInstance {
     fn from((handle, instance): (MeshInstanceHandle, MeshInstance)) -> Self {
         Self {
+            padding: 0,
             handle,
             mesh: instance.mesh,
             material: instance.material,
-            active: 1,
             transform: instance.transform,
             animation: instance.animation,
             ..Default::default()
@@ -271,10 +272,11 @@ impl MeshInstancesManager {
             .collect::<Vec<_>>()
     }
 
-    pub fn remove(&mut self, handles: &mut [MeshInstanceHandle]) {
+    pub fn remove(&mut self, handles: &[MeshInstanceHandle]) {
         for handle in handles.iter() {
             self.updates_data.replace(GpuMeshInstance {
                 handle: *handle,
+                flags: !MeshInstanceFlags::ACTIVE,
                 ..Default::default()
             });
 
@@ -282,23 +284,23 @@ impl MeshInstancesManager {
         }
     }
 
-    pub fn replace(&mut self, data: &[(MeshInstanceHandle, MeshInstance, MeshInstanceUpdateMask)]) {
-        for (handle, instance, update_mask) in data {
+    pub fn replace(&mut self, data: &[(MeshInstanceHandle, MeshInstance, MeshInstanceFlags)]) {
+        for (handle, instance, flags) in data {
             let mut gpu_instance = GpuMeshInstance {
-                update_mask: *update_mask,
+                flags: *flags | MeshInstanceFlags::ACTIVE,
                 ..GpuMeshInstance::from((*handle, *instance))
             };
 
             if let Some(current) = self.updates_data.get(&gpu_instance) {
-                if !update_mask.contains(MeshInstanceUpdateMask::TRANSFORM) {
+                if !flags.contains(MeshInstanceFlags::UPDATE_TRANSFORM) {
                     gpu_instance.transform = current.transform;
                 }
 
-                if !update_mask.contains(MeshInstanceUpdateMask::ANIMATION) {
+                if !flags.contains(MeshInstanceFlags::UPDATE_ANIMATION) {
                     gpu_instance.animation = current.animation;
                 }
 
-                gpu_instance.update_mask |= current.update_mask;
+                gpu_instance.flags |= current.flags;
             }
 
             self.updates_data.replace(gpu_instance);
@@ -328,7 +330,7 @@ impl MeshInstancesManager {
         // );
         // 4f90a9bfd867a82c9a788be95069f52131c102e2
 
-        // self.updates_data.clear();
+        self.updates_data.clear();
 
         let mut encoder = device.create_command_encoder(&Default::default());
         let mut scope = profiler.scope("MeshInstancesManager", &mut encoder);

@@ -2,7 +2,7 @@ use anyhow::Result;
 use calva::{
     gltf::GltfModel,
     nav::{HeatMap, HeightMap},
-    renderer::{Object, Resource, ResourcesManager},
+    renderer::{Object, Resource, ResourcesManager, Time},
 };
 use glam::Vec3Swizzles;
 use std::collections::HashMap;
@@ -55,8 +55,12 @@ impl Resource for MonstersManager {
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
         let worldgen = resources.read::<WorldGenerator>();
+        let time = resources.read::<Time>();
 
         let Some(heat_map) = &self.heat_map else {
+            return Ok(());
+        };
+        let Some(target) = self.target else {
             return Ok(());
         };
 
@@ -64,20 +68,22 @@ impl Resource for MonstersManager {
             let mut transform = object.transform();
             let (_, _, pos) = transform.to_scale_rotation_translation();
 
-            let Some(heat_map_coord) = worldgen.get_heat_map_coord(pos) else {
+            let heat_map_coord = worldgen.get_heat_map_coord(pos.xz(), target.xz());
+
+            let dir = heat_map.apply_kernel(heat_map_coord);
+            if dir == glam::Vec2::ZERO {
                 continue;
-            };
+            }
 
-            let dir = heat_map.apply_kernel(heat_map_coord)
-                * (WorldGenerator::TILE_WORLD_SIZE / HeightMap::SIZE as f32)
-                / 4.0;
+            let dest_height = worldgen.get_height(pos.xz() + dir).unwrap_or(pos.y);
+            let dh = dest_height - pos.y;
 
-            let dh = worldgen
-                .get_height(pos + dir.extend(0.0).xzy())
-                .unwrap_or(pos.y)
-                - pos.y;
+            let dir = dir.extend(dh).xzy().normalize();
 
-            transform = glam::Mat4::from_translation(glam::vec3(dir.x, dh, dir.y)) * transform;
+            let speed = 10.0; // units / sec
+            let translation = dir * speed * time.dt.as_secs_f32();
+
+            transform = glam::Mat4::from_translation(translation) * transform;
 
             object.set_transform(transform);
         }

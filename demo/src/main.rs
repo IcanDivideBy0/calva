@@ -6,6 +6,7 @@ use calva::renderer::{
     wgpu, AmbientLightConfig, Camera, EguiWinitPass, Engine, Renderer, SkyboxManager,
 };
 use core::f32;
+use glam::Vec3Swizzles;
 use rand::seq::IteratorRandom;
 
 use std::sync::Arc;
@@ -41,13 +42,13 @@ impl DemoState {
     pub fn new(window: Arc<Window>, engine: Engine) -> Self {
         let _ = engine.resources.read::<PerspectiveCamera>();
         let _ = engine.resources.read::<WorldGenerator>();
-        // let _ = engine.resources.read::<TopDownCamera>();
+        let _ = engine.resources.read::<TopDownCamera>();
 
-        *engine.resources.write::<controls::FlyingCamera>() = controls::FlyingCamera::from_look_at(
-            glam::Vec3::Y + glam::Vec3::Z * 0.0, // eye
-            glam::Vec3::Y - glam::Vec3::Z,       // target
-            glam::Vec3::Y,                       // up
-        );
+        // *engine.resources.write::<controls::FlyingCamera>() = controls::FlyingCamera::from_look_at(
+        //     glam::Vec3::Y + glam::Vec3::Z * 0.0, // eye
+        //     glam::Vec3::Y - glam::Vec3::Z,       // target
+        //     glam::Vec3::Y,                       // up
+        // );
 
         *engine.resources.write::<AmbientLightConfig>() = AmbientLightConfig {
             color: [0.106535, 0.061572, 0.037324],
@@ -127,11 +128,11 @@ impl ApplicationHandler for DemoApp {
             return;
         };
 
-        let mut flying_camera = state.engine.resources.write::<controls::FlyingCamera>();
-        if flying_camera.handle_event(&event) {
-            // return;
-        }
-        drop(flying_camera);
+        // let mut flying_camera = state.engine.resources.write::<controls::FlyingCamera>();
+        // if flying_camera.handle_event(&event) {
+        //     // return;
+        // }
+        // drop(flying_camera);
 
         match event {
             WindowEvent::Resized(size) => {
@@ -214,7 +215,7 @@ impl ApplicationHandler for DemoApp {
 
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
-                button: MouseButton::Right,
+                button: MouseButton::Middle,
                 ..
             } => {
                 let camera = state.engine.resources.read::<Camera>();
@@ -231,10 +232,29 @@ impl ApplicationHandler for DemoApp {
 
                     let mut monsters = state.engine.resources.write::<MonstersManager>();
                     monsters.target = Some(hit);
-                    monsters.heat_map = Some(worldgen.get_heat_map(hit));
+                    monsters.heat_map = dbg!(worldgen.get_heat_map(hit.xz()));
+                }
+            }
 
-                    // let mut top_down_camera = state.engine.resources.write::<TopDownCamera>();
-                    // top_down_camera.target = hit;
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let camera = state.engine.resources.read::<Camera>();
+                let worldgen = state.engine.resources.read::<WorldGenerator>();
+                let surface_config = state.engine.resources.read::<wgpu::SurfaceConfiguration>();
+
+                let (ro, rd) = camera.ray_cast(
+                    state.mouse_pos,
+                    glam::vec2(surface_config.width as f32, surface_config.height as f32),
+                );
+
+                if let Some(hit) = worldgen.ray_cast(ro, rd) {
+                    let hit = ro + rd * hit;
+
+                    let mut top_down_camera = state.engine.resources.write::<TopDownCamera>();
+                    top_down_camera.target = hit;
                 }
             }
 

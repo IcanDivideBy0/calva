@@ -1,5 +1,5 @@
 use crate::{
-    AnimationState, MeshInstance, MeshInstanceHandle, MeshInstanceUpdateMask, MeshInstancesManager,
+    AnimationState, MeshInstance, MeshInstanceFlags, MeshInstanceHandle, MeshInstancesManager,
     PointLight, PointLightHandle, PointLightsManager, ResourcesManager,
 };
 
@@ -74,7 +74,7 @@ impl Object {
                             transform: transform * mesh_instance.transform,
                             ..mesh_instance
                         },
-                        MeshInstanceUpdateMask::TRANSFORM,
+                        MeshInstanceFlags::UPDATE_TRANSFORM,
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -111,7 +111,7 @@ impl Object {
                     (
                         *mesh_instance_handle,
                         *mesh_instance,
-                        MeshInstanceUpdateMask::ANIMATION,
+                        MeshInstanceFlags::UPDATE_ANIMATION,
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -130,7 +130,7 @@ impl Drop for Object {
         }
 
         self.resources.write::<MeshInstancesManager>().remove(
-            &mut self
+            &self
                 .mesh_instances
                 .iter()
                 .map(|(mesh_instance_handle, _)| mesh_instance_handle)

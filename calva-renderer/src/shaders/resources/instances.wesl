@@ -4,11 +4,17 @@ struct Instance {
     /*
      * |                packed_data                    |
      * |-----------------------------------------------|
-     * | X | instance_id         | update_mask         |
+     * | X | instance_id         | padding             |
      * |   | u16                 | u16                 |
      * |---|-------------------------------------------|
-     * | Y | active   | mat_id   | mesh_id             |
+     * | Y | flags    | mat_id   | mesh_id             |
      * |   | u8       | u8       | u16                 |
+     * 
+     * with flags:
+     * 0b00000000
+     *          ^- is_active
+     *         ^-- update_transform
+     *        ^--- update_animation
      */
     packed_data: vec2<u32>,
 
@@ -25,16 +31,18 @@ struct Instances {
 // Utils fn
 //
 
-fn instance_update_mask(instance: Instance) -> u32 {
-    return instance.packed_data.x & 0xFFFF;
-}
-
 fn instance_id(instance: Instance) -> u32 {
     return instance.packed_data.x >> 16;
 }
 
 fn instance_active(instance: Instance) -> bool {
-    return bool(instance.packed_data.y >> 24);
+    return bool((instance.packed_data.y >> 24) & (1u << 0));
+}
+fn instance_update_transform(instance: Instance) -> bool {
+    return bool((instance.packed_data.y >> 24) & (1u << 1));
+}
+fn instance_update_animation(instance: Instance) -> bool {
+    return bool((instance.packed_data.y >> 24) & (1u << 2));
 }
 
 fn instance_mesh_id(instance: Instance) -> u32 {
@@ -70,15 +78,24 @@ fn update(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let instance_index = instance_id(update);
     let instance = &instances.instances[instance_index];
 
-    if instance_active(*instance) && !instance_active(update) {
-        for (var i: u32 = instance_mesh_id(*instance) + 1; i < arrayLength(&base_instances); i++) {
-            atomicSub(&base_instances[i], 1u);
-        }
-    }
+    let was_active = instance_active(*instance);
+    let is_active = instance_active(update);
+    let prev_mesh_id = instance_mesh_id(*instance);
+    let new_mesh_id = instance_mesh_id(update);
 
-    if instance_active(update) && !instance_active(*instance) {
-        for (var i: u32 = instance_mesh_id(update) + 1; i < arrayLength(&base_instances); i++) {
-            atomicAdd(&base_instances[i], 1u);
+    // TODO: this could be solved with prefix sum of the deltas added
+    // the actual base_instances but it's kinda complex to implement
+    if was_active != is_active || prev_mesh_id != new_mesh_id {
+        if was_active {
+            for (var i: u32 = prev_mesh_id + 1; i < arrayLength(&base_instances); i++) {
+                atomicSub(&base_instances[i], 1u);
+            }
+        }
+
+        if is_active {
+            for (var i: u32 = new_mesh_id + 1; i < arrayLength(&base_instances); i++) {
+                atomicAdd(&base_instances[i], 1u);
+            }
         }
     }
 
@@ -89,10 +106,10 @@ fn update(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     *instance = update;
 
-    if (instance_update_mask(update) & 1u) == 0 {
+    if !instance_update_transform(update) {
         instance.transform = prev_transform;
     }
-    if (instance_update_mask(update) & 2u) == 0 {
+    if !instance_update_animation(update) {
         instance.animation = prev_animation;
     }
 }
