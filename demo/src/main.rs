@@ -141,6 +141,7 @@ impl ApplicationHandler for DemoApp {
 
             WindowEvent::RedrawRequested => {
                 state.egui.update(&state.window, |ui| {
+                    ui.add(&mut *state.engine.resources.write::<MonstersManager>());
                     ui.add(&mut state.engine);
                 });
 
@@ -230,9 +231,11 @@ impl ApplicationHandler for DemoApp {
                 if let Some(hit) = worldgen.ray_cast(ro, rd) {
                     let hit = ro + rd * hit;
 
-                    let mut monsters = state.engine.resources.write::<MonstersManager>();
-                    monsters.target = Some(hit);
-                    monsters.heat_map = dbg!(worldgen.get_heat_map(hit.xz()));
+                    state
+                        .engine
+                        .resources
+                        .write::<MonstersManager>()
+                        .set_target(hit.xz());
                 }
             }
 

@@ -65,6 +65,30 @@ impl<const SIZE: usize> HeatMap<SIZE> {
         })
         .normalize_or_zero()
     }
+
+    pub fn image_data(&self) -> [[[u8; 4]; SIZE]; SIZE] {
+        let max = self
+            .grid
+            .iter()
+            .flatten()
+            .filter_map(|h| *h)
+            .fold(f32::MIN, f32::max);
+
+        self.grid.map(|row| {
+            row.map(|heat| match heat {
+                Some(0.0) => [u8::MAX, u8::MAX, u8::MAX, u8::MAX],
+                Some(heat) => {
+                    let value = heat / max * u8::MAX as f32;
+
+                    let blue = value as u8;
+                    let red = u8::MAX - blue;
+
+                    [red, 0, blue, u8::MAX]
+                }
+                None => [0, 0, 0, (0.9 * u8::MAX as f32) as u8],
+            })
+        })
+    }
 }
 
 impl<const SIZE: usize> fmt::Debug for HeatMap<SIZE> {
@@ -82,9 +106,9 @@ impl<const SIZE: usize> fmt::Debug for HeatMap<SIZE> {
             debug_map(&self.grid, |heat| match heat {
                 Some(0.0) => (0, 255, 0),
                 Some(heat) => {
-                    let heat_norm = heat / max * u8::MAX as f32;
+                    let value = heat / max * u8::MAX as f32;
 
-                    let blue = heat_norm as u8;
+                    let blue = value as u8;
                     let red = u8::MAX - blue;
 
                     (red, 0, blue)

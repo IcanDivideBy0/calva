@@ -38,6 +38,9 @@ impl WorldGenerator {
     pub const CHUNK_SIZE: usize = 3;
     pub const WFC_MODULE_SIZE: usize = 5;
 
+    const HEAT_MAP_TILES: usize = 3;
+    pub const HEAT_MAP_SIZE: usize = Self::HEAT_MAP_TILES * HeightMap::SIZE;
+
     fn new(seed: impl Hash, model: GltfModel, height_maps: BTreeMap<usize, HeightMap>) -> Self {
         let wfc = Wfc::new(seed, 4, 8, &mut height_maps.iter());
 
@@ -96,10 +99,12 @@ impl WorldGenerator {
     pub fn get_heat_map(
         &self,
         world_target: glam::Vec2,
-    ) -> Option<HeatMap<{ 3 * HeightMap::SIZE }>> {
+    ) -> Option<HeatMap<{ Self::HEAT_MAP_SIZE }>> {
         let mut height_map_data = std::array::from_fn(|_| std::array::from_fn(|_| None));
 
-        for (grid_y, grid_x) in itertools::iproduct!(0..3, 0..3) {
+        for (grid_y, grid_x) in
+            itertools::iproduct!(0..Self::HEAT_MAP_TILES, 0..Self::HEAT_MAP_TILES)
+        {
             let w_pos = world_target
                 + glam::vec2(grid_x as f32 - 1.0, grid_y as f32 - 1.0) * Self::TILE_WORLD_SIZE;
 
@@ -130,18 +135,18 @@ impl WorldGenerator {
         world_pos: glam::Vec2,
         world_target: glam::Vec2,
     ) -> glam::USizeVec2 {
-        const HEAT_MAP_SIZE: usize = 3 * HeightMap::SIZE;
-
         let hm_offset =
             (world_target % Self::TILE_WORLD_SIZE + Self::TILE_WORLD_SIZE) % Self::TILE_WORLD_SIZE;
         let world_hm_center = world_target - hm_offset + Self::TILE_WORLD_SIZE / 2.0;
 
-        let heat_map_pos_norm = (world_pos - world_hm_center) / (Self::TILE_WORLD_SIZE * 3.0) + 0.5;
+        let heat_map_pos_norm = (world_pos - world_hm_center)
+            / (Self::TILE_WORLD_SIZE * Self::HEAT_MAP_TILES as f32)
+            + 0.5;
 
-        let heat_map_coord = heat_map_pos_norm * HEAT_MAP_SIZE as f32;
+        let heat_map_coord = heat_map_pos_norm * Self::HEAT_MAP_SIZE as f32;
         let heat_map_coord = heat_map_coord.clamp(
             glam::Vec2::splat(0.0),
-            glam::Vec2::splat((HEAT_MAP_SIZE - 1) as f32),
+            glam::Vec2::splat((Self::HEAT_MAP_SIZE - 1) as f32),
         );
         glam::usizevec2(heat_map_coord.x as _, heat_map_coord.y as _)
     }

@@ -126,7 +126,7 @@ impl GltfModel {
                 };
 
                 let dimension = wgpu::TextureDimension::D2;
-                let desc = wgpu::TextureDescriptor {
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: image.name(),
                     size,
                     mip_level_count: size.max_mips(dimension),
@@ -137,22 +137,21 @@ impl GltfModel {
                         | wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-                };
+                });
 
-                let texture = device.create_texture(&desc);
-
+                let components = texture.format().components() as u32;
                 queue.write_texture(
                     texture.as_image_copy(),
                     &buf.to_rgba8(),
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
-                        bytes_per_row: Some(4 * size.width),
+                        bytes_per_row: Some(components * size.width),
                         rows_per_image: None,
                     },
                     size,
                 );
 
-                mipmap.generate_mipmaps(&texture, &desc)?;
+                mipmap.generate_mipmaps(&texture)?;
 
                 Ok(textures_manager.add(texture.create_view(&Default::default())))
             })

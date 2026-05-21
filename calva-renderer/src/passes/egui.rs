@@ -1,21 +1,33 @@
-use crate::{RenderContext, ResourcesManager};
+use anyhow::Result;
+
+use crate::{RenderContext, Resource, ResourcesManager};
+
+pub use egui_wgpu::Renderer as EguiRenderer;
+
+impl Resource for egui_wgpu::Renderer {
+    fn instanciate(resources: &ResourcesManager) -> Result<Self> {
+        let device = resources.read::<wgpu::Device>();
+        let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
+
+        Ok(egui_wgpu::Renderer::new(
+            &device,
+            surface_config.format,
+            Default::default(),
+        ))
+    }
+}
 
 pub struct EguiPass {
     resources: ResourcesManager,
 
     paint_jobs: Vec<egui::ClippedPrimitive>,
     screen_descriptor: egui_wgpu::ScreenDescriptor,
-    egui_renderer: egui_wgpu::Renderer,
 }
 
 impl EguiPass {
     pub fn new(resources: &ResourcesManager) -> Self {
         let resources = resources.clone();
-        let device = resources.read::<wgpu::Device>();
         let surface_config = resources.read::<wgpu::SurfaceConfiguration>();
-
-        let egui_renderer =
-            egui_wgpu::Renderer::new(&device, surface_config.format, Default::default());
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
@@ -27,7 +39,6 @@ impl EguiPass {
 
             paint_jobs: vec![],
             screen_descriptor,
-            egui_renderer,
         }
     }
 
@@ -41,6 +52,7 @@ impl EguiPass {
         let device = self.resources.read::<wgpu::Device>();
         let queue = self.resources.read::<wgpu::Queue>();
         let surface_config = self.resources.read::<wgpu::SurfaceConfiguration>();
+        let mut renderer = self.resources.write::<egui_wgpu::Renderer>();
 
         self.screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [surface_config.width, surface_config.height],
@@ -50,27 +62,35 @@ impl EguiPass {
         self.paint_jobs = context.tessellate(shapes, self.screen_descriptor.pixels_per_point);
 
         for (texture_id, image_delta) in &textures_delta.set {
-            self.egui_renderer
-                .update_texture(&device, &queue, *texture_id, image_delta);
+            renderer.update_texture(&device, &queue, *texture_id, image_delta);
         }
         for texture_id in &textures_delta.free {
-            self.egui_renderer.free_texture(texture_id);
+            renderer.free_texture(texture_id);
         }
 
         let mut encoder = device.create_command_encoder(&Default::default());
-        self.egui_renderer.update_buffers(
+        let mut profiler = self.resources.write::<wgpu_profiler::GpuProfiler>();
+        let mut scope = profiler.scope("Egui[update]", &mut encoder);
+
+        renderer.update_buffers(
             &device,
             &queue,
-            &mut encoder,
+            &mut scope,
             &self.paint_jobs,
             &self.screen_descriptor,
         );
+
+        drop(scope);
+
+        profiler.resolve_queries(&mut encoder);
 
         queue.submit(std::iter::once(encoder.finish()));
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        self.egui_renderer.render(
+        let renderer = self.resources.read::<egui_wgpu::Renderer>();
+
+        renderer.render(
             &mut ctx
                 .encoder
                 .scope("Egui")

@@ -7,8 +7,9 @@ use crate::{
 };
 
 pub struct Engine {
-    pub renderer: Renderer,
     pub resources: ResourcesManager,
+
+    renderer: Renderer,
 
     geometry: GeometryPass,
     hierarchical_depth: HierarchicalDepthPass,
@@ -112,7 +113,7 @@ impl Engine {
 impl egui::Widget for &mut Engine {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         egui::Panel::right("engine_panel")
-            .min_size(320.0)
+            .min_size(460.0)
             .frame(egui::containers::Frame {
                 inner_margin: egui::Vec2::splat(10.0).into(),
                 fill: egui::Color32::from_black_alpha(200),

@@ -33,7 +33,7 @@ impl Resource for TopDownCamera {
             self.target.y = height;
         }
 
-        let eye = self.current + glam::vec3(16.0, 40.0, 8.0);
+        let eye = self.current + glam::vec3(-16.0, 40.0, 8.0);
         // let eye = self.current + glam::vec3(0.0, 140.0, 1.0);
 
         camera.view = glam::Mat4::look_at_rh(eye, self.current, glam::Vec3::Y);

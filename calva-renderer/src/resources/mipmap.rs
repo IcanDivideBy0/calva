@@ -136,23 +136,20 @@ impl MipmapGenerator {
         })
     }
 
-    pub fn generate_mipmaps(
-        &self,
-        texture: &wgpu::Texture,
-        desc: &wgpu::TextureDescriptor,
-    ) -> Result<()> {
+    pub fn generate_mipmaps(&self, texture: &wgpu::Texture) -> Result<()> {
         let pipelines_read = self.pipelines.upgradable_read();
 
-        let pipeline = match pipelines_read.get(&desc.format) {
+        let format = texture.format();
+        let pipeline = match pipelines_read.get(&format) {
             Some(pipeline) => pipeline,
             None => {
                 drop(pipelines_read);
 
                 self.pipelines
                     .write()
-                    .insert(desc.format, self.create_pipeline(desc.format));
+                    .insert(format, self.create_pipeline(format));
 
-                return self.generate_mipmaps(texture, desc);
+                return self.generate_mipmaps(texture);
             }
         };
 
@@ -163,7 +160,7 @@ impl MipmapGenerator {
             label: Some("MipmapGenerator command encoder"),
         });
 
-        let mips = (0..desc.size.max_mips(desc.dimension))
+        let mips = (0..texture.mip_level_count())
             .map(|mip_level| {
                 texture.create_view(&wgpu::TextureViewDescriptor {
                     base_mip_level: mip_level,
