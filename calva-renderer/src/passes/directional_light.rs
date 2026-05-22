@@ -49,7 +49,7 @@ pub struct DirectionalLight {
 impl Resource for DirectionalLight {
     fn instanciate(_resources: &ResourcesManager) -> Result<Self> {
         Ok(Self {
-            direction: glam::vec3(0.5, -1.0, 0.5),
+            direction: glam::vec3(-0.5, -1.0, 0.5),
             color: [1.0; 3],
             intensity: 5.0,
         })

@@ -187,7 +187,7 @@ impl Resource for WorldGenerator {
 
     fn update(&mut self, resources: &ResourcesManager) -> Result<()> {
         let camera = resources.read::<TopDownCamera>();
-        let chunk_coord = (camera.target.xz() / Chunk::WORLD_SIZE).floor();
+        let chunk_coord = (camera.get_target().xz() / Chunk::WORLD_SIZE).floor();
 
         self.main_chunk = glam::ivec2(chunk_coord.x as _, chunk_coord.y as _);
 

@@ -15,9 +15,9 @@ pub struct MonstersManager {
     pub models: HashMap<String, GltfModel>,
     pub objects: Vec<Object>,
 
-    target: Option<glam::Vec2>,
+    speed: f32, // units / sec
+    target: glam::Vec2,
     heat_map: Option<HeatMap<{ WorldGenerator::HEAT_MAP_SIZE }>>,
-
     texture: (wgpu::Texture, egui::TextureId),
 }
 
@@ -29,8 +29,8 @@ impl MonstersManager {
             return;
         };
 
+        self.target = target;
         self.heat_map = Some(heat_map);
-        self.target = Some(target);
     }
 }
 
@@ -91,7 +91,8 @@ impl Resource for MonstersManager {
             models,
             objects: vec![],
 
-            target: None,
+            speed: 10.0,
+            target: glam::Vec2::ZERO,
             heat_map: None,
             texture: (texture, texture_id),
         })
@@ -104,9 +105,6 @@ impl Resource for MonstersManager {
         let Some(heat_map) = &self.heat_map else {
             return Ok(());
         };
-        let Some(target) = self.target else {
-            return Ok(());
-        };
 
         let mut hm_image_data = heat_map.image_data();
 
@@ -114,7 +112,7 @@ impl Resource for MonstersManager {
             let mut transform = object.transform();
             let (_, _, pos) = transform.to_scale_rotation_translation();
 
-            let hm_coord = worldgen.get_heat_map_coord(pos.xz(), target);
+            let hm_coord = worldgen.get_heat_map_coord(pos.xz(), self.target);
 
             hm_image_data[hm_coord.y][hm_coord.x] = [0, u8::MAX, 0, u8::MAX];
 
@@ -128,8 +126,7 @@ impl Resource for MonstersManager {
 
             let dir = dir.extend(dh).xzy().normalize();
 
-            let speed = 10.0; // units / sec
-            let translation = dir * speed * time.dt.as_secs_f32();
+            let translation = dir * self.speed * time.dt.as_secs_f32();
 
             transform = glam::Mat4::from_translation(translation) * transform;
 
@@ -154,26 +151,26 @@ impl Resource for MonstersManager {
 
 impl egui::Widget for &mut MonstersManager {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let (texture, texture_id) = &self.texture;
+        egui::Panel::left("monsters_panel")
+            .frame(egui::containers::Frame {
+                inner_margin: egui::Vec2::splat(10.0).into(),
+                fill: egui::Color32::from_black_alpha(200),
+                ..Default::default()
+            })
+            .show_inside(ui, |ui| {
+                let (texture, texture_id) = &self.texture;
 
-        let offset = glam::Vec2::splat(10.0);
+                let size = texture.size();
+                let size = glam::vec2(size.width as _, size.height as _);
 
-        let size = texture.size();
-        let size = glam::vec2(size.width as _, size.height as _);
+                let image = egui::Image::from_texture(egui::load::SizedTexture {
+                    id: *texture_id,
+                    size: mint::Vector2::from(size * 2.0).into(),
+                });
 
-        let image = egui::Image::from_texture(egui::load::SizedTexture {
-            id: *texture_id,
-            size: mint::Vector2::from(size).into(),
-        });
-
-        image.paint_at(
-            ui,
-            egui::Rect::from_min_size(
-                mint::Point2::from(offset).into(),
-                mint::Vector2::from(size * 2.0).into(),
-            ),
-        );
-
-        ui.response()
+                ui.add(egui::Slider::new(&mut self.speed, 1.0..=64.0).text("Speed"));
+                ui.add(image);
+            })
+            .response
     }
 }

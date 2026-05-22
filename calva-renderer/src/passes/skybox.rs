@@ -69,39 +69,41 @@ impl SkyboxPass {
     }
 
     pub fn render(&self, ctx: &mut RenderContext) {
-        if let Some(skybox_bind_group) = self.resources.read::<SkyboxManager>().bind_group.as_ref()
-        {
-            let camera = self.resources.read::<UniformBuffer<Camera>>();
-            let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
-            let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
+        let skybox_manager = self.resources.read::<SkyboxManager>();
+        let Some(skybox_bind_group) = &skybox_manager.bind_group else {
+            return;
+        };
 
-            let mut rpass = ctx.encoder.scoped_render_pass(
-                "Skybox",
-                wgpu::RenderPassDescriptor {
-                    label: Some("Skybox"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &ambient_light_outputs.output_view,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &geometry_outputs.depth_view,
-                        depth_ops: None,
-                        stencil_ops: None,
-                    }),
-                    ..Default::default()
-                },
-            );
+        let camera = self.resources.read::<UniformBuffer<Camera>>();
+        let geometry_outputs = self.resources.read::<GeometryPassOutputs>();
+        let ambient_light_outputs = self.resources.read::<AmbientLightPassOutputs>();
 
-            rpass.set_pipeline(&self.pipeline);
-            rpass.set_bind_group(0, &camera.bind_group, &[]);
-            rpass.set_bind_group(1, skybox_bind_group, &[]);
+        let mut rpass = ctx.encoder.scoped_render_pass(
+            "Skybox",
+            wgpu::RenderPassDescriptor {
+                label: Some("Skybox"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &ambient_light_outputs.output_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &geometry_outputs.depth_view,
+                    depth_ops: None,
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            },
+        );
 
-            rpass.draw(0..3, 0..1);
-        }
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &camera.bind_group, &[]);
+        rpass.set_bind_group(1, skybox_bind_group, &[]);
+
+        rpass.draw(0..3, 0..1);
     }
 }

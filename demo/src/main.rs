@@ -257,7 +257,7 @@ impl ApplicationHandler for DemoApp {
                     let hit = ro + rd * hit;
 
                     let mut top_down_camera = state.engine.resources.write::<TopDownCamera>();
-                    top_down_camera.target = hit;
+                    top_down_camera.set_target(hit);
                 }
             }
 

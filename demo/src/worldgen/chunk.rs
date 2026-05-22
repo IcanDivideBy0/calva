@@ -42,6 +42,7 @@ impl<const SIZE: usize, const WFC_MODULE_SIZE: usize> WorldChunk<SIZE, WFC_MODUL
             (grid_pos.x / WorldGenerator::TILE_WORLD_SIZE) as _,
             (grid_pos.y / WorldGenerator::TILE_WORLD_SIZE) as _,
         )
+        .min(glam::USizeVec2::splat(SIZE - 1))
     }
 
     pub fn ray_cast<'h>(
