@@ -1,3 +1,4 @@
+use anyhow::Result;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -279,7 +280,7 @@ impl PointLightsPass {
         );
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let mut encoder = ctx.encoder.scope("PointLights");
 
         let camera = self.resources.read::<UniformBuffer<Camera>>();
@@ -349,6 +350,8 @@ impl PointLightsPass {
         lighting_pass.draw_indexed(0..self.vertex_count, 0, 0..(lights.count() as _));
 
         drop(lighting_pass);
+
+        Ok(())
     }
 
     fn make_bind_group(

@@ -92,15 +92,15 @@ impl Engine {
         self.resources.update()?;
 
         self.renderer.render(|ctx| -> Result<()> {
-            self.geometry.render(ctx);
-            self.hierarchical_depth.render(ctx);
-            self.ambient_light.render(ctx);
-            self.directional_light.render(ctx);
-            self.point_lights.render(ctx);
-            self.skybox.render(ctx);
-            self.fxaa.render(ctx);
-            self.ssao.render(ctx);
-            self.tone_mapping.render(ctx);
+            self.geometry.render(ctx)?;
+            self.hierarchical_depth.render(ctx)?;
+            self.ambient_light.render(ctx)?;
+            self.directional_light.render(ctx)?;
+            self.point_lights.render(ctx)?;
+            self.skybox.render(ctx)?;
+            self.fxaa.render(ctx)?;
+            self.ssao.render(ctx)?;
+            self.tone_mapping.render(ctx)?;
 
             cb(ctx)?;
 

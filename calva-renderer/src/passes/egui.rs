@@ -87,7 +87,7 @@ impl EguiPass {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let renderer = self.resources.read::<egui_wgpu::Renderer>();
 
         renderer.render(
@@ -112,6 +112,8 @@ impl EguiPass {
             &self.paint_jobs,
             &self.screen_descriptor,
         );
+
+        Ok(())
     }
 }
 

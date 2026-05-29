@@ -170,7 +170,7 @@ impl HierarchicalDepthPass {
         )
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let hierarchical_depth_outputs = self.resources.read::<HierarchicalDepthPassOutputs>();
 
         let mut cpass = ctx.encoder.scoped_compute_pass("HierarchicalDepth");
@@ -182,6 +182,8 @@ impl HierarchicalDepthPass {
             hierarchical_depth_outputs.output.height(),
             1,
         );
+
+        Ok(())
     }
 
     fn make_bind_group(

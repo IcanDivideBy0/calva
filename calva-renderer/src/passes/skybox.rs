@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{
     AmbientLightPassOutputs, Camera, GeometryPassOutputs, RenderContext, ResourcesManager,
     SkyboxManager, UniformBuffer,
@@ -68,10 +70,10 @@ impl SkyboxPass {
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let skybox_manager = self.resources.read::<SkyboxManager>();
         let Some(skybox_bind_group) = &skybox_manager.bind_group else {
-            return;
+            return Ok(());
         };
 
         let camera = self.resources.read::<UniformBuffer<Camera>>();
@@ -105,5 +107,7 @@ impl SkyboxPass {
         rpass.set_bind_group(1, skybox_bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
+
+        Ok(())
     }
 }

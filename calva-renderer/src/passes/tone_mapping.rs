@@ -120,7 +120,7 @@ impl ToneMappingPass {
             Self::make_bind_group(&device, &self.bind_group_layout, &fxaa_outputs.output);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let mut rpass = ctx.encoder.scoped_render_pass(
             "ToneMapping",
             wgpu::RenderPassDescriptor {
@@ -151,6 +151,8 @@ impl ToneMappingPass {
         rpass.set_bind_group(1, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
+
+        Ok(())
     }
 
     fn make_bind_group(

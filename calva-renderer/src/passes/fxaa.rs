@@ -159,7 +159,7 @@ impl FxaaPass {
         );
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let fxaa_outputs = self.resources.read::<FxaaPassOutputs>();
 
         let mut rpass = ctx.encoder.scoped_render_pass(
@@ -184,6 +184,8 @@ impl FxaaPass {
         rpass.set_bind_group(0, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
+
+        Ok(())
     }
 
     fn make_bind_group(

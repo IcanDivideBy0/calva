@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{ProfilerCommandEncoder, ResourcesManager};
 
 use super::SsaoPass;
@@ -126,7 +128,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
         }
     }
 
-    pub fn render(&self, encoder: &mut ProfilerCommandEncoder) {
+    pub fn render(&self, encoder: &mut ProfilerCommandEncoder) -> Result<()> {
         let mut encoder = encoder.scope("Ssao[blur]");
 
         encoder
@@ -168,5 +170,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoBlurPass<WIDTH, HEIGHT> {
                 },
             )
             .execute_bundles(std::iter::once(&self.v_pass));
+
+        Ok(())
     }
 }

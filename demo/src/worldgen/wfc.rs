@@ -334,7 +334,7 @@ impl<const SIZE: usize, const MODULE_SIZE: usize> Wfc<SIZE, MODULE_SIZE> {
 
         let noise = Box::new(
             noise::ScalePoint::new(
-                noise::ScaleBias::<f64, _, 2>::new(noise::Perlin::new(seed))
+                noise::ScaleBias::<_, _, 2>::new(noise::Perlin::new(seed))
                     .set_scale(0.5)
                     .set_bias(0.5),
             )

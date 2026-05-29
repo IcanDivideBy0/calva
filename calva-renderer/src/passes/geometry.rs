@@ -162,10 +162,10 @@ impl GeometryPass {
         }
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let mut encoder = ctx.encoder.scope("Geometry");
 
-        self.cull.cull(&mut encoder);
+        self.cull.cull(&mut encoder)?;
 
         let camera = self.resources.read::<UniformBuffer<Camera>>();
         let textures = self.resources.read::<TexturesManager>();
@@ -234,6 +234,8 @@ impl GeometryPass {
         );
 
         drop(rpass);
+
+        Ok(())
     }
 }
 
@@ -344,6 +346,8 @@ impl Resource for GeometryPassOutputs {
 
 use cull::*;
 mod cull {
+    use anyhow::Result;
+
     use crate::{
         Camera, GpuMeshInstance, MeshInfo, MeshInstancesManager, MeshesManager,
         ProfilerCommandEncoder, ResourcesManager, UniformBuffer,
@@ -548,7 +552,7 @@ mod cull {
             }
         }
 
-        pub fn cull(&self, encoder: &mut ProfilerCommandEncoder) {
+        pub fn cull(&self, encoder: &mut ProfilerCommandEncoder) -> Result<()> {
             let camera = self.resources.read::<UniformBuffer<Camera>>();
 
             let mut cpass = encoder.scoped_compute_pass("Geometry[cull]");
@@ -575,6 +579,8 @@ mod cull {
             cpass.set_bind_group(0, &camera.bind_group, &[]);
             cpass.set_bind_group(1, &self.bind_group, &[]);
             cpass.dispatch_workgroups(meshes_workgroups_count, 1, 1);
+
+            Ok(())
         }
     }
 }

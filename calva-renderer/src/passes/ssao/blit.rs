@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use crate::{ProfilerCommandEncoder, ResourcesManager};
 
 pub struct SsaoBlitPass {
@@ -112,7 +114,7 @@ impl SsaoBlitPass {
         self.output_view = output.create_view(&Default::default());
     }
 
-    pub fn render(&self, encoder: &mut ProfilerCommandEncoder) {
+    pub fn render(&self, encoder: &mut ProfilerCommandEncoder) -> Result<()> {
         let mut rpass = encoder.scoped_render_pass(
             "Ssao[blit]",
             wgpu::RenderPassDescriptor {
@@ -135,5 +137,7 @@ impl SsaoBlitPass {
         rpass.set_bind_group(0, &self.bind_group, &[]);
 
         rpass.draw(0..3, 0..1);
+
+        Ok(())
     }
 }

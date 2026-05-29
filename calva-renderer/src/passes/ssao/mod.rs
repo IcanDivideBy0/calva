@@ -251,7 +251,7 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
         self.blit.rebind(&fxaa_outputs.output);
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         let mut encoder = ctx.encoder.scope("Ssao");
 
         let camera = self.resources.read::<UniformBuffer<Camera>>();
@@ -286,8 +286,10 @@ impl<const WIDTH: u32, const HEIGHT: u32> SsaoPass<WIDTH, HEIGHT> {
 
         drop(rpass);
 
-        self.blur.render(&mut encoder);
-        self.blit.render(&mut encoder);
+        self.blur.render(&mut encoder)?;
+        self.blit.render(&mut encoder)?;
+
+        Ok(())
     }
 
     fn make_texture(device: &wgpu::Device, label: wgpu::Label<'static>) -> wgpu::Texture {

@@ -337,9 +337,9 @@ impl DirectionalLightPass {
         );
     }
 
-    pub fn render(&self, ctx: &mut RenderContext) {
+    pub fn render(&self, ctx: &mut RenderContext) -> Result<()> {
         if self.resources.read::<DirectionalLight>().intensity <= 0.0 {
-            return;
+            return Ok(());
         }
 
         let uniform = self
@@ -423,6 +423,8 @@ impl DirectionalLightPass {
         lighting_pass.draw(0..3, 0..1);
 
         drop(lighting_pass);
+
+        Ok(())
     }
 
     fn make_lighting_bind_group(

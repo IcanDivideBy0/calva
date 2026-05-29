@@ -21,6 +21,7 @@ use winit::{
 pub mod camera;
 pub mod controls;
 pub mod debug;
+// pub mod fog;
 pub mod monsters;
 pub mod worldgen;
 
@@ -34,6 +35,7 @@ struct DemoState {
     engine: Engine,
 
     egui: EguiWinitPass,
+    // fog: fog::FogPass,
     mouse_pos: glam::Vec2,
     kb_modifiers: ModifiersState,
 }
@@ -57,6 +59,8 @@ impl DemoState {
 
         let egui = EguiWinitPass::new(&engine.resources, &window);
 
+        // let fog = fog::FogPass::new(&engine.resources);
+
         Self::init_skybox(&engine).unwrap();
 
         Self {
@@ -64,6 +68,7 @@ impl DemoState {
             engine,
 
             egui,
+            // fog,
             mouse_pos: Default::default(),
             kb_modifiers: Default::default(),
         }
@@ -146,7 +151,8 @@ impl ApplicationHandler for DemoApp {
                 });
 
                 let result = state.engine.render(|ctx| {
-                    state.egui.render(ctx);
+                    state.egui.render(ctx)?;
+                    // state.fog.render(ctx)?;;
 
                     Ok(())
                 });
