@@ -53,7 +53,7 @@ impl DemoState {
         // );
 
         *engine.resources.write::<AmbientLightConfig>() = AmbientLightConfig {
-            color: [0.106535, 0.061572, 0.037324],
+            color: [0.863, 0.701, 0.610],
             strength: 0.1,
         };
 
@@ -203,7 +203,8 @@ impl ApplicationHandler for DemoApp {
 
                     let mut rng = rand::rng();
                     let model = monsters.models.values().choose(&mut rng).unwrap();
-                    let animation = model.animations.values().choose(&mut rng).unwrap();
+                    // let animation = model.animations.values().choose(&mut rng).unwrap();
+                    let animation = model.animations.get("run").unwrap();
 
                     let transform = glam::Mat4::from_translation(hit)
                         * glam::Mat4::from_axis_angle(
@@ -264,6 +265,12 @@ impl ApplicationHandler for DemoApp {
 
                     let mut top_down_camera = state.engine.resources.write::<TopDownCamera>();
                     top_down_camera.set_target(hit);
+
+                    state
+                        .engine
+                        .resources
+                        .write::<MonstersManager>()
+                        .set_target(hit.xz());
                 }
             }
 

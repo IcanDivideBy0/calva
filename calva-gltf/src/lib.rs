@@ -449,10 +449,11 @@ impl GltfModel {
                                 (color.max_element() * ATTENUATION_MAX).sqrt()
                             });
 
-                            // There must be an error in blender export, removing the 4π factor will give the exact
+                            // There might be an error in blender export, removing the 4π factor will give the exact
                             // same result as blender renders when using the same exposure algorithm, but we also
                             // need to keep it for radius computation to get a somewhat similar range :/
-                            let color = color / (4.0 * std::f32::consts::PI);
+                            // Now that we are using ACES tone mapping we get better results keeping the color as is.
+                            // let color = color / (4.0 * std::f32::consts::PI);
 
                             point_lights.push(PointLight {
                                 position,

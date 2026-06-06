@@ -120,16 +120,14 @@ impl egui::Widget for &mut Engine {
                 ..Default::default()
             })
             .show_inside(ui, |ui| {
-                use crate::{AmbientLightConfig, DirectionalLight, SsaoConfig, ToneMappingConfig};
-
                 ui.add(&self.renderer);
 
                 let resources = &self.resources;
 
-                ui.add(&mut *resources.write::<AmbientLightConfig>());
-                ui.add(&mut *resources.write::<SsaoConfig>());
-                ui.add(&mut *resources.write::<ToneMappingConfig>());
-                ui.add(&mut *resources.write::<DirectionalLight>());
+                ui.add(&mut *resources.write::<crate::AmbientLightConfig>());
+                ui.add(&mut *resources.write::<crate::SsaoConfig>());
+                // ui.add(&mut *resources.write::<crate::ToneMappingConfig>());
+                ui.add(&mut *resources.write::<crate::DirectionalLight>());
             })
             .response
     }

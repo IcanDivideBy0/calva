@@ -38,20 +38,20 @@ impl Resource for MonstersManager {
     fn instanciate(resources: &ResourcesManager) -> Result<Self> {
         let models = [
             "./demo/assets/zombies/zombie-boss.glb",
-            "./demo/assets/zombies/zombie-common.glb",
-            "./demo/assets/zombies/zombie-fat.glb",
-            "./demo/assets/zombies/zombie-murderer.glb",
-            "./demo/assets/zombies/zombie-snapper.glb",
-            "./demo/assets/skeletons/skeleton-archer.glb",
-            "./demo/assets/skeletons/skeleton-grunt.glb",
-            "./demo/assets/skeletons/skeleton-mage.glb",
-            "./demo/assets/skeletons/skeleton-king.glb",
-            "./demo/assets/skeletons/skeleton-swordsman.glb",
-            "./demo/assets/demons/demon-bomb.glb",
-            "./demo/assets/demons/demon-boss.glb",
-            "./demo/assets/demons/demon-fatty.glb",
-            "./demo/assets/demons/demon-grunt.glb",
-            "./demo/assets/demons/demon-imp.glb",
+            // "./demo/assets/zombies/zombie-common.glb",
+            // "./demo/assets/zombies/zombie-fat.glb",
+            // "./demo/assets/zombies/zombie-murderer.glb",
+            // "./demo/assets/zombies/zombie-snapper.glb",
+            // "./demo/assets/skeletons/skeleton-archer.glb",
+            // "./demo/assets/skeletons/skeleton-grunt.glb",
+            // "./demo/assets/skeletons/skeleton-mage.glb",
+            // "./demo/assets/skeletons/skeleton-king.glb",
+            // "./demo/assets/skeletons/skeleton-swordsman.glb",
+            // "./demo/assets/demons/demon-bomb.glb",
+            // "./demo/assets/demons/demon-boss.glb",
+            // "./demo/assets/demons/demon-fatty.glb",
+            // "./demo/assets/demons/demon-grunt.glb",
+            // "./demo/assets/demons/demon-imp.glb",
         ]
         .iter()
         // .take(1)
@@ -124,11 +124,14 @@ impl Resource for MonstersManager {
             let dest_height = worldgen.get_height(pos.xz() + dir).unwrap_or(pos.y);
             let dh = dest_height - pos.y;
 
-            let dir = dir.extend(dh).xzy().normalize();
+            let forward = dir.extend(0.0).xzy().normalize();
+            let rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, forward);
 
+            let dir = dir.extend(dh).xzy().normalize();
             let translation = dir * self.speed * time.dt.as_secs_f32();
 
-            transform = glam::Mat4::from_translation(translation) * transform;
+            // transform = glam::Mat4::from_translation(translation) * transform;
+            transform = glam::Mat4::from_rotation_translation(rot, pos + translation);
 
             object.set_transform(transform);
         }
